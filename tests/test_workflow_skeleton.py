@@ -236,35 +236,59 @@ def test_retrieval_decision_evaluator_propagates_session_id(capsys):
 
 
 def _collect_sse_events(step_results) -> list[dict]:
-    """Walk step_results (including nested Condition sub-steps) and collect SSE events."""
+    """Walk step_results (including nested Condition sub-steps) and collect SSE events.
+
+    Skips any content that is not valid JSON — Agno inserts plain-text
+    placeholder strings (e.g. "Condition … not met - skipped N steps") when
+    a Condition branch is not taken.
+    """
     events = []
     for step_result in step_results:
         if step_result.steps:
             # Condition node — the evaluator's event is not in step_results;
-            # collect events from sub-steps (e.g. rag_retrieve)
+            # collect events from sub-steps (e.g. rag_retrieve) if they ran.
             for sub in step_result.steps:
                 if sub.content:
-                    events.append(json.loads(sub.content))
+                    try:
+                        events.append(json.loads(sub.content))
+                    except (json.JSONDecodeError, TypeError):
+                        pass  # Agno placeholder string for a skipped branch
         elif step_result.content:
-            events.append(json.loads(step_result.content))
+            try:
+                events.append(json.loads(step_result.content))
+            except (json.JSONDecodeError, TypeError):
+                pass
     return events
 
 
 def test_workflow_run_produces_six_sse_events(capsys):
-    """Stub-to-stub run must emit one SSE event for each of the 6 steps."""
+    """All 6 steps emit one SSE event when the low-confidence path is taken."""
+    from unittest.mock import patch
+
+    from app.workflow.cag_matcher import MatchResult
     from app.workflow.travel_workflow import travel_workflow
 
-    session_id = "e2e-test-session"
-    result = travel_workflow.run(
-        input="plan a 5-day trip to Melbourne",
-        additional_data={
-            "session_id": session_id,
-            "destination": "Melbourne",
-            "trip_length": 5,
-            "budget": "moderate",
-            "travel_style": "family",
-        },
+    # Use low confidence (< 0.78) so rag_retrieve runs and all 6 events are emitted.
+    low_confidence_result = MatchResult(
+        category_key="family",
+        confidence_score=0.50,
+        tone="friendly and family-oriented",
+        constraints="Activities must be suitable for children of all ages.",
+        is_fallback=False,
     )
+
+    session_id = "e2e-test-session"
+    with patch("app.workflow.steps.cag_match.match_category", return_value=low_confidence_result):
+        result = travel_workflow.run(
+            input="plan a 5-day trip to Melbourne",
+            additional_data={
+                "session_id": session_id,
+                "destination": "Melbourne",
+                "trip_length": 5,
+                "budget": "moderate",
+                "travel_style": "family",
+            },
+        )
 
     # Events from step executors (intake, cag_match, rag_retrieve, generate, validate_output)
     executor_events = _collect_sse_events(result.step_results)
@@ -334,19 +358,32 @@ def test_workflow_run_session_id_propagated_to_all_events(capsys):
 
 
 def test_workflow_run_all_six_step_names_present(capsys):
-    """Each of the 6 named steps must appear exactly once in the emitted events."""
+    """All 6 step names appear in emitted events when low-confidence path is taken."""
+    from unittest.mock import patch
+
+    from app.workflow.cag_matcher import MatchResult
     from app.workflow.travel_workflow import travel_workflow
 
-    result = travel_workflow.run(
-        input="plan a trip to Perth",
-        additional_data={
-            "session_id": "step-name-test",
-            "destination": "Perth",
-            "trip_length": 7,
-            "budget": "moderate",
-            "travel_style": "adventure",
-        },
+    # Use low confidence so rag_retrieve runs and all 6 step names are present.
+    low_confidence_result = MatchResult(
+        category_key="family",
+        confidence_score=0.50,
+        tone="friendly and family-oriented",
+        constraints="Activities must be suitable for children of all ages.",
+        is_fallback=False,
     )
+
+    with patch("app.workflow.steps.cag_match.match_category", return_value=low_confidence_result):
+        result = travel_workflow.run(
+            input="plan a trip to Perth",
+            additional_data={
+                "session_id": "step-name-test",
+                "destination": "Perth",
+                "trip_length": 7,
+                "budget": "moderate",
+                "travel_style": "adventure",
+            },
+        )
 
     executor_events = _collect_sse_events(result.step_results)
     captured = capsys.readouterr()

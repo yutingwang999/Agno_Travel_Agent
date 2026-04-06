@@ -6,7 +6,7 @@ An AI-powered travel itinerary planning service for Australian destinations. The
 
 ## Current Status
 
-**Branch: `feat/cag-match`** — Step 2 embedding-based intent classification complete.
+**Branch: `feat/retrieval-decision`** — Step 3 confidence threshold routing complete.
 
 | Branch | Scope | Status |
 |--------|-------|--------|
@@ -16,7 +16,7 @@ An AI-powered travel itinerary planning service for Australian destinations. The
 | `feat/workflow-skeleton` | Agno workflow with 6 stub steps, SSE emitter | Done |
 | `feat/intake` | Input validation and normalisation (Step 1) | Done |
 | `feat/cag-match` | Embedding-based intent classification (Step 2) | Done |
-| `feat/retrieval-decision` | Confidence threshold routing (Step 3) | Pending |
+| `feat/retrieval-decision` | Confidence threshold routing (Step 3) | Done |
 | `feat/rag-retrieve` | pgvector similarity search (Step 4) | Pending |
 | `feat/generate` | DB-template prompt construction + LLM call (Step 5) | Pending |
 | `feat/validate-output` | Pydantic validation + retry logic (Step 6) | Pending |
@@ -176,7 +176,7 @@ All variables are documented in [.env.example](.env.example).
 │           └── steps/
 │               ├── intake.py              # Step 1 — validates + normalises input (TravelRequest)
 │               ├── cag_match.py           # Step 2 — Gemini embed + cosine match → matched_category
-│               ├── retrieval_decision.py  # Step 3 condition evaluator stub
+│               ├── retrieval_decision.py  # Step 3 — confidence >= 0.78 → skip RAG, else retrieve
 │               ├── rag_retrieve.py        # Step 4 stub
 │               ├── generate.py            # Step 5 stub
 │               └── validate_output.py     # Step 6 stub
@@ -185,7 +185,8 @@ All variables are documented in [.env.example](.env.example).
 │   ├── test_db_schema.py        # 16 tests covering the db-schema merge checklist
 │   ├── test_workflow_skeleton.py # 22 tests covering the workflow-skeleton merge checklist
 │   ├── test_intake.py           # 22 tests covering the intake merge checklist
-│   └── test_cag_match.py        # 15 unit + 3 integration tests covering the cag-match checklist
+│   ├── test_cag_match.py        # 15 unit + 3 integration tests covering the cag-match checklist
+│   └── test_retrieval_decision.py # 16 tests covering the retrieval-decision merge checklist
 ├── alembic/
 │   ├── env.py               # loads .env, imports models, runs migrations
 │   ├── script.py.mako       # migration file template
