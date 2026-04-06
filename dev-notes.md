@@ -103,3 +103,7 @@ Section 4 — Why This Order — plain-language explanation of the dependency ch
 ### 4 feature/project-scaffold
 
 ### 5 feat/db-schema
+
+### 6 feat/db-seed
+
+### 7 feat/workflow-skeleton

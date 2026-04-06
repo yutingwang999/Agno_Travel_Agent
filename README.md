@@ -6,14 +6,14 @@ An AI-powered travel itinerary planning service for Australian destinations. The
 
 ## Current Status
 
-**Branch: `feat/db-seed`** — Seed script and dev commands in progress.
+**Branch: `feat/workflow-skeleton`** — Agno workflow with 6 stub steps and SSE emitter complete.
 
 | Branch | Scope | Status |
 |--------|-------|--------|
 | `feat/project-scaffold` | Dependencies, Docker, directory layout, health endpoint | Done |
 | `feat/db-schema` | Alembic migrations, SQLAlchemy models | Done |
-| `feat/db-seed` | Category embeddings, prompt templates, source documents | In Progress |
-| `feat/workflow-skeleton` | Agno workflow with 6 stub steps, SSE emitter | Pending |
+| `feat/db-seed` | Category embeddings, prompt templates, source documents | Done |
+| `feat/workflow-skeleton` | Agno workflow with 6 stub steps, SSE emitter | Done |
 | `feat/intake` | Input validation and normalisation (Step 1) | Pending |
 | `feat/cag-match` | Embedding-based intent classification (Step 2) | Pending |
 | `feat/retrieval-decision` | Confidence threshold routing (Step 3) | Pending |
@@ -162,14 +162,25 @@ All variables are documented in [.env.example](.env.example).
 ├── src/
 │   └── app/
 │       ├── main.py          # FastAPI entrypoint (health check only, for now)
-│       └── models/
-│           ├── base.py               # SQLAlchemy DeclarativeBase
-│           ├── itinerary_category.py # itinerary_categories table + Vector(768)
-│           ├── prompt_template.py    # prompt_templates table
-│           ├── source_document.py    # source_documents table + Vector(768)
-│           └── trace_event.py        # trace_events table
+│       ├── models/
+│       │   ├── base.py               # SQLAlchemy DeclarativeBase
+│       │   ├── itinerary_category.py # itinerary_categories table + Vector(768)
+│       │   ├── prompt_template.py    # prompt_templates table
+│       │   ├── source_document.py    # source_documents table + Vector(768)
+│       │   └── trace_event.py        # trace_events table
+│       └── workflow/
+│           ├── sse.py                # SSE event builder (build_sse_event, sse_event_to_json)
+│           ├── travel_workflow.py    # Agno Workflow — 6 steps registered in order
+│           └── steps/
+│               ├── intake.py              # Step 1 stub
+│               ├── cag_match.py           # Step 2 stub
+│               ├── retrieval_decision.py  # Step 3 condition evaluator stub
+│               ├── rag_retrieve.py        # Step 4 stub
+│               ├── generate.py            # Step 5 stub
+│               └── validate_output.py     # Step 6 stub
 ├── tests/
-│   └── test_db_schema.py    # 16 tests covering the db-schema merge checklist
+│   ├── test_db_schema.py        # 16 tests covering the db-schema merge checklist
+│   └── test_workflow_skeleton.py # 22 tests covering the workflow-skeleton merge checklist
 ├── alembic/
 │   ├── env.py               # loads .env, imports models, runs migrations
 │   ├── script.py.mako       # migration file template
