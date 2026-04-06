@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy import Boolean, DateTime, Float, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from src.app.models.base import Base
+from app.models.base import Base
 
 
 class TraceEvent(Base):
