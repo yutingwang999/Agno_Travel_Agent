@@ -2,7 +2,7 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from src.app.models.base import Base
+from app.models.base import Base
 
 EMBEDDING_DIMENSIONS = 768
 
