@@ -6,12 +6,12 @@ An AI-powered travel itinerary planning service for Australian destinations. The
 
 ## Current Status
 
-**Branch: `feat/project-scaffold`** — environment and entrypoint only.
+**Branch: `feat/db-schema`** — Alembic migrations and SQLAlchemy models complete.
 
 | Branch | Scope | Status |
 |--------|-------|--------|
-| `feat/project-scaffold` | Dependencies, Docker, directory layout, health endpoint | In progress |
-| `feat/db-schema` | Alembic migrations, SQLAlchemy models | Pending |
+| `feat/project-scaffold` | Dependencies, Docker, directory layout, health endpoint | Done |
+| `feat/db-schema` | Alembic migrations, SQLAlchemy models | Done |
 | `feat/db-seed` | Category embeddings, prompt templates, source documents | Pending |
 | `feat/workflow-skeleton` | Agno workflow with 6 stub steps, SSE emitter | Pending |
 | `feat/intake` | Input validation and normalisation (Step 1) | Pending |
@@ -102,7 +102,12 @@ python scripts/dev.py install
 python scripts/dev.py up
 ```
 
-**4. Start the app**
+**4. Apply migrations**
+```bash
+python scripts/dev.py migrate
+```
+
+**5. Start the app**
 ```bash
 PYTHONPATH=src uvicorn app.main:app --reload   # macOS / Linux
 $env:PYTHONPATH="src"; uvicorn app.main:app --reload  # Windows PowerShell
@@ -115,12 +120,14 @@ $env:PYTHONPATH="src"; uvicorn app.main:app --reload  # Windows PowerShell
 All commands work on Windows and Unix via the Python task runner:
 
 ```bash
-python scripts/dev.py up           # start PostgreSQL
-python scripts/dev.py down         # stop PostgreSQL
-python scripts/dev.py install      # pip install -e ".[dev]"
-python scripts/dev.py check-health # GET /health → 200
-python scripts/dev.py test         # pytest
-python scripts/dev.py verify       # run the full scaffold checklist
+python scripts/dev.py up             # start PostgreSQL
+python scripts/dev.py down           # stop PostgreSQL
+python scripts/dev.py install        # pip install -e ".[dev]"
+python scripts/dev.py migrate        # alembic upgrade head
+python scripts/dev.py check-health   # GET /health → 200
+python scripts/dev.py test           # pytest
+python scripts/dev.py verify         # up → migrate → uvicorn → health + pytest
+python scripts/dev.py verify-schema  # up → migrate → db-schema tests (16 checks)
 ```
 
 On macOS/Linux you can also use `make <target>` as a shorthand.
@@ -152,15 +159,30 @@ All variables are documented in [.env.example](.env.example).
 .
 ├── src/
 │   └── app/
-│       └── main.py          # FastAPI entrypoint (health check only, for now)
-├── tests/                   # pytest test suite
-├── alembic/                 # migrations (added in feat/db-schema)
+│       ├── main.py          # FastAPI entrypoint (health check only, for now)
+│       └── models/
+│           ├── base.py               # SQLAlchemy DeclarativeBase
+│           ├── itinerary_category.py # itinerary_categories table + Vector(768)
+│           ├── prompt_template.py    # prompt_templates table
+│           ├── source_document.py    # source_documents table + Vector(768)
+│           └── trace_event.py        # trace_events table
+├── tests/
+│   └── test_db_schema.py    # 16 tests covering the db-schema merge checklist
+├── alembic/
+│   ├── env.py               # loads .env, imports models, runs migrations
+│   ├── script.py.mako       # migration file template
+│   └── versions/
+│       ├── 0001_enable_pgvector_create_itinerary_categories.py
+│       ├── 0002_create_prompt_templates.py
+│       ├── 0003_create_source_documents.py
+│       └── 0004_create_trace_events.py
 ├── scripts/
 │   └── dev.py               # cross-platform task runner
 ├── docs/
 │   ├── DESIGN.md            # single source of truth for system design
 │   ├── CLAUDE.md            # AI usage guidelines for this repo
 │   └── git-workflow.md      # feature branch order and merge checklist
+├── alembic.ini              # Alembic config (DB URL injected from env)
 ├── docker-compose.yml       # PostgreSQL + pgvector
 ├── pyproject.toml           # dependencies and project metadata
 ├── Makefile                 # thin wrappers around scripts/dev.py

@@ -5,9 +5,11 @@ Usage:
     python scripts/dev.py up
     python scripts/dev.py down
     python scripts/dev.py install
+    python scripts/dev.py migrate
     python scripts/dev.py check-health
     python scripts/dev.py test
     python scripts/dev.py verify
+    python scripts/dev.py verify-schema
 """
 
 import os
@@ -40,6 +42,11 @@ def down():
 def install():
     print("--- installing dependencies ---")
     run([sys.executable, "-m", "pip", "install", "-e", ".[dev]"])
+
+
+def migrate():
+    print("--- running alembic upgrade head ---")
+    run([sys.executable, "-m", "alembic", "upgrade", "head"])
 
 
 def check_health(retries: int = 5, delay: float = 1.0):
@@ -77,6 +84,8 @@ def verify():
         "-d", os.environ.get("POSTGRES_DB", "travel_agent_db"),
     ])
 
+    migrate()
+
     print("--- starting uvicorn ---")
     uvicorn_env = {"PYTHONPATH": src_path}
     proc = subprocess.Popen(
@@ -99,13 +108,35 @@ def verify():
     print("--- all checks passed ---")
 
 
+def verify_schema():
+    """Full db-schema merge checklist: up -> pg_isready -> migrate -> test_db_schema."""
+    up()
+
+    print("--- waiting for postgres ---")
+    run([
+        "docker", "compose", "exec", "postgres",
+        "pg_isready",
+        "-U", os.environ.get("POSTGRES_USER", "travel_agent"),
+        "-d", os.environ.get("POSTGRES_DB", "travel_agent_db"),
+    ])
+
+    migrate()
+
+    print("--- running db-schema tests ---")
+    run([sys.executable, "-m", "pytest", "tests/test_db_schema.py", "-v"])
+
+    print("--- db-schema checklist passed ---")
+
+
 COMMANDS = {
     "up": up,
     "down": down,
     "install": install,
+    "migrate": migrate,
     "check-health": check_health,
     "test": test,
     "verify": verify,
+    "verify-schema": verify_schema,
 }
 
 if __name__ == "__main__":
