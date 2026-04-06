@@ -11,8 +11,45 @@ No DB or Docker required — skeleton steps are pure stubs.
 
 import json
 from datetime import datetime
+from unittest.mock import patch
 
 import pytest
+
+# ---------------------------------------------------------------------------
+# Module-level fixture: patch match_category for all skeleton tests.
+#
+# The skeleton tests are designed to run without a database.  Now that
+# cag_match_executor has real logic, we patch match_category so tests remain
+# independent of Docker / PostgreSQL / Gemini API.
+# ---------------------------------------------------------------------------
+
+_MOCK_MATCH_RESULT = None  # populated lazily to avoid import at module load
+
+
+def _get_mock_match_result():
+    global _MOCK_MATCH_RESULT
+    if _MOCK_MATCH_RESULT is None:
+        from app.workflow.cag_matcher import MatchResult
+
+        _MOCK_MATCH_RESULT = MatchResult(
+            category_key="family",
+            confidence_score=0.85,
+            tone="friendly and family-oriented",
+            constraints="Activities must be suitable for children of all ages.",
+            is_fallback=False,
+        )
+    return _MOCK_MATCH_RESULT
+
+
+@pytest.fixture(autouse=True)
+def patch_cag_match(monkeypatch):
+    """Patch match_category so skeleton tests run without a live database."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql://test:test@localhost/test")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(
+        "app.workflow.steps.cag_match.match_category",
+        lambda **kwargs: _get_mock_match_result(),
+    )
 
 # ---------------------------------------------------------------------------
 # Import checks

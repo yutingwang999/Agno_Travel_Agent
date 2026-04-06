@@ -6,7 +6,7 @@ An AI-powered travel itinerary planning service for Australian destinations. The
 
 ## Current Status
 
-**Branch: `feat/intake`** — Step 1 input validation and normalisation complete.
+**Branch: `feat/cag-match`** — Step 2 embedding-based intent classification complete.
 
 | Branch | Scope | Status |
 |--------|-------|--------|
@@ -15,7 +15,7 @@ An AI-powered travel itinerary planning service for Australian destinations. The
 | `feat/db-seed` | Category embeddings, prompt templates, source documents | Done |
 | `feat/workflow-skeleton` | Agno workflow with 6 stub steps, SSE emitter | Done |
 | `feat/intake` | Input validation and normalisation (Step 1) | Done |
-| `feat/cag-match` | Embedding-based intent classification (Step 2) | Pending |
+| `feat/cag-match` | Embedding-based intent classification (Step 2) | Done |
 | `feat/retrieval-decision` | Confidence threshold routing (Step 3) | Pending |
 | `feat/rag-retrieve` | pgvector similarity search (Step 4) | Pending |
 | `feat/generate` | DB-template prompt construction + LLM call (Step 5) | Pending |
@@ -70,7 +70,7 @@ Each SSE event has the form:
 | Database | PostgreSQL 16 + pgvector |
 | ORM / migrations | SQLAlchemy 2 + Alembic |
 | LLM | Gemini 2.0 Flash (`google-generativeai`) |
-| Embeddings | `text-embedding-004` (Google) |
+| Embeddings | `gemini-embedding-001` (Google, 768 dims) |
 | Validation | Pydantic v2 |
 
 ---
@@ -149,7 +149,7 @@ All variables are documented in [.env.example](.env.example).
 | `DATABASE_URL` | Full SQLAlchemy / Alembic DSN |
 | `GEMINI_API_KEY` | Google Gemini API key |
 | `LLM_MODEL` | Gemini model for generation (e.g. `gemini-2.0-flash`) |
-| `EMBEDDING_MODEL` | Embedding model — must match seed and cag_match (e.g. `text-embedding-004`) |
+| `EMBEDDING_MODEL` | Embedding model — must match seed and cag_match (default: `gemini-embedding-001`) |
 | `APP_HOST` | Uvicorn bind host |
 | `APP_PORT` | Uvicorn bind port |
 
@@ -172,17 +172,20 @@ All variables are documented in [.env.example](.env.example).
 │           ├── sse.py                # SSE event builder (build_sse_event, sse_event_to_json)
 │           ├── intake_model.py       # TravelRequest Pydantic model (Step 1 data contract)
 │           ├── travel_workflow.py    # Agno Workflow — 6 steps registered in order
+│           ├── cag_matcher.py        # CAG logic: embed intent → pgvector search → MatchResult
 │           └── steps/
 │               ├── intake.py              # Step 1 — validates + normalises input (TravelRequest)
-│               ├── cag_match.py           # Step 2 stub
+│               ├── cag_match.py           # Step 2 — Gemini embed + cosine match → matched_category
 │               ├── retrieval_decision.py  # Step 3 condition evaluator stub
 │               ├── rag_retrieve.py        # Step 4 stub
 │               ├── generate.py            # Step 5 stub
 │               └── validate_output.py     # Step 6 stub
 ├── tests/
+│   ├── conftest.py              # loads .env so integration tests can read DATABASE_URL etc.
 │   ├── test_db_schema.py        # 16 tests covering the db-schema merge checklist
 │   ├── test_workflow_skeleton.py # 22 tests covering the workflow-skeleton merge checklist
-│   └── test_intake.py           # 22 tests covering the intake merge checklist
+│   ├── test_intake.py           # 22 tests covering the intake merge checklist
+│   └── test_cag_match.py        # 15 unit + 3 integration tests covering the cag-match checklist
 ├── alembic/
 │   ├── env.py               # loads .env, imports models, runs migrations
 │   ├── script.py.mako       # migration file template
@@ -204,6 +207,33 @@ All variables are documented in [.env.example](.env.example).
 ├── Makefile                 # thin wrappers around scripts/dev.py
 └── .env.example             # required environment variables with comments
 ```
+
+---
+
+## Running Tests
+
+Tests are split into two tiers:
+
+**Unit tests** — no database or API key required, run anywhere:
+```bash
+python -m pytest tests/ -m "not integration" -v
+```
+
+**Integration tests** — require Docker (PostgreSQL) and a real `GEMINI_API_KEY` in `.env`:
+```bash
+# 1. start db + apply migrations + seed data
+python scripts/dev.py up
+python scripts/dev.py migrate
+python scripts/dev.py seed
+
+# 2. run integration tests only
+python -m pytest tests/ -m integration -v
+
+# 3. or run everything together
+python -m pytest tests/ -v
+```
+
+`tests/conftest.py` loads `.env` automatically so environment variables do not need to be exported manually before running pytest.
 
 ---
 
