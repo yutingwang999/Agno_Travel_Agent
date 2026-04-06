@@ -145,6 +145,13 @@ def count_rows():
             count = conn.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar()
             print(f"  {table:<30} {count}")
 
+        # Agno-managed knowledge base table (ai schema) — created by PgVector on first seed
+        try:
+            count = conn.execute(text("SELECT COUNT(*) FROM ai.travel_docs")).scalar()
+            print(f"  {'ai.travel_docs':<30} {count}")
+        except Exception:
+            print(f"  {'ai.travel_docs':<30} (not yet created — run: python scripts/dev.py seed)")
+
     print("--- embedding coverage ---")
     with engine.connect() as conn:
         for table in embedded_tables:
@@ -154,6 +161,17 @@ def count_rows():
             ).scalar()
             status = "OK" if null_count == 0 else f"WARNING: {null_count} null vector(s)"
             print(f"  {table:<30} {total - null_count}/{total} have embeddings  [{status}]")
+
+        # Agno knowledge base — check embedding coverage
+        try:
+            total = conn.execute(text("SELECT COUNT(*) FROM ai.travel_docs")).scalar()
+            null_count = conn.execute(
+                text("SELECT COUNT(*) FROM ai.travel_docs WHERE embedding IS NULL")
+            ).scalar()
+            status = "OK" if null_count == 0 else f"WARNING: {null_count} null vector(s)"
+            print(f"  {'ai.travel_docs':<30} {total - null_count}/{total} have embeddings  [{status}]")
+        except Exception:
+            pass
 
 
 def verify_schema():

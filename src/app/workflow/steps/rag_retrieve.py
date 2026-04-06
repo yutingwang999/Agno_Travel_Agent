@@ -129,7 +129,6 @@ def rag_retrieve_executor(step_input: StepInput) -> StepOutput:
             "destination": chunk.destination,
             "title": chunk.title,
             "chunk_text": chunk.chunk_text,
-            "similarity": chunk.similarity,
         }
         for chunk in chunks
     ]
