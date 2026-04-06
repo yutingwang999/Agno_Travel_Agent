@@ -6,7 +6,7 @@ An AI-powered travel itinerary planning service for Australian destinations. The
 
 ## Current Status
 
-**Branch: `feat/workflow-skeleton`** — Agno workflow with 6 stub steps and SSE emitter complete.
+**Branch: `feat/intake`** — Step 1 input validation and normalisation complete.
 
 | Branch | Scope | Status |
 |--------|-------|--------|
@@ -14,7 +14,7 @@ An AI-powered travel itinerary planning service for Australian destinations. The
 | `feat/db-schema` | Alembic migrations, SQLAlchemy models | Done |
 | `feat/db-seed` | Category embeddings, prompt templates, source documents | Done |
 | `feat/workflow-skeleton` | Agno workflow with 6 stub steps, SSE emitter | Done |
-| `feat/intake` | Input validation and normalisation (Step 1) | Pending |
+| `feat/intake` | Input validation and normalisation (Step 1) | Done |
 | `feat/cag-match` | Embedding-based intent classification (Step 2) | Pending |
 | `feat/retrieval-decision` | Confidence threshold routing (Step 3) | Pending |
 | `feat/rag-retrieve` | pgvector similarity search (Step 4) | Pending |
@@ -170,9 +170,10 @@ All variables are documented in [.env.example](.env.example).
 │       │   └── trace_event.py        # trace_events table
 │       └── workflow/
 │           ├── sse.py                # SSE event builder (build_sse_event, sse_event_to_json)
+│           ├── intake_model.py       # TravelRequest Pydantic model (Step 1 data contract)
 │           ├── travel_workflow.py    # Agno Workflow — 6 steps registered in order
 │           └── steps/
-│               ├── intake.py              # Step 1 stub
+│               ├── intake.py              # Step 1 — validates + normalises input (TravelRequest)
 │               ├── cag_match.py           # Step 2 stub
 │               ├── retrieval_decision.py  # Step 3 condition evaluator stub
 │               ├── rag_retrieve.py        # Step 4 stub
@@ -180,7 +181,8 @@ All variables are documented in [.env.example](.env.example).
 │               └── validate_output.py     # Step 6 stub
 ├── tests/
 │   ├── test_db_schema.py        # 16 tests covering the db-schema merge checklist
-│   └── test_workflow_skeleton.py # 22 tests covering the workflow-skeleton merge checklist
+│   ├── test_workflow_skeleton.py # 22 tests covering the workflow-skeleton merge checklist
+│   └── test_intake.py           # 22 tests covering the intake merge checklist
 ├── alembic/
 │   ├── env.py               # loads .env, imports models, runs migrations
 │   ├── script.py.mako       # migration file template
