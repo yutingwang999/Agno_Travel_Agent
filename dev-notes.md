@@ -101,3 +101,5 @@ Section 4 — Why This Order — plain-language explanation of the dependency ch
 ```
 
 ### 4 feature/project-scaffold
+
+### 5 feat/db-schema
