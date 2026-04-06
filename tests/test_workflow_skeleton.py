@@ -115,7 +115,14 @@ def _make_step_input(session_id: str = "test-session"):
 
     return StepInput(
         input="plan a trip to Sydney",
-        additional_data={"session_id": session_id},
+        additional_data={
+            "session_id": session_id,
+            # Required fields for the intake step's TravelRequest validation.
+            "destination": "Sydney",
+            "trip_length": 5,
+            "budget": "moderate",
+            "travel_style": "family",
+        },
     )
 
 
@@ -213,7 +220,13 @@ def test_workflow_run_produces_six_sse_events(capsys):
     session_id = "e2e-test-session"
     result = travel_workflow.run(
         input="plan a 5-day trip to Melbourne",
-        additional_data={"session_id": session_id},
+        additional_data={
+            "session_id": session_id,
+            "destination": "Melbourne",
+            "trip_length": 5,
+            "budget": "moderate",
+            "travel_style": "family",
+        },
     )
 
     # Events from step executors (intake, cag_match, rag_retrieve, generate, validate_output)
@@ -236,7 +249,13 @@ def test_workflow_run_all_events_have_required_fields(capsys):
     session_id = "field-check-session"
     result = travel_workflow.run(
         input="plan a trip to Brisbane",
-        additional_data={"session_id": session_id},
+        additional_data={
+            "session_id": session_id,
+            "destination": "Brisbane",
+            "trip_length": 3,
+            "budget": "budget",
+            "travel_style": "solo",
+        },
     )
 
     executor_events = _collect_sse_events(result.step_results)
@@ -257,7 +276,13 @@ def test_workflow_run_session_id_propagated_to_all_events(capsys):
     session_id = "propagation-test-session"
     result = travel_workflow.run(
         input="plan a trip to Cairns",
-        additional_data={"session_id": session_id},
+        additional_data={
+            "session_id": session_id,
+            "destination": "Cairns",
+            "trip_length": 4,
+            "budget": "luxury",
+            "travel_style": "romantic",
+        },
     )
 
     executor_events = _collect_sse_events(result.step_results)
@@ -277,7 +302,13 @@ def test_workflow_run_all_six_step_names_present(capsys):
 
     result = travel_workflow.run(
         input="plan a trip to Perth",
-        additional_data={"session_id": "step-name-test"},
+        additional_data={
+            "session_id": "step-name-test",
+            "destination": "Perth",
+            "trip_length": 7,
+            "budget": "moderate",
+            "travel_style": "adventure",
+        },
     )
 
     executor_events = _collect_sse_events(result.step_results)
@@ -296,7 +327,13 @@ def test_workflow_run_all_events_status_completed(capsys):
 
     result = travel_workflow.run(
         input="plan a trip to Darwin",
-        additional_data={"session_id": "status-check-session"},
+        additional_data={
+            "session_id": "status-check-session",
+            "destination": "Darwin",
+            "trip_length": 6,
+            "budget": "budget",
+            "travel_style": "backpacker",
+        },
     )
 
     executor_events = _collect_sse_events(result.step_results)
