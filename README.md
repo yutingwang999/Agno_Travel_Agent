@@ -6,13 +6,13 @@ An AI-powered travel itinerary planning service for Australian destinations. The
 
 ## Current Status
 
-**Branch: `feat/db-schema`** — Alembic migrations and SQLAlchemy models complete.
+**Branch: `feat/db-seed`** — Seed script and dev commands in progress.
 
 | Branch | Scope | Status |
 |--------|-------|--------|
 | `feat/project-scaffold` | Dependencies, Docker, directory layout, health endpoint | Done |
 | `feat/db-schema` | Alembic migrations, SQLAlchemy models | Done |
-| `feat/db-seed` | Category embeddings, prompt templates, source documents | Pending |
+| `feat/db-seed` | Category embeddings, prompt templates, source documents | In Progress |
 | `feat/workflow-skeleton` | Agno workflow with 6 stub steps, SSE emitter | Pending |
 | `feat/intake` | Input validation and normalisation (Step 1) | Pending |
 | `feat/cag-match` | Embedding-based intent classification (Step 2) | Pending |
@@ -124,6 +124,8 @@ python scripts/dev.py up             # start PostgreSQL
 python scripts/dev.py down           # stop PostgreSQL
 python scripts/dev.py install        # pip install -e ".[dev]"
 python scripts/dev.py migrate        # alembic upgrade head
+python scripts/dev.py seed           # seed categories, prompt templates, source docs
+python scripts/dev.py count-rows     # print row counts + embedding coverage for seeded tables
 python scripts/dev.py check-health   # GET /health → 200
 python scripts/dev.py test           # pytest
 python scripts/dev.py verify         # up → migrate → uvicorn → health + pytest
@@ -177,7 +179,8 @@ All variables are documented in [.env.example](.env.example).
 │       ├── 0003_create_source_documents.py
 │       └── 0004_create_trace_events.py
 ├── scripts/
-│   └── dev.py               # cross-platform task runner
+│   ├── dev.py               # cross-platform task runner
+│   └── seed.py              # seed itinerary_categories, prompt_templates, source_documents
 ├── docs/
 │   ├── DESIGN.md            # single source of truth for system design
 │   ├── CLAUDE.md            # AI usage guidelines for this repo
