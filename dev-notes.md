@@ -45,6 +45,16 @@ claude api
 
 git(install before)
 
+vscode setting for quick verify:  
+ctrl+shift+p - python:select interpreter - choose env  
+add .vscode/settings.json  
+{
+"python.defaultInterpreterPath": "C:/Users/username/.conda/envs/python31115/python.exe",
+"python.terminal.activateEnvironment": true
+}  
+open terminal, run `conda init powershell` and restart vscode -- quit eventually  
+stay with python path
+
 ### 3 Work steps in docs
 
 Design.md  
@@ -89,3 +99,5 @@ Section 2 — 13 Feature Branches in dependency order:
 
 Section 4 — Why This Order — plain-language explanation of the dependency chain.
 ```
+
+### 4 feature/project-scaffold
