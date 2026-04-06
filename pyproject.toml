@@ -35,3 +35,6 @@ where = ["src"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 pythonpath = ["src"]
+markers = [
+    "integration: tests that require a live PostgreSQL database and Gemini API key",
+]
