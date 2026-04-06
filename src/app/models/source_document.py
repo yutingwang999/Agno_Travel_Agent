@@ -3,7 +3,7 @@ from sqlalchemy import Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from src.app.models.base import Base
+from app.models.base import Base
 
 EMBEDDING_DIMENSIONS = 768
 

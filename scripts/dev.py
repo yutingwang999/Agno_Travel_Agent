@@ -108,6 +108,54 @@ def verify():
     print("--- all checks passed ---")
 
 
+def seed():
+    print("--- running seed script ---")
+    run([sys.executable, "scripts/seed.py"])
+
+
+def count_rows():
+    """Print row counts for all seeded tables."""
+    root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    src_dir = os.path.join(root_dir, "src")
+    if src_dir not in sys.path:
+        sys.path.insert(0, src_dir)
+
+    # Load .env so DATABASE_URL is available without requiring it in the shell
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(os.path.join(root_dir, ".env"))
+    except ImportError:
+        pass
+
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        print("ERROR: DATABASE_URL not set")
+        sys.exit(1)
+
+    from sqlalchemy import create_engine, text
+
+    engine = create_engine(database_url)
+    tables = ["itinerary_categories", "prompt_templates", "source_documents", "trace_events"]
+
+    embedded_tables = ["itinerary_categories", "source_documents"]
+
+    print("--- row counts ---")
+    with engine.connect() as conn:
+        for table in tables:
+            count = conn.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar()
+            print(f"  {table:<30} {count}")
+
+    print("--- embedding coverage ---")
+    with engine.connect() as conn:
+        for table in embedded_tables:
+            total = conn.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar()
+            null_count = conn.execute(
+                text(f"SELECT COUNT(*) FROM {table} WHERE embedding_vector IS NULL")
+            ).scalar()
+            status = "OK" if null_count == 0 else f"WARNING: {null_count} null vector(s)"
+            print(f"  {table:<30} {total - null_count}/{total} have embeddings  [{status}]")
+
+
 def verify_schema():
     """Full db-schema merge checklist: up -> pg_isready -> migrate -> test_db_schema."""
     up()
@@ -133,6 +181,8 @@ COMMANDS = {
     "down": down,
     "install": install,
     "migrate": migrate,
+    "seed": seed,
+    "count-rows": count_rows,
     "check-health": check_health,
     "test": test,
     "verify": verify,

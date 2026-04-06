@@ -1,11 +1,16 @@
 import os
+import sys
 from logging.config import fileConfig
+from pathlib import Path
 
 from alembic import context
 from dotenv import load_dotenv
 from sqlalchemy import engine_from_config, pool
 
 load_dotenv()
+
+# Ensure `src/` is on sys.path so `app.*` imports resolve correctly
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 config = context.config
 
@@ -16,11 +21,11 @@ database_url = os.environ["DATABASE_URL"]
 config.set_main_option("sqlalchemy.url", database_url)
 
 # Import all models so Alembic can detect schema changes
-from src.app.models.base import Base  # noqa: E402
-import src.app.models.itinerary_category  # noqa: E402, F401
-import src.app.models.prompt_template  # noqa: E402, F401
-import src.app.models.source_document  # noqa: E402, F401
-import src.app.models.trace_event  # noqa: E402, F401
+from app.models.base import Base  # noqa: E402
+import app.models.itinerary_category  # noqa: E402, F401
+import app.models.prompt_template  # noqa: E402, F401
+import app.models.source_document  # noqa: E402, F401
+import app.models.trace_event  # noqa: E402, F401
 
 target_metadata = Base.metadata
 
