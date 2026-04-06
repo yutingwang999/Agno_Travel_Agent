@@ -4,7 +4,7 @@ Seed script for the travel agent database.
 Inserts:
   - 3 itinerary_categories  (family, budget, adventure)
   - 2 prompt_templates       (high_confidence_minimal_context, low_confidence_with_retrieval)
-  - 13 source_documents      (Australian destinations and experiences)
+  - 13 source documents into the Agno Knowledge base (travel_docs table via PgVector)
 
 Idempotent — safe to run multiple times; existing rows are skipped, not duplicated.
 
@@ -34,7 +34,7 @@ from sqlalchemy.orm import Session  # noqa: E402
 
 from app.models.itinerary_category import ItineraryCategory  # noqa: E402
 from app.models.prompt_template import PromptTemplate  # noqa: E402
-from app.models.source_document import SourceDocument  # noqa: E402
+from app.workflow.knowledge_base import build_knowledge  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Config
@@ -446,33 +446,29 @@ def seed_prompt_templates(session: Session) -> None:
     session.commit()
 
 
-def seed_source_documents(session: Session) -> None:
-    print("Seeding source_documents...")
+def seed_source_documents() -> None:
+    """Insert source documents into the Agno Knowledge base (travel_docs table).
+
+    Uses Agno's Knowledge.insert() with skip_if_exists=True for idempotency.
+    Agno's PgVector creates and manages the travel_docs table automatically.
+    Destination and category metadata are stored in the document's meta_data
+    field so they are retrievable after search.
+    """
+    print("Seeding knowledge base (travel_docs)...")
+    knowledge = build_knowledge(
+        db_url=DATABASE_URL,
+        api_key=GEMINI_API_KEY,
+        embedding_model=EMBEDDING_MODEL,
+    )
+
     for data in SOURCE_DOCUMENTS:
-        existing = session.scalar(
-            select(SourceDocument).where(
-                SourceDocument.destination == data["destination"],
-                SourceDocument.title == data["title"],
-            )
-        )
-        if existing:
-            print(f"  [skip] title={data['title']!r} already exists")
-            continue
-
-        print(f"  [embed] computing vector for title={data['title']!r}")
-        embedding = compute_embedding(data["chunk_text"])
-
-        doc = SourceDocument(
-            destination=data["destination"],
-            title=data["title"],
-            chunk_text=data["chunk_text"],
-            embedding_vector=embedding,
-            metadata_json=data["metadata_json"],
-        )
-        session.add(doc)
         print(f"  [insert] title={data['title']!r}")
-
-    session.commit()
+        knowledge.insert(
+            name=data["title"],
+            text_content=data["chunk_text"],
+            metadata={"destination": data["destination"], **data["metadata_json"]},
+            skip_if_exists=True,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -486,7 +482,8 @@ def main() -> None:
     with Session(engine) as session:
         seed_itinerary_categories(session)
         seed_prompt_templates(session)
-        seed_source_documents(session)
+
+    seed_source_documents()
 
     print("Seed complete.")
 

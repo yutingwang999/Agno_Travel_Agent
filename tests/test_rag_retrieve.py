@@ -72,8 +72,6 @@ def _make_fake_chunks(count: int = 3):
             destination="Sydney",
             title=f"Chunk {i}",
             chunk_text=f"Some travel text about Sydney #{i}.",
-            similarity=0.95 - i * 0.05,
-            metadata_json={},
         )
         for i in range(count)
     ]
@@ -197,7 +195,7 @@ def test_retrieved_context_respects_top_k_limit():
 
 
 def test_retrieved_context_chunk_fields():
-    """Each item in retrieved_context must have destination, title, chunk_text, similarity."""
+    """Each item in retrieved_context must have destination, title, chunk_text."""
     from app.workflow.steps.rag_retrieve import rag_retrieve_executor
 
     fake_chunks = _make_fake_chunks(2)
@@ -216,7 +214,6 @@ def test_retrieved_context_chunk_fields():
         assert "destination" in item
         assert "title" in item
         assert "chunk_text" in item
-        assert "similarity" in item
 
 
 # ---------------------------------------------------------------------------
@@ -245,12 +242,12 @@ def test_graceful_degradation_on_db_exception():
 
 
 def test_retrieve_documents_returns_empty_list_on_exception():
-    """retrieval_service.retrieve_documents returns [] when embedding or DB fails."""
+    """retrieval_service.retrieve_documents returns [] when build_knowledge or search fails."""
     from app.workflow.retrieval_service import retrieve_documents
 
     with patch(
-        "app.workflow.retrieval_service._compute_embedding",
-        side_effect=ConnectionError("API unreachable"),
+        "app.workflow.retrieval_service.build_knowledge",
+        side_effect=ConnectionError("DB unreachable"),
     ):
         result = retrieve_documents(
             query_text="family trip in Sydney",

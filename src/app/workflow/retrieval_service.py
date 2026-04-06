@@ -1,29 +1,33 @@
-"""Retrieval service: pgvector similarity search on source_documents.
+"""Retrieval service: knowledge-base search via Agno's Knowledge + PgVector.
 
-Embeds the user's travel query using the Gemini embedding API and performs
-a cosine similarity search against ``source_documents.embedding_vector``
-using pgvector.
+Uses Agno's :class:`~agno.knowledge.knowledge.Knowledge` class backed by
+:class:`~agno.vectordb.pgvector.PgVector` and the project's Gemini embedder
+to retrieve the top-k most relevant source document chunks for a travel query.
 
-The same embedding model and dimensionality (768) as the seed script are used
-so that similarity scores are comparable.
+The same Gemini model and dimensionality (768) as the seed script are used so
+that cosine similarity scores are comparable.
 
-Public API:
-    retrieve_documents(query_text, db_url, api_key, embedding_model, top_k) -> list[RetrievedChunk]
+Public API::
+
+    from app.workflow.retrieval_service import RetrievedChunk, retrieve_documents
+
+    chunks = retrieve_documents(
+        query_text="family activities in Sydney",
+        db_url="postgresql://...",
+        api_key="...",
+    )
 """
 
 import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-import google.generativeai as genai
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session
+from agno.knowledge.knowledge import Knowledge
 
-from app.models.source_document import SourceDocument
+from app.workflow.knowledge_base import build_knowledge
 
 logger = logging.getLogger(__name__)
 
-EMBEDDING_DIMENSIONS = 768
 DEFAULT_TOP_K = 5
 
 
@@ -34,20 +38,7 @@ class RetrievedChunk:
     destination: str
     title: str
     chunk_text: str
-    similarity: float
-    metadata_json: dict[str, Any] = field(default_factory=dict)
-
-
-def _compute_embedding(text: str, api_key: str, model: str) -> list[float]:
-    """Return a 768-dimensional embedding for *text* via the Gemini API."""
-    genai.configure(api_key=api_key)
-    result = genai.embed_content(
-        model=f"models/{model}",
-        content=text,
-        task_type="SEMANTIC_SIMILARITY",
-        output_dimensionality=EMBEDDING_DIMENSIONS,
-    )
-    return result["embedding"]
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 def retrieve_documents(
@@ -59,12 +50,14 @@ def retrieve_documents(
 ) -> list[RetrievedChunk]:
     """Retrieve the top-k most relevant source document chunks for *query_text*.
 
-    Embeds *query_text* with the Gemini API, then queries ``source_documents``
-    ordered by cosine distance ascending (closest first).  Returns at most
-    *top_k* results, or fewer when fewer documents exist.
+    Delegates to Agno's :class:`Knowledge` class, which embeds *query_text*
+    with the Gemini API and performs a vector similarity search against the
+    ``travel_docs`` table managed by :class:`~agno.vectordb.pgvector.PgVector`.
 
     On any exception (embedding failure, DB error, etc.) the error is logged
     and an empty list is returned so the workflow can continue without context.
+    Agno's ``Knowledge.search()`` also handles its own internal errors
+    gracefully, returning an empty list on failure.
 
     Args:
         query_text:      Free-text description of what the user is looking for.
@@ -75,12 +68,16 @@ def retrieve_documents(
         top_k:           Maximum number of chunks to return (default 5).
 
     Returns:
-        A list of :class:`RetrievedChunk` instances, ordered by relevance
+        A list of :class:`RetrievedChunk` instances ordered by relevance
         (most similar first).  Empty list on failure or when no documents exist.
     """
     try:
-        query_vector = _compute_embedding(query_text, api_key, embedding_model)
-        return _query_source_documents(query_vector, db_url, top_k)
+        knowledge = build_knowledge(
+            db_url=db_url,
+            api_key=api_key,
+            embedding_model=embedding_model,
+        )
+        return _search_knowledge(knowledge, query_text, top_k)
     except Exception as exc:  # noqa: BLE001
         logger.error(
             "rag_retrieve: failed to retrieve documents — continuing with empty context. "
@@ -90,41 +87,29 @@ def retrieve_documents(
         return []
 
 
-def _query_source_documents(
-    query_vector: list[float],
-    db_url: str,
+def _search_knowledge(
+    knowledge: Knowledge,
+    query_text: str,
     top_k: int,
 ) -> list[RetrievedChunk]:
-    """Execute the pgvector cosine similarity search against source_documents.
+    """Execute the knowledge search and map Agno Documents to RetrievedChunk objects.
 
     Args:
-        query_vector: The 768-dimensional query embedding.
-        db_url:       SQLAlchemy-compatible PostgreSQL connection string.
-        top_k:        Maximum number of rows to return.
+        knowledge:  Configured Agno Knowledge instance.
+        query_text: Free-text query.
+        top_k:      Maximum number of results.
 
     Returns:
-        List of :class:`RetrievedChunk` ordered by cosine similarity descending.
+        List of :class:`RetrievedChunk` objects.
     """
-    engine = create_engine(db_url)
-    with Session(engine) as session:
-        rows = session.execute(
-            select(
-                SourceDocument,
-                (
-                    1 - SourceDocument.embedding_vector.cosine_distance(query_vector)
-                ).label("similarity"),
-            )
-            .order_by(SourceDocument.embedding_vector.cosine_distance(query_vector))
-            .limit(top_k)
-        ).all()
+    docs = knowledge.search(query=query_text, max_results=top_k)
 
     return [
         RetrievedChunk(
-            destination=row.SourceDocument.destination,
-            title=row.SourceDocument.title,
-            chunk_text=row.SourceDocument.chunk_text,
-            similarity=float(row.similarity),
-            metadata_json=row.SourceDocument.metadata_json or {},
+            destination=doc.meta_data.get("destination", ""),
+            title=doc.name or "",
+            chunk_text=doc.content,
+            metadata=dict(doc.meta_data),
         )
-        for row in rows
+        for doc in docs
     ]
