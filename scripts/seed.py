@@ -4,7 +4,7 @@ Seed script for the travel agent database.
 Inserts:
   - 3 itinerary_categories  (family, budget, adventure)
   - 2 prompt_templates       (high_confidence_minimal_context, low_confidence_with_retrieval)
-  - 13 source_documents      (Australian destinations and experiences)
+  - 13 source documents into the Agno Knowledge base (travel_docs table via PgVector)
 
 Idempotent — safe to run multiple times; existing rows are skipped, not duplicated.
 
@@ -28,13 +28,14 @@ from dotenv import load_dotenv  # noqa: E402
 
 load_dotenv(os.path.join(ROOT_DIR, ".env"))
 
-import google.generativeai as genai  # noqa: E402
+from google import genai  # noqa: E402
+from google.genai import types  # noqa: E402
 from sqlalchemy import create_engine, select  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from app.models.itinerary_category import ItineraryCategory  # noqa: E402
 from app.models.prompt_template import PromptTemplate  # noqa: E402
-from app.models.source_document import SourceDocument  # noqa: E402
+from app.workflow.knowledge_base import build_knowledge  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Config
@@ -43,18 +44,20 @@ DATABASE_URL = os.environ["DATABASE_URL"]
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "gemini-embedding-001")
 
-genai.configure(api_key=GEMINI_API_KEY)
+_genai_client = genai.Client(api_key=GEMINI_API_KEY)
 
 
 def compute_embedding(text: str) -> list[float]:
     """Return a 768-dimensional embedding vector for *text* using the Gemini API."""
-    result = genai.embed_content(
+    result = _genai_client.models.embed_content(
         model=f"models/{EMBEDDING_MODEL}",
-        content=text,
-        task_type="SEMANTIC_SIMILARITY",
-        output_dimensionality=768,
+        contents=text,
+        config=types.EmbedContentConfig(
+            task_type="SEMANTIC_SIMILARITY",
+            output_dimensionality=768,
+        ),
     )
-    return result["embedding"]
+    return result.embeddings[0].values
 
 
 # ---------------------------------------------------------------------------
@@ -446,33 +449,29 @@ def seed_prompt_templates(session: Session) -> None:
     session.commit()
 
 
-def seed_source_documents(session: Session) -> None:
-    print("Seeding source_documents...")
+def seed_source_documents() -> None:
+    """Insert source documents into the Agno Knowledge base (travel_docs table).
+
+    Uses Agno's Knowledge.insert() with skip_if_exists=True for idempotency.
+    Agno's PgVector creates and manages the travel_docs table automatically.
+    Destination and category metadata are stored in the document's meta_data
+    field so they are retrievable after search.
+    """
+    print("Seeding knowledge base (travel_docs)...")
+    knowledge = build_knowledge(
+        db_url=DATABASE_URL,
+        api_key=GEMINI_API_KEY,
+        embedding_model=EMBEDDING_MODEL,
+    )
+
     for data in SOURCE_DOCUMENTS:
-        existing = session.scalar(
-            select(SourceDocument).where(
-                SourceDocument.destination == data["destination"],
-                SourceDocument.title == data["title"],
-            )
-        )
-        if existing:
-            print(f"  [skip] title={data['title']!r} already exists")
-            continue
-
-        print(f"  [embed] computing vector for title={data['title']!r}")
-        embedding = compute_embedding(data["chunk_text"])
-
-        doc = SourceDocument(
-            destination=data["destination"],
-            title=data["title"],
-            chunk_text=data["chunk_text"],
-            embedding_vector=embedding,
-            metadata_json=data["metadata_json"],
-        )
-        session.add(doc)
         print(f"  [insert] title={data['title']!r}")
-
-    session.commit()
+        knowledge.insert(
+            name=data["title"],
+            text_content=data["chunk_text"],
+            metadata={"destination": data["destination"], **data["metadata_json"]},
+            skip_if_exists=True,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -486,7 +485,8 @@ def main() -> None:
     with Session(engine) as session:
         seed_itinerary_categories(session)
         seed_prompt_templates(session)
-        seed_source_documents(session)
+
+    seed_source_documents()
 
     print("Seed complete.")
 
