@@ -6,7 +6,7 @@ An AI-powered travel itinerary planning service for Australian destinations. The
 
 ## Current Status
 
-**Branch: `feat/validate-output`** — Step 6 Pydantic output validation and retry logic complete. Workflow is now end-to-end functional.
+**Branch: `feat/fastapi-service`** — `POST /generate` SSE endpoint complete. The full workflow is now reachable over HTTP.
 
 | Branch | Scope | Status |
 |--------|-------|--------|
@@ -20,7 +20,7 @@ An AI-powered travel itinerary planning service for Australian destinations. The
 | `feat/rag-retrieve` | Agno Knowledge + PgVector top-5 retrieval (Step 4) | Done |
 | `feat/generate` | DB-template prompt construction + LLM call (Step 5) | Done |
 | `feat/validate-output` | Pydantic validation + retry logic (Step 6) | Done |
-| `feat/fastapi-service` | `POST /generate` SSE endpoint | Pending |
+| `feat/fastapi-service` | `POST /generate` SSE endpoint | Done |
 | `feat/observability` | `trace_events` writes across all steps | Pending |
 | `feat/testing` | Unit, integration, end-to-end, and golden tests | Pending |
 
@@ -57,6 +57,76 @@ Each SSE event has the form:
   "data": {},
   "error": null
 }
+```
+
+---
+
+## POST /generate Endpoint
+
+The `POST /generate` endpoint is the public entry point for the workflow. It validates the request, runs the Agno workflow, and streams all step events as Server-Sent Events.
+
+### Request
+
+```http
+POST /generate
+Content-Type: application/json
+
+{
+  "destination": "Sydney",
+  "trip_length": 5,
+  "budget": "moderate",
+  "travel_style": "family"
+}
+```
+
+All four fields are required. Missing or invalid fields return **422 Unprocessable Entity** — never a 500.
+
+### Response
+
+```http
+HTTP/1.1 200 OK
+Content-Type: text/event-stream
+
+data: {"session_id": "...", "step": "intake", "status": "completed", ...}
+
+data: {"session_id": "...", "step": "cag_match", "status": "completed", ...}
+
+data: {"session_id": "...", "step": "retrieval_decision", "status": "completed", ...}
+
+data: {"session_id": "...", "step": "generate", "status": "completed", ...}
+
+data: {"session_id": "...", "step": "validate_output", "status": "completed", ...}
+```
+
+- Each `data` line is a JSON-serialised SSE event matching DESIGN.md section 9.
+- `session_id` is generated per request (`uuid4`) and is identical across all events.
+- The `rag_retrieve` event is present only when `confidence_score < 0.78`.
+- Events arrive in workflow order: `intake → cag_match → retrieval_decision → (rag_retrieve) → generate → validate_output`.
+
+### How it works
+
+```
+POST /generate
+  ├── FastAPI validates TravelRequest body  →  422 on bad input
+  ├── generate session_id = uuid4()
+  ├── _run_workflow(session_id, request)
+  │     ├── travel_workflow.run(additional_data={session_id, destination, ...})
+  │     │     stdout captured via contextlib.redirect_stdout to collect
+  │     │     the retrieval_decision evaluator's side-effect print()
+  │     ├── _collect_step_result_events(result.step_results)
+  │     │     └── parses intake, cag_match, (rag_retrieve), generate, validate_output
+  │     ├── parse retrieval_decision event from captured stdout
+  │     └── sort all events by _STEP_ORDER → [0..5]
+  └── EventSourceResponse(event_generator())
+        └── yields {"data": json.dumps(event)} for each event
+```
+
+### Try it
+
+```bash
+curl -N -X POST http://localhost:8000/generate \
+  -H "Content-Type: application/json" \
+  -d '{"destination": "Sydney", "trip_length": 5, "budget": "moderate", "travel_style": "family"}'
 ```
 
 ---
@@ -310,7 +380,7 @@ All variables are documented in [.env.example](.env.example).
 .
 ├── src/
 │   └── app/
-│       ├── main.py          # FastAPI entrypoint (health check only, for now)
+│       ├── main.py          # FastAPI entrypoint — GET /health + POST /generate (SSE)
 │       ├── models/
 │       │   ├── base.py               # SQLAlchemy DeclarativeBase
 │       │   ├── itinerary_category.py # itinerary_categories table + Vector(768)
