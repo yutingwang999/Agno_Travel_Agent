@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import re
+import time
 
 from agno.workflow.types import StepInput, StepOutput
 from google import genai
@@ -27,6 +28,7 @@ from google import genai
 from app.workflow.output_validator import parse_llm_output
 from app.workflow.sse import build_sse_event, sse_event_to_json
 from app.workflow.template_resolver import TemplateNotFoundError, resolve_template
+from app.workflow.trace_logger import write_trace
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +128,8 @@ def validate_output_executor(step_input: StepInput) -> StepOutput:
 
     raw_llm_output: str = _extract_raw_llm_output(step_input)
 
+    start = time.monotonic()
+
     # ------------------------------------------------------------------ #
     # First validation attempt                                             #
     # ------------------------------------------------------------------ #
@@ -140,6 +144,15 @@ def validate_output_executor(step_input: StepInput) -> StepOutput:
                 "itinerary": validated_output.model_dump(),
                 "degraded_mode": False,
             },
+        )
+        latency_ms = (time.monotonic() - start) * 1000
+        write_trace(
+            db_url=os.environ.get("DATABASE_URL", ""),
+            session_id=session_id,
+            step_name="validate_output",
+            status="completed",
+            latency_ms=latency_ms,
+            degraded_mode=False,
         )
         return StepOutput(content=sse_event_to_json(sse_event))
 
@@ -174,6 +187,16 @@ def validate_output_executor(step_input: StepInput) -> StepOutput:
             data={"degraded_mode": True},
             error=f"Validation failed and correction template unavailable: {first_errors}",
         )
+        latency_ms = (time.monotonic() - start) * 1000
+        write_trace(
+            db_url=db_url,
+            session_id=session_id,
+            step_name="validate_output",
+            status="error",
+            latency_ms=latency_ms,
+            degraded_mode=True,
+            error_type="correction_template_unavailable",
+        )
         return StepOutput(content=sse_event_to_json(sse_event))
 
     correction_prompt = _build_correction_prompt(
@@ -201,6 +224,16 @@ def validate_output_executor(step_input: StepInput) -> StepOutput:
                 "degraded_mode": True,
             },
         )
+        latency_ms = (time.monotonic() - start) * 1000
+        write_trace(
+            db_url=db_url,
+            session_id=session_id,
+            step_name="validate_output",
+            status="completed",
+            latency_ms=latency_ms,
+            degraded_mode=True,
+            error_type="validation_retry_succeeded",
+        )
         return StepOutput(content=sse_event_to_json(sse_event))
 
     # ------------------------------------------------------------------ #
@@ -218,5 +251,15 @@ def validate_output_executor(step_input: StepInput) -> StepOutput:
         status="error",
         data={"degraded_mode": True},
         error=f"Validation failed after retry: {retry_errors}",
+    )
+    latency_ms = (time.monotonic() - start) * 1000
+    write_trace(
+        db_url=db_url,
+        session_id=session_id,
+        step_name="validate_output",
+        status="error",
+        latency_ms=latency_ms,
+        degraded_mode=True,
+        error_type="validation_failed_after_retry",
     )
     return StepOutput(content=sse_event_to_json(sse_event))
