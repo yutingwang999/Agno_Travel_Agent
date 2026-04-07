@@ -24,12 +24,14 @@ import json
 import logging
 import os
 import re
+import time
 
 from agno.workflow.types import StepInput, StepOutput
 from google import genai
 
 from app.workflow.sse import build_sse_event, sse_event_to_json
 from app.workflow.template_resolver import TemplateNotFoundError, resolve_template
+from app.workflow.trace_logger import write_trace
 
 logger = logging.getLogger(__name__)
 
@@ -197,6 +199,8 @@ def generate_executor(step_input: StepInput) -> StepOutput:
     api_key: str = os.environ["GEMINI_API_KEY"]
     llm_model: str = os.environ.get("LLM_MODEL", DEFAULT_LLM_MODEL)
 
+    start = time.monotonic()
+
     # Read intake fields — available in additional_data (set by the API layer)
     destination: str = additional_data.get("destination", "")
     trip_length: str = str(additional_data.get("trip_length", ""))
@@ -261,6 +265,17 @@ def generate_executor(step_input: StepInput) -> StepOutput:
             "prompt_template_key": template_key,
             "prompt_template_version": template_version,
         },
+    )
+
+    latency_ms = (time.monotonic() - start) * 1000
+    write_trace(
+        db_url=db_url,
+        session_id=session_id,
+        step_name="generate",
+        status="completed",
+        latency_ms=latency_ms,
+        prompt_template_key=template_key,
+        prompt_template_version=template_version,
     )
 
     return StepOutput(content=sse_event_to_json(sse_event))

@@ -10,10 +10,13 @@ The branch decision is written to the SSE event ``data`` field.
 """
 
 import json
+import os
+import time
 
 from agno.workflow.types import StepInput
 
 from app.workflow.sse import build_sse_event, sse_event_to_json
+from app.workflow.trace_logger import write_trace
 
 RETRIEVAL_CONFIDENCE_THRESHOLD = 0.78
 
@@ -37,7 +40,11 @@ def retrieval_decision_evaluator(step_input: StepInput) -> bool:
         True when retrieval is needed (confidence_score < 0.78).
         False when confidence is high enough to skip retrieval.
     """
-    session_id: str = (step_input.additional_data or {}).get("session_id", "unknown")
+    additional_data: dict = step_input.additional_data or {}
+    session_id: str = additional_data.get("session_id", "unknown")
+    db_url: str = os.environ.get("DATABASE_URL", "")
+
+    start = time.monotonic()
 
     confidence_score = _extract_confidence_score(step_input)
     needs_retrieval = confidence_score < RETRIEVAL_CONFIDENCE_THRESHOLD
@@ -58,6 +65,15 @@ def retrieval_decision_evaluator(step_input: StepInput) -> bool:
     # Side-effect: print the SSE event so it is visible during tests.
     # The FastAPI layer (feat/fastapi-service) will stream these events via SSE.
     print(sse_event_to_json(sse_event))
+
+    latency_ms = (time.monotonic() - start) * 1000
+    write_trace(
+        db_url=db_url,
+        session_id=session_id,
+        step_name="retrieval_decision",
+        status="completed",
+        latency_ms=latency_ms,
+    )
 
     return needs_retrieval
 

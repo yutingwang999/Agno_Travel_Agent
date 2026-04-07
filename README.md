@@ -6,7 +6,7 @@ An AI-powered travel itinerary planning service for Australian destinations. The
 
 ## Current Status
 
-**Branch: `feat/fastapi-service`** — `POST /generate` SSE endpoint complete. The full workflow is now reachable over HTTP.
+**Branch: `feat/observability`** — per-step trace writes to `trace_events` complete across all 6 workflow steps.
 
 | Branch | Scope | Status |
 |--------|-------|--------|
@@ -21,7 +21,7 @@ An AI-powered travel itinerary planning service for Australian destinations. The
 | `feat/generate` | DB-template prompt construction + LLM call (Step 5) | Done |
 | `feat/validate-output` | Pydantic validation + retry logic (Step 6) | Done |
 | `feat/fastapi-service` | `POST /generate` SSE endpoint | Done |
-| `feat/observability` | `trace_events` writes across all steps | Pending |
+| `feat/observability` | `trace_events` writes across all steps | Done |
 | `feat/testing` | Unit, integration, end-to-end, and golden tests | Pending |
 
 ---
@@ -279,6 +279,66 @@ On unrecoverable failure: `"status": "error"`, `"degraded_mode": true`, `"error"
 
 ---
 
+## Observability
+
+Every workflow step writes one row to the `trace_events` table after it completes. This gives a full per-request audit trail without coupling the steps to any streaming or logging infrastructure.
+
+### How it works
+
+```
+write_trace(db_url, session_id, step_name, status, latency_ms, **step_fields)
+  └── creates SQLAlchemy engine → inserts TraceEvent row → commits
+      any DB error is caught and logged — never propagates to the caller
+```
+
+`trace_logger.write_trace` is imported by each step executor and called on every exit path — success, error, and degraded-mode retry.
+
+### trace_events schema
+
+| Column | Type | Steps |
+|--------|------|-------|
+| `session_id` | `String(100)` | all |
+| `step_name` | `String(100)` | all |
+| `status` | `String(50)` | all — `"completed"` or `"error"` |
+| `latency_ms` | `Float` | all — wall-clock duration of the step |
+| `prompt_template_key` | `String(100)` | `generate` only |
+| `prompt_template_version` | `Integer` | `generate` only |
+| `degraded_mode` | `Boolean` | `validate_output` only — `True` when a retry was attempted |
+| `error_type` | `String(200)` | `validate_output` only — short description on failure |
+| `created_at` | `DateTime(tz)` | all — server default |
+
+### Example rows after a full low-confidence run
+
+```
+session_id             step_name            status     latency_ms  prompt_template_key              degraded_mode
+─────────────────────  ───────────────────  ─────────  ──────────  ───────────────────────────────  ─────────────
+abc123…                intake               completed  4.2         null                             null
+abc123…                cag_match            completed  312.0       null                             null
+abc123…                retrieval_decision   completed  0.1         null                             null
+abc123…                rag_retrieve         completed  890.5       null                             null
+abc123…                generate             completed  2341.8      low_confidence_with_retrieval    null
+abc123…                validate_output      completed  12.3        null                             false
+```
+
+### Querying traces
+
+```sql
+-- All steps for a session, in order
+SELECT step_name, status, latency_ms, degraded_mode
+FROM trace_events
+WHERE session_id = 'abc123...'
+ORDER BY created_at;
+
+-- Degraded validate_output runs in the last hour
+SELECT session_id, error_type, latency_ms, created_at
+FROM trace_events
+WHERE step_name = 'validate_output'
+  AND degraded_mode = true
+  AND created_at > now() - interval '1 hour';
+```
+
+---
+
 ## Tech Stack
 
 | Layer | Technology |
@@ -391,6 +451,7 @@ All variables are documented in [.env.example](.env.example).
 │           ├── sse.py                # SSE event builder (build_sse_event, sse_event_to_json)
 │           ├── intake_model.py       # TravelRequest Pydantic model (Step 1 data contract)
 │           ├── travel_workflow.py    # Agno Workflow — 6 steps registered in order
+│           ├── trace_logger.py       # write_trace() — inserts one TraceEvent row per step
 │           ├── cag_matcher.py        # CAG logic: embed intent → pgvector search → MatchResult
 │           ├── gemini_embedder.py    # Agno-compatible Gemini embedder (wraps google-genai)
 │           ├── knowledge_base.py     # Factory: Knowledge + PgVector(travel_docs) + GeminiEmbedder
@@ -413,7 +474,8 @@ All variables are documented in [.env.example](.env.example).
 │   ├── test_retrieval_decision.py # 16 tests covering the retrieval-decision merge checklist
 │   ├── test_rag_retrieve.py     # 17 tests covering the rag-retrieve merge checklist
 │   ├── test_generate.py         # 24 tests covering the generate merge checklist
-│   └── test_validate_output.py  # 26 tests covering the validate-output merge checklist
+│   ├── test_validate_output.py  # 26 tests covering the validate-output merge checklist
+│   └── test_observability.py    # unit + integration tests covering the observability checklist
 ├── alembic/
 │   ├── env.py               # loads .env, imports models, runs migrations
 │   ├── script.py.mako       # migration file template
