@@ -41,6 +41,14 @@ def _get_mock_match_result():
     return _MOCK_MATCH_RESULT
 
 
+_VALID_ITINERARY_JSON = (
+    '{"destination": "Sydney", "trip_length_days": 5, "budget_level": "moderate",'
+    ' "travel_style": "family", "daily_itinerary": [{"day": 1, "morning": "Bondi Beach",'
+    ' "afternoon": "Lunch", "evening": "Dinner", "estimated_cost_aud": 150.0}],'
+    ' "total_estimated_cost_aud": 750.0, "key_tips": ["Book ahead"]}'
+)
+
+
 @pytest.fixture(autouse=True)
 def patch_external_services(monkeypatch):
     """Patch all external service calls so skeleton tests run without a live DB or API."""
@@ -56,7 +64,18 @@ def patch_external_services(monkeypatch):
     )
     monkeypatch.setattr(
         "app.workflow.steps.generate._call_llm",
-        lambda prompt, api_key, model: '{"destination": "Sydney", "trip_length_days": 5}',
+        lambda prompt, api_key, model: _VALID_ITINERARY_JSON,
+    )
+    # validate_output: patch DB and LLM so the step runs without a live connection.
+    # The correction template and retry LLM are only reached when the first validation
+    # fails (e.g. when no generate output is present in the step input).
+    monkeypatch.setattr(
+        "app.workflow.steps.validate_output.resolve_template",
+        lambda template_key, db_url: ("Fix this: {validation_errors}\n{raw_llm_output}", 1),
+    )
+    monkeypatch.setattr(
+        "app.workflow.steps.validate_output._call_llm",
+        lambda prompt, api_key, model: _VALID_ITINERARY_JSON,
     )
 
 # ---------------------------------------------------------------------------

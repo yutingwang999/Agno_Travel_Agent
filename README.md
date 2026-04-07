@@ -6,7 +6,7 @@ An AI-powered travel itinerary planning service for Australian destinations. The
 
 ## Current Status
 
-**Branch: `feat/generate`** — Step 5 DB-driven prompt construction and LLM call complete.
+**Branch: `feat/validate-output`** — Step 6 Pydantic output validation and retry logic complete. Workflow is now end-to-end functional.
 
 | Branch | Scope | Status |
 |--------|-------|--------|
@@ -19,7 +19,7 @@ An AI-powered travel itinerary planning service for Australian destinations. The
 | `feat/retrieval-decision` | Confidence threshold routing (Step 3) | Done |
 | `feat/rag-retrieve` | Agno Knowledge + PgVector top-5 retrieval (Step 4) | Done |
 | `feat/generate` | DB-template prompt construction + LLM call (Step 5) | Done |
-| `feat/validate-output` | Pydantic validation + retry logic (Step 6) | Pending |
+| `feat/validate-output` | Pydantic validation + retry logic (Step 6) | Done |
 | `feat/fastapi-service` | `POST /generate` SSE endpoint | Pending |
 | `feat/observability` | `trace_events` writes across all steps | Pending |
 | `feat/testing` | Unit, integration, end-to-end, and golden tests | Pending |
@@ -83,7 +83,7 @@ rag_retrieve_executor
 
 ### Seeding the knowledge base
 
-`scripts/seed.py` inserts 13 Australian travel documents into the knowledge base using `knowledge.insert()`:
+`scripts/seed.py` inserts itinerary categories, 3 prompt templates (including the correction template for validate_output), and 13 Australian travel documents into the knowledge base using `knowledge.insert()`:
 
 ```bash
 python scripts/dev.py seed
@@ -117,14 +117,15 @@ generate_executor
 
 ### Template selection
 
-Two prompt templates are seeded in `prompt_templates`:
+Three prompt templates are seeded in `prompt_templates`:
 
-| `template_key` | Used when | RAG context injected |
+| `template_key` | Used by | Purpose |
 |---|---|---|
-| `high_confidence_minimal_context` | `confidence_score >= 0.78` | No |
-| `low_confidence_with_retrieval` | `confidence_score < 0.78` | Yes |
+| `high_confidence_minimal_context` | `generate` (confidence ≥ 0.78) | Minimal prompt, no RAG context |
+| `low_confidence_with_retrieval` | `generate` (confidence < 0.78) | RAG-augmented prompt |
+| `validate_output_correction` | `validate_output` (on first failure) | Corrective retry prompt |
 
-Both templates are versioned (`version`, `is_active`) and fetched from the database at runtime — never hardcoded. The resolved `prompt_template_version` is written to the SSE event `data` field for traceability.
+All templates are versioned (`version`, `is_active`) and fetched from the database at runtime — never hardcoded. The resolved `prompt_template_version` is written to the SSE event `data` field for traceability.
 
 ### SSE output
 
@@ -140,6 +141,71 @@ Both templates are versioned (`version`, `is_active`) and fetched from the datab
   }
 }
 ```
+
+---
+
+## Validate Output Step
+
+Step 6 (`validate_output`) parses `raw_llm_output` from the generate step against a Pydantic schema and retries once on failure.
+
+### How it works
+
+```
+validate_output_executor
+  ├── _extract_raw_llm_output(step_input)
+  │     └── reads raw_llm_output from generate SSE event
+  ├── parse_llm_output(raw_text)                        [attempt 1]
+  │     ├── strip markdown fences (```json … ```)
+  │     ├── json.loads(cleaned_text)
+  │     └── ItineraryOutput.model_validate(data)
+  │
+  ├── [success] → emit SSE with itinerary + degraded_mode=False
+  │
+  └── [failure] → retry once:
+        ├── resolve_template("validate_output_correction", db_url)
+        ├── _build_correction_prompt(template, raw_output, errors)
+        ├── _call_llm(correction_prompt, ...)
+        ├── parse_llm_output(retry_output)              [attempt 2]
+        ├── [success] → emit SSE with itinerary + degraded_mode=True
+        └── [failure] → emit SSE status="error" + degraded_mode=True
+                        (no unhandled exception)
+```
+
+### Output schema (`ItineraryOutput`)
+
+```python
+class DailyItineraryItem(BaseModel):
+    day: int
+    morning: str
+    afternoon: str
+    evening: str
+    estimated_cost_aud: float
+
+class ItineraryOutput(BaseModel):
+    destination: str
+    trip_length_days: int
+    budget_level: str
+    travel_style: str
+    daily_itinerary: List[DailyItineraryItem]
+    total_estimated_cost_aud: float
+    key_tips: List[str]
+```
+
+### SSE output
+
+```json
+{
+  "session_id": "...",
+  "step": "validate_output",
+  "status": "completed",
+  "data": {
+    "itinerary": { "destination": "Sydney", "trip_length_days": 5, "..." : "..." },
+    "degraded_mode": false
+  }
+}
+```
+
+On unrecoverable failure: `"status": "error"`, `"degraded_mode": true`, `"error": "Validation failed after retry: ..."`.
 
 ---
 
@@ -260,13 +326,14 @@ All variables are documented in [.env.example](.env.example).
 │           ├── knowledge_base.py     # Factory: Knowledge + PgVector(travel_docs) + GeminiEmbedder
 │           ├── retrieval_service.py  # RAG logic: knowledge.search() → list[RetrievedChunk]
 │           ├── template_resolver.py  # DB lookup: resolve_template(key) → (text, version)
+│           ├── output_validator.py   # ItineraryOutput Pydantic schema + parse_llm_output()
 │           └── steps/
 │               ├── intake.py              # Step 1 — validates + normalises input (TravelRequest)
 │               ├── cag_match.py           # Step 2 — Gemini embed + cosine match → matched_category
 │               ├── retrieval_decision.py  # Step 3 — confidence >= 0.78 → skip RAG, else retrieve
 │               ├── rag_retrieve.py        # Step 4 — Agno Knowledge top-5 retrieval → retrieved_context
 │               ├── generate.py            # Step 5 — DB prompt template + LLM call → raw_llm_output
-│               └── validate_output.py     # Step 6 stub
+│               └── validate_output.py     # Step 6 — Pydantic validation, retry once, structured error
 ├── tests/
 │   ├── conftest.py              # loads .env; redirects Agno logger to stderr
 │   ├── test_db_schema.py        # 16 tests covering the db-schema merge checklist
@@ -275,7 +342,8 @@ All variables are documented in [.env.example](.env.example).
 │   ├── test_cag_match.py        # 15 unit + 3 integration tests covering the cag-match checklist
 │   ├── test_retrieval_decision.py # 16 tests covering the retrieval-decision merge checklist
 │   ├── test_rag_retrieve.py     # 17 tests covering the rag-retrieve merge checklist
-│   └── test_generate.py         # 24 tests covering the generate merge checklist
+│   ├── test_generate.py         # 24 tests covering the generate merge checklist
+│   └── test_validate_output.py  # 26 tests covering the validate-output merge checklist
 ├── alembic/
 │   ├── env.py               # loads .env, imports models, runs migrations
 │   ├── script.py.mako       # migration file template

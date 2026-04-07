@@ -436,6 +436,35 @@ Return ONLY a valid JSON object with this exact structure — no prose, no markd
 }}
 """
 
+CORRECTION_TEMPLATE = """\
+The following JSON output from a travel planner AI does not match the required schema.
+
+Validation errors:
+{validation_errors}
+
+Invalid output:
+{raw_llm_output}
+
+Return ONLY a corrected valid JSON object with this exact structure — no prose, no markdown fences:
+{{
+  "destination": string,
+  "trip_length_days": integer,
+  "budget_level": string,
+  "travel_style": string,
+  "daily_itinerary": [
+    {{
+      "day": integer,
+      "morning": string,
+      "afternoon": string,
+      "evening": string,
+      "estimated_cost_aud": number
+    }}
+  ],
+  "total_estimated_cost_aud": number,
+  "key_tips": [string]
+}}
+"""
+
 PROMPT_TEMPLATES = [
     {
         "template_key": "high_confidence_minimal_context",
@@ -447,6 +476,12 @@ PROMPT_TEMPLATES = [
         "template_key": "low_confidence_with_retrieval",
         "version": 1,
         "template_text": LOW_CONFIDENCE_TEMPLATE,
+        "is_active": True,
+    },
+    {
+        "template_key": "validate_output_correction",
+        "version": 1,
+        "template_text": CORRECTION_TEMPLATE,
         "is_active": True,
     },
 ]
