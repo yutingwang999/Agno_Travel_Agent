@@ -1,11 +1,11 @@
 """CAG matcher: semantic matching of user intent to itinerary categories.
 
-Embeds the user's free-text intent using the Gemini embedding API and performs
-a cosine similarity search against ``itinerary_categories.embedding_vector``
-using pgvector.
+CAG (Cache-Augmented Generation) approach: the full reference dataset is loaded
+from the database into Python memory, then cosine similarity is computed
+in-process using numpy — no pgvector query is issued for the match.
 
-The same embedding model and dimensionality (768) as the seed script are used
-so that similarity scores are comparable.
+This is distinct from RAG, which retrieves dynamically.  Here the reference
+data is *preloaded* into the matching context on every call.
 
 Public API:
     match_category(intent_text, db_url, api_key, embedding_model) -> MatchResult
@@ -13,6 +13,7 @@ Public API:
 
 from dataclasses import dataclass
 
+import numpy as np
 from google import genai
 from google.genai import types
 from sqlalchemy import create_engine, select
@@ -50,6 +51,17 @@ def _compute_embedding(text: str, api_key: str, model: str) -> list[float]:
     return result.embeddings[0].values
 
 
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    """Compute cosine similarity between two embedding vectors."""
+    va = np.array(a, dtype=np.float32)
+    vb = np.array(b, dtype=np.float32)
+    norm_a = np.linalg.norm(va)
+    norm_b = np.linalg.norm(vb)
+    if norm_a == 0.0 or norm_b == 0.0:
+        return 0.0
+    return float(np.dot(va, vb) / (norm_a * norm_b))
+
+
 def match_category(
     intent_text: str,
     db_url: str,
@@ -58,16 +70,17 @@ def match_category(
 ) -> MatchResult:
     """Find the closest itinerary category for *intent_text*.
 
-    Embeds *intent_text*, queries ``itinerary_categories`` by cosine similarity,
-    and returns the best match.  Falls back to ``DEFAULT_CATEGORY_KEY`` when no
-    category exceeds ``MINIMUM_SIMILARITY``.
+    CAG approach: all rows from ``itinerary_categories`` are loaded into Python
+    memory, then cosine similarity is computed in-process using numpy against
+    the embedded query.  No pgvector similarity query is issued — the full
+    reference dataset is preloaded into the matching context.
 
     Args:
         intent_text:     Free-text description of the user's travel intent.
         db_url:          SQLAlchemy-compatible PostgreSQL connection string.
         api_key:         Gemini API key.
         embedding_model: Gemini embedding model name — must match the model used
-                         in ``scripts/seed.py`` so similarity scores are valid.
+                         in ``scripts/seed.py`` so vectors are comparable.
 
     Returns:
         MatchResult with the matched category key, cosine similarity score,
@@ -75,58 +88,62 @@ def match_category(
     """
     query_vector = _compute_embedding(intent_text, api_key, embedding_model)
 
+    # CAG: preload the full reference dataset into Python memory.
     engine = create_engine(db_url)
     with Session(engine) as session:
-        # Order by cosine distance ascending so the closest category comes first.
-        row = session.execute(
-            select(
-                ItineraryCategory,
-                (
-                    1 - ItineraryCategory.embedding_vector.cosine_distance(query_vector)
-                ).label("similarity"),
-            )
-            .order_by(ItineraryCategory.embedding_vector.cosine_distance(query_vector))
-            .limit(1)
-        ).first()
+        categories = list(session.scalars(select(ItineraryCategory)).all())
 
-        if row is None:
-            # No categories exist in the database — return a generic fallback.
-            return MatchResult(
-                category_key=DEFAULT_CATEGORY_KEY,
-                confidence_score=0.0,
-                tone="friendly and helpful",
-                constraints="",
-                is_fallback=True,
-            )
-
-        best_category, best_similarity = row
-        best_similarity = float(best_similarity)
-
-        if best_similarity < MINIMUM_SIMILARITY:
-            # Best match is below the minimum acceptable threshold.
-            # Use the default category but keep the raw score so downstream
-            # steps (retrieval_decision) can still branch on confidence_score.
-            fallback = session.scalar(
-                select(ItineraryCategory).where(
-                    ItineraryCategory.category_key == DEFAULT_CATEGORY_KEY
-                )
-            )
-            if fallback is None:
-                # DEFAULT_CATEGORY_KEY not seeded — use the closest match anyway.
-                fallback = best_category
-
-            return MatchResult(
-                category_key=fallback.category_key,
-                confidence_score=best_similarity,
-                tone=fallback.tone,
-                constraints=fallback.constraints,
-                is_fallback=True,
-            )
-
+    if not categories:
         return MatchResult(
-            category_key=best_category.category_key,
-            confidence_score=best_similarity,
-            tone=best_category.tone,
-            constraints=best_category.constraints,
-            is_fallback=False,
+            category_key=DEFAULT_CATEGORY_KEY,
+            confidence_score=0.0,
+            tone="friendly and helpful",
+            constraints="",
+            is_fallback=True,
         )
+
+    # Compute cosine similarity in-process against every loaded category.
+    best_category: ItineraryCategory | None = None
+    best_similarity: float = -1.0
+
+    for category in categories:
+        if category.embedding_vector is None:
+            continue
+        sim = _cosine_similarity(query_vector, category.embedding_vector)
+        if sim > best_similarity:
+            best_similarity = sim
+            best_category = category
+
+    if best_category is None:
+        # All rows had null embeddings — return a generic fallback.
+        return MatchResult(
+            category_key=DEFAULT_CATEGORY_KEY,
+            confidence_score=0.0,
+            tone="friendly and helpful",
+            constraints="",
+            is_fallback=True,
+        )
+
+    if best_similarity < MINIMUM_SIMILARITY:
+        # Best match is below the minimum acceptable threshold.
+        # Use the default category but keep the raw score so downstream
+        # steps (retrieval_decision) can still branch on confidence_score.
+        fallback = next(
+            (c for c in categories if c.category_key == DEFAULT_CATEGORY_KEY),
+            best_category,
+        )
+        return MatchResult(
+            category_key=fallback.category_key,
+            confidence_score=best_similarity,
+            tone=fallback.tone,
+            constraints=fallback.constraints,
+            is_fallback=True,
+        )
+
+    return MatchResult(
+        category_key=best_category.category_key,
+        confidence_score=best_similarity,
+        tone=best_category.tone,
+        constraints=best_category.constraints,
+        is_fallback=False,
+    )
