@@ -6,7 +6,7 @@ An AI-powered travel itinerary planning service for Australian destinations. The
 
 ## Current Status
 
-**Branch: `feat/rag-retrieve`** — Step 4 knowledge-base retrieval via Agno Knowledge + PgVector complete.
+**Branch: `feat/generate`** — Step 5 DB-driven prompt construction and LLM call complete.
 
 | Branch | Scope | Status |
 |--------|-------|--------|
@@ -18,7 +18,7 @@ An AI-powered travel itinerary planning service for Australian destinations. The
 | `feat/cag-match` | Embedding-based intent classification (Step 2) | Done |
 | `feat/retrieval-decision` | Confidence threshold routing (Step 3) | Done |
 | `feat/rag-retrieve` | Agno Knowledge + PgVector top-5 retrieval (Step 4) | Done |
-| `feat/generate` | DB-template prompt construction + LLM call (Step 5) | Pending |
+| `feat/generate` | DB-template prompt construction + LLM call (Step 5) | Done |
 | `feat/validate-output` | Pydantic validation + retry logic (Step 6) | Pending |
 | `feat/fastapi-service` | `POST /generate` SSE endpoint | Pending |
 | `feat/observability` | `trace_events` writes across all steps | Pending |
@@ -90,6 +90,56 @@ python scripts/dev.py seed
 ```
 
 Documents store `destination` and category tags in `meta_data` so they are accessible after retrieval.
+
+---
+
+## Generate Step
+
+Step 5 (`generate`) resolves the active prompt template from the database and calls the Gemini LLM.
+
+### How it works
+
+```
+generate_executor
+  ├── reads upstream state:
+  │     intake       → destination, trip_length, budget, travel_style
+  │     cag_match    → matched_category, confidence_score, tone, constraints
+  │     rag_retrieve → retrieved_context (empty string if step was skipped)
+  ├── selects template key:
+  │     confidence_score >= 0.78  →  high_confidence_minimal_context
+  │     confidence_score <  0.78  →  low_confidence_with_retrieval
+  ├── template_resolver.resolve_template(template_key, db_url)
+  │     └── queries prompt_templates WHERE template_key=? AND is_active=true
+  ├── _format_template(template_text, variables)
+  │     └── regex substitution — safely handles literal { } in the JSON schema example
+  └── _call_llm(prompt, api_key, model)  →  raw_llm_output
+```
+
+### Template selection
+
+Two prompt templates are seeded in `prompt_templates`:
+
+| `template_key` | Used when | RAG context injected |
+|---|---|---|
+| `high_confidence_minimal_context` | `confidence_score >= 0.78` | No |
+| `low_confidence_with_retrieval` | `confidence_score < 0.78` | Yes |
+
+Both templates are versioned (`version`, `is_active`) and fetched from the database at runtime — never hardcoded. The resolved `prompt_template_version` is written to the SSE event `data` field for traceability.
+
+### SSE output
+
+```json
+{
+  "session_id": "...",
+  "step": "generate",
+  "status": "completed",
+  "data": {
+    "raw_llm_output": "{ ... }",
+    "prompt_template_key": "high_confidence_minimal_context",
+    "prompt_template_version": 1
+  }
+}
+```
 
 ---
 
@@ -209,12 +259,13 @@ All variables are documented in [.env.example](.env.example).
 │           ├── gemini_embedder.py    # Agno-compatible Gemini embedder (wraps google-genai)
 │           ├── knowledge_base.py     # Factory: Knowledge + PgVector(travel_docs) + GeminiEmbedder
 │           ├── retrieval_service.py  # RAG logic: knowledge.search() → list[RetrievedChunk]
+│           ├── template_resolver.py  # DB lookup: resolve_template(key) → (text, version)
 │           └── steps/
 │               ├── intake.py              # Step 1 — validates + normalises input (TravelRequest)
 │               ├── cag_match.py           # Step 2 — Gemini embed + cosine match → matched_category
 │               ├── retrieval_decision.py  # Step 3 — confidence >= 0.78 → skip RAG, else retrieve
 │               ├── rag_retrieve.py        # Step 4 — Agno Knowledge top-5 retrieval → retrieved_context
-│               ├── generate.py            # Step 5 stub
+│               ├── generate.py            # Step 5 — DB prompt template + LLM call → raw_llm_output
 │               └── validate_output.py     # Step 6 stub
 ├── tests/
 │   ├── conftest.py              # loads .env; redirects Agno logger to stderr
@@ -223,7 +274,8 @@ All variables are documented in [.env.example](.env.example).
 │   ├── test_intake.py           # 22 tests covering the intake merge checklist
 │   ├── test_cag_match.py        # 15 unit + 3 integration tests covering the cag-match checklist
 │   ├── test_retrieval_decision.py # 16 tests covering the retrieval-decision merge checklist
-│   └── test_rag_retrieve.py     # 17 tests covering the rag-retrieve merge checklist
+│   ├── test_rag_retrieve.py     # 17 tests covering the rag-retrieve merge checklist
+│   └── test_generate.py         # 24 tests covering the generate merge checklist
 ├── alembic/
 │   ├── env.py               # loads .env, imports models, runs migrations
 │   ├── script.py.mako       # migration file template
