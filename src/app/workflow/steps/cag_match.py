@@ -17,11 +17,13 @@ similarity threshold defined in :mod:`app.workflow.cag_matcher`.
 """
 
 import os
+import time
 
 from agno.workflow.types import StepInput, StepOutput
 
 from app.workflow.cag_matcher import match_category
 from app.workflow.sse import build_sse_event, sse_event_to_json
+from app.workflow.trace_logger import write_trace
 
 
 def _build_intent_text(additional_data: dict) -> str:
@@ -50,6 +52,8 @@ def cag_match_executor(step_input: StepInput) -> StepOutput:
     api_key: str = os.environ["GEMINI_API_KEY"]
     embedding_model: str = os.environ.get("EMBEDDING_MODEL", "gemini-embedding-001")
 
+    start = time.monotonic()
+
     intent_text = _build_intent_text(additional_data)
 
     result = match_category(
@@ -70,6 +74,15 @@ def cag_match_executor(step_input: StepInput) -> StepOutput:
             "constraints": result.constraints,
             "is_fallback": result.is_fallback,
         },
+    )
+
+    latency_ms = (time.monotonic() - start) * 1000
+    write_trace(
+        db_url=db_url,
+        session_id=session_id,
+        step_name="cag_match",
+        status="completed",
+        latency_ms=latency_ms,
     )
 
     return StepOutput(content=sse_event_to_json(sse_event))

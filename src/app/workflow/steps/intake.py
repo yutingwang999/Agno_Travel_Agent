@@ -11,10 +11,14 @@ Raises:
         The executor does NOT catch this exception.
 """
 
+import os
+import time
+
 from agno.workflow.types import StepInput, StepOutput
 
 from app.workflow.intake_model import TravelRequest
 from app.workflow.sse import build_sse_event, sse_event_to_json
+from app.workflow.trace_logger import write_trace
 
 
 def intake_executor(step_input: StepInput) -> StepOutput:
@@ -32,6 +36,9 @@ def intake_executor(step_input: StepInput) -> StepOutput:
     """
     additional_data: dict = step_input.additional_data or {}
     session_id: str = additional_data.get("session_id", "unknown")
+    db_url: str = os.environ.get("DATABASE_URL", "")
+
+    start = time.monotonic()
 
     # Validate and normalise — raises ValidationError (→ 422) on bad input.
     travel_request = TravelRequest.model_validate(additional_data)
@@ -48,6 +55,15 @@ def intake_executor(step_input: StepInput) -> StepOutput:
         step="intake",
         status="completed",
         data=normalised_fields,
+    )
+
+    latency_ms = (time.monotonic() - start) * 1000
+    write_trace(
+        db_url=db_url,
+        session_id=session_id,
+        step_name="intake",
+        status="completed",
+        latency_ms=latency_ms,
     )
 
     return StepOutput(content=sse_event_to_json(sse_event))
