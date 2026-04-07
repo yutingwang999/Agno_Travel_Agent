@@ -17,7 +17,7 @@ python
    pydantic python-dotenv pytest httpx sse-starlette
 4. anaconda prompt  
    conda activate python31115  
-   python -m pip install agno google-generativeai  
+   python -m pip install agno google-genai  
    reference detail python environment in file
 5. check conda version  
    conda info --envs

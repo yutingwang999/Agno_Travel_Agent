@@ -6,7 +6,7 @@ An AI-powered travel itinerary planning service for Australian destinations. The
 
 ## Current Status
 
-**Branch: `feat/retrieval-decision`** — Step 3 confidence threshold routing complete.
+**Branch: `feat/rag-retrieve`** — Step 4 knowledge-base retrieval via Agno Knowledge + PgVector complete.
 
 | Branch | Scope | Status |
 |--------|-------|--------|
@@ -17,7 +17,7 @@ An AI-powered travel itinerary planning service for Australian destinations. The
 | `feat/intake` | Input validation and normalisation (Step 1) | Done |
 | `feat/cag-match` | Embedding-based intent classification (Step 2) | Done |
 | `feat/retrieval-decision` | Confidence threshold routing (Step 3) | Done |
-| `feat/rag-retrieve` | pgvector similarity search (Step 4) | Pending |
+| `feat/rag-retrieve` | Agno Knowledge + PgVector top-5 retrieval (Step 4) | Done |
 | `feat/generate` | DB-template prompt construction + LLM call (Step 5) | Pending |
 | `feat/validate-output` | Pydantic validation + retry logic (Step 6) | Pending |
 | `feat/fastapi-service` | `POST /generate` SSE endpoint | Pending |
@@ -61,15 +61,48 @@ Each SSE event has the form:
 
 ---
 
+## RAG Knowledge Base
+
+Step 4 (`rag_retrieve`) uses **Agno's built-in `Knowledge` + `PgVector`** rather than raw SQL, keeping retrieval logic within the Agno framework.
+
+### How it works
+
+```
+rag_retrieve_executor
+  └── retrieval_service.retrieve_documents(query_text, db_url, api_key)
+        └── knowledge_base.build_knowledge(db_url, api_key)
+              └── Knowledge(vector_db=PgVector(table_name="travel_docs", embedder=GeminiEmbedder))
+                    └── knowledge.search(query, max_results=5)  →  List[Document]
+```
+
+- **Table**: `travel_docs` in the `ai` schema — created and managed automatically by Agno's `PgVector`. Separate from the `source_documents` Alembic-managed table.
+- **Embedder**: `GeminiEmbedder` — a custom Agno-compatible wrapper around `google-genai` using `gemini-embedding-001` (768 dims, `SEMANTIC_SIMILARITY`), matching the model used for CAG and seed embeddings.
+- **Search type**: vector (cosine distance).
+- **Top-k**: 5 chunks by default.
+- **Graceful degradation**: any exception in embedding or search is caught and logged; the step always completes and emits an SSE event, returning an empty `retrieved_context` list on failure.
+
+### Seeding the knowledge base
+
+`scripts/seed.py` inserts 13 Australian travel documents into the knowledge base using `knowledge.insert()`:
+
+```bash
+python scripts/dev.py seed
+```
+
+Documents store `destination` and category tags in `meta_data` so they are accessible after retrieval.
+
+---
+
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
 | API | FastAPI + sse-starlette |
 | Workflow | Agno (`Step`, `Condition`) |
+| Knowledge base | Agno `Knowledge` + `PgVector` (`travel_docs` table) |
 | Database | PostgreSQL 16 + pgvector |
 | ORM / migrations | SQLAlchemy 2 + Alembic |
-| LLM | Gemini 2.0 Flash (`google-generativeai`) |
+| LLM | Gemini 2.0 Flash (`google-genai`) |
 | Embeddings | `gemini-embedding-001` (Google, 768 dims) |
 | Validation | Pydantic v2 |
 
@@ -173,20 +206,24 @@ All variables are documented in [.env.example](.env.example).
 │           ├── intake_model.py       # TravelRequest Pydantic model (Step 1 data contract)
 │           ├── travel_workflow.py    # Agno Workflow — 6 steps registered in order
 │           ├── cag_matcher.py        # CAG logic: embed intent → pgvector search → MatchResult
+│           ├── gemini_embedder.py    # Agno-compatible Gemini embedder (wraps google-genai)
+│           ├── knowledge_base.py     # Factory: Knowledge + PgVector(travel_docs) + GeminiEmbedder
+│           ├── retrieval_service.py  # RAG logic: knowledge.search() → list[RetrievedChunk]
 │           └── steps/
 │               ├── intake.py              # Step 1 — validates + normalises input (TravelRequest)
 │               ├── cag_match.py           # Step 2 — Gemini embed + cosine match → matched_category
 │               ├── retrieval_decision.py  # Step 3 — confidence >= 0.78 → skip RAG, else retrieve
-│               ├── rag_retrieve.py        # Step 4 stub
+│               ├── rag_retrieve.py        # Step 4 — Agno Knowledge top-5 retrieval → retrieved_context
 │               ├── generate.py            # Step 5 stub
 │               └── validate_output.py     # Step 6 stub
 ├── tests/
-│   ├── conftest.py              # loads .env so integration tests can read DATABASE_URL etc.
+│   ├── conftest.py              # loads .env; redirects Agno logger to stderr
 │   ├── test_db_schema.py        # 16 tests covering the db-schema merge checklist
 │   ├── test_workflow_skeleton.py # 22 tests covering the workflow-skeleton merge checklist
 │   ├── test_intake.py           # 22 tests covering the intake merge checklist
 │   ├── test_cag_match.py        # 15 unit + 3 integration tests covering the cag-match checklist
-│   └── test_retrieval_decision.py # 16 tests covering the retrieval-decision merge checklist
+│   ├── test_retrieval_decision.py # 16 tests covering the retrieval-decision merge checklist
+│   └── test_rag_retrieve.py     # 17 tests covering the rag-retrieve merge checklist
 ├── alembic/
 │   ├── env.py               # loads .env, imports models, runs migrations
 │   ├── script.py.mako       # migration file template
