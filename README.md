@@ -76,7 +76,7 @@ rag_retrieve_executor
 ```
 
 - **Table**: `travel_docs` in the `ai` schema — created and managed automatically by Agno's `PgVector`. Separate from the `source_documents` Alembic-managed table.
-- **Embedder**: `GeminiEmbedder` — a custom Agno-compatible wrapper around `google-generativeai` using `gemini-embedding-001` (768 dims, `SEMANTIC_SIMILARITY`), matching the model used for CAG and seed embeddings.
+- **Embedder**: `GeminiEmbedder` — a custom Agno-compatible wrapper around `google-genai` using `gemini-embedding-001` (768 dims, `SEMANTIC_SIMILARITY`), matching the model used for CAG and seed embeddings.
 - **Search type**: vector (cosine distance).
 - **Top-k**: 5 chunks by default.
 - **Graceful degradation**: any exception in embedding or search is caught and logged; the step always completes and emits an SSE event, returning an empty `retrieved_context` list on failure.
@@ -102,7 +102,7 @@ Documents store `destination` and category tags in `meta_data` so they are acces
 | Knowledge base | Agno `Knowledge` + `PgVector` (`travel_docs` table) |
 | Database | PostgreSQL 16 + pgvector |
 | ORM / migrations | SQLAlchemy 2 + Alembic |
-| LLM | Gemini 2.0 Flash (`google-generativeai`) |
+| LLM | Gemini 2.0 Flash (`google-genai`) |
 | Embeddings | `gemini-embedding-001` (Google, 768 dims) |
 | Validation | Pydantic v2 |
 
@@ -206,7 +206,7 @@ All variables are documented in [.env.example](.env.example).
 │           ├── intake_model.py       # TravelRequest Pydantic model (Step 1 data contract)
 │           ├── travel_workflow.py    # Agno Workflow — 6 steps registered in order
 │           ├── cag_matcher.py        # CAG logic: embed intent → pgvector search → MatchResult
-│           ├── gemini_embedder.py    # Agno-compatible Gemini embedder (wraps google-generativeai)
+│           ├── gemini_embedder.py    # Agno-compatible Gemini embedder (wraps google-genai)
 │           ├── knowledge_base.py     # Factory: Knowledge + PgVector(travel_docs) + GeminiEmbedder
 │           ├── retrieval_service.py  # RAG logic: knowledge.search() → list[RetrievedChunk]
 │           └── steps/

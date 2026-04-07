@@ -38,4 +38,4 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("itinerary_categories")
-    op.execute("DROP EXTENSION IF EXISTS vector")
+    op.execute("DROP EXTENSION IF EXISTS vector CASCADE")

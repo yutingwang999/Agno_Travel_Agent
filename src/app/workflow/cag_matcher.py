@@ -13,7 +13,8 @@ Public API:
 
 from dataclasses import dataclass
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
@@ -37,14 +38,16 @@ class MatchResult:
 
 def _compute_embedding(text: str, api_key: str, model: str) -> list[float]:
     """Return a 768-dimensional embedding for *text* via the Gemini API."""
-    genai.configure(api_key=api_key)
-    result = genai.embed_content(
+    client = genai.Client(api_key=api_key)
+    result = client.models.embed_content(
         model=f"models/{model}",
-        content=text,
-        task_type="SEMANTIC_SIMILARITY",
-        output_dimensionality=EMBEDDING_DIMENSIONS,
+        contents=text,
+        config=types.EmbedContentConfig(
+            task_type="SEMANTIC_SIMILARITY",
+            output_dimensionality=EMBEDDING_DIMENSIONS,
+        ),
     )
-    return result["embedding"]
+    return result.embeddings[0].values
 
 
 def match_category(

@@ -1,4 +1,4 @@
-"""Agno-compatible Gemini embedder wrapping google-generativeai.
+"""Agno-compatible Gemini embedder wrapping google-genai.
 
 Implements the :class:`agno.knowledge.embedder.base.Embedder` interface so that
 Agno's :class:`agno.vectordb.pgvector.PgVector` can embed documents and queries
@@ -16,7 +16,8 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from agno.knowledge.embedder.base import Embedder
 
 EMBEDDING_DIMENSIONS = 768
@@ -41,8 +42,7 @@ class GeminiEmbedder(Embedder):
     dimensions: int = EMBEDDING_DIMENSIONS
 
     def __post_init__(self) -> None:
-        if self.api_key:
-            genai.configure(api_key=self.api_key)
+        self._client = genai.Client(api_key=self.api_key)
 
     def get_embedding(self, text: str) -> List[float]:
         """Return a 768-dimensional embedding for *text* via the Gemini API.
@@ -53,13 +53,15 @@ class GeminiEmbedder(Embedder):
         Returns:
             A list of 768 floats representing the embedding vector.
         """
-        result = genai.embed_content(
+        result = self._client.models.embed_content(
             model=f"models/{self.model}",
-            content=text,
-            task_type="SEMANTIC_SIMILARITY",
-            output_dimensionality=self.dimensions,
+            contents=text,
+            config=types.EmbedContentConfig(
+                task_type="SEMANTIC_SIMILARITY",
+                output_dimensionality=self.dimensions,
+            ),
         )
-        return result["embedding"]
+        return result.embeddings[0].values
 
     def get_embedding_and_usage(self, text: str) -> Tuple[List[float], Optional[Dict]]:
         """Return embedding and usage info (usage is not exposed by Gemini API here).
