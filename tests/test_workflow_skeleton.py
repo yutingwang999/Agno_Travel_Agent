@@ -42,13 +42,21 @@ def _get_mock_match_result():
 
 
 @pytest.fixture(autouse=True)
-def patch_cag_match(monkeypatch):
-    """Patch match_category so skeleton tests run without a live database."""
+def patch_external_services(monkeypatch):
+    """Patch all external service calls so skeleton tests run without a live DB or API."""
     monkeypatch.setenv("DATABASE_URL", "postgresql://test:test@localhost/test")
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     monkeypatch.setattr(
         "app.workflow.steps.cag_match.match_category",
         lambda **kwargs: _get_mock_match_result(),
+    )
+    monkeypatch.setattr(
+        "app.workflow.steps.generate.resolve_template",
+        lambda template_key, db_url: ("Plan a trip to {destination}.", 1),
+    )
+    monkeypatch.setattr(
+        "app.workflow.steps.generate._call_llm",
+        lambda prompt, api_key, model: '{"destination": "Sydney", "trip_length_days": 5}',
     )
 
 # ---------------------------------------------------------------------------
