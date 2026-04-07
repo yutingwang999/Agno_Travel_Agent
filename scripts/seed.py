@@ -28,7 +28,8 @@ from dotenv import load_dotenv  # noqa: E402
 
 load_dotenv(os.path.join(ROOT_DIR, ".env"))
 
-import google.generativeai as genai  # noqa: E402
+from google import genai  # noqa: E402
+from google.genai import types  # noqa: E402
 from sqlalchemy import create_engine, select  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
@@ -43,18 +44,20 @@ DATABASE_URL = os.environ["DATABASE_URL"]
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "gemini-embedding-001")
 
-genai.configure(api_key=GEMINI_API_KEY)
+_genai_client = genai.Client(api_key=GEMINI_API_KEY)
 
 
 def compute_embedding(text: str) -> list[float]:
     """Return a 768-dimensional embedding vector for *text* using the Gemini API."""
-    result = genai.embed_content(
+    result = _genai_client.models.embed_content(
         model=f"models/{EMBEDDING_MODEL}",
-        content=text,
-        task_type="SEMANTIC_SIMILARITY",
-        output_dimensionality=768,
+        contents=text,
+        config=types.EmbedContentConfig(
+            task_type="SEMANTIC_SIMILARITY",
+            output_dimensionality=768,
+        ),
     )
-    return result["embedding"]
+    return result.embeddings[0].values
 
 
 # ---------------------------------------------------------------------------
