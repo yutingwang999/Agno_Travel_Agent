@@ -221,7 +221,7 @@ Determines whether RAG is needed.
 
 Threshold:
 
-- default = 0.78
+- default = 0.85
 
 Rationale:  
 This threshold balances retrieval cost with relevance quality.

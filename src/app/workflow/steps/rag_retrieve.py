@@ -1,7 +1,7 @@
 """Step 4: rag_retrieve — retrieves top-k relevant source document chunks.
 
 Executed only when ``retrieval_decision`` routes to the retrieval path
-(confidence_score < 0.78).
+(confidence_score < 0.85).
 
 Embeds the user's travel query using the same Gemini model as the seed
 script and performs a cosine similarity search against
