@@ -4,29 +4,6 @@ An AI-powered travel itinerary planning service for Australian destinations. The
 
 ---
 
-## Current Status
-
-**Branch: `feat/ui`** — browser UI with SSE step panels, trace viewer, and golden preset buttons. Also adds `GET /traces/{session_id}` endpoint.
-
-| Branch                    | Scope                                                       | Status |
-| ------------------------- | ----------------------------------------------------------- | ------ |
-| `feat/project-scaffold`   | Dependencies, Docker, directory layout, health endpoint     | Done   |
-| `feat/db-schema`          | Alembic migrations, SQLAlchemy models                       | Done   |
-| `feat/db-seed`            | Category embeddings, prompt templates, source documents     | Done   |
-| `feat/workflow-skeleton`  | Agno workflow with 6 stub steps, SSE emitter                | Done   |
-| `feat/intake`             | Input validation and normalisation (Step 1)                 | Done   |
-| `feat/cag-match`          | Embedding-based intent classification (Step 2)              | Done   |
-| `feat/retrieval-decision` | Confidence threshold routing (Step 3)                       | Done   |
-| `feat/rag-retrieve`       | Agno Knowledge + PgVector top-5 retrieval (Step 4)          | Done   |
-| `feat/generate`           | DB-template prompt construction + LLM call (Step 5)         | Done   |
-| `feat/validate-output`    | Pydantic validation + retry logic (Step 6)                  | Done   |
-| `feat/fastapi-service`    | `POST /generate` SSE endpoint                               | Done   |
-| `feat/observability`      | `trace_events` writes across all steps                      | Done   |
-| `feat/testing`            | Unit, integration, end-to-end, and golden tests             | Done   |
-| `feat/ui`                 | Browser UI, `GET /traces/{session_id}`, static file serving | Done   |
-
----
-
 ## Architecture
 
 ```
@@ -60,6 +37,176 @@ Each SSE event has the form:
   "error": null
 }
 ```
+
+---
+
+## Tech Stack
+
+| Layer            | Technology                                          |
+| ---------------- | --------------------------------------------------- |
+| API              | FastAPI + sse-starlette                             |
+| Workflow         | Agno (`Step`, `Condition`)                          |
+| Knowledge base   | Agno `Knowledge` + `PgVector` (`travel_docs` table) |
+| Database         | PostgreSQL 16 + pgvector                            |
+| ORM / migrations | SQLAlchemy 2 + Alembic                              |
+| LLM              | Gemini 2.0 Flash (`google-genai`)                   |
+| Embeddings       | `gemini-embedding-001` (Google, 768 dims)           |
+| Validation       | Pydantic v2                                         |
+
+---
+
+## Prerequisites
+
+- Python 3.11+
+- Docker Desktop
+
+---
+
+## Setup
+
+**1. Clone and copy env file**
+
+```bash
+git clone <repo-url>
+cd Agno_Travel_Agent
+cp .env.example .env
+# fill in GEMINI_API_KEY in .env
+```
+
+**2. Install dependencies**
+
+```bash
+python scripts/dev.py install
+```
+
+**3. Start PostgreSQL**
+
+```bash
+python scripts/dev.py up
+```
+
+**4. Apply migrations**
+
+```bash
+python scripts/dev.py migrate
+```
+
+**5. Seed the database**
+
+```bash
+python scripts/dev.py seed
+```
+
+**6. Start the app**
+
+```bash
+PYTHONPATH=src uvicorn app.main:app --reload   # macOS / Linux
+$env:PYTHONPATH="src"; uvicorn app.main:app --reload  # Windows PowerShell
+```
+
+---
+
+## Environment Variables
+
+All variables are documented in [.env.example](.env.example).
+
+| Variable            | Purpose                                                                           |
+| ------------------- | --------------------------------------------------------------------------------- |
+| `POSTGRES_USER`     | PostgreSQL username                                                               |
+| `POSTGRES_PASSWORD` | PostgreSQL password                                                               |
+| `POSTGRES_DB`       | Database name                                                                     |
+| `POSTGRES_PORT`     | Host port to expose (default `5432`)                                              |
+| `DATABASE_URL`      | Full SQLAlchemy / Alembic DSN                                                     |
+| `GEMINI_API_KEY`    | Google Gemini API key                                                             |
+| `LLM_MODEL`         | Gemini model for generation (e.g. `gemini-2.0-flash`)                             |
+| `EMBEDDING_MODEL`   | Embedding model — must match seed and cag_match (default: `gemini-embedding-001`) |
+| `APP_HOST`          | Uvicorn bind host                                                                 |
+| `APP_PORT`          | Uvicorn bind port                                                                 |
+
+---
+
+## Dev Commands
+
+All commands work on Windows and Unix via the Python task runner:
+
+```bash
+python scripts/dev.py up             # start PostgreSQL
+python scripts/dev.py down           # stop PostgreSQL
+python scripts/dev.py install        # pip install -e ".[dev]"
+python scripts/dev.py migrate        # alembic upgrade head
+python scripts/dev.py seed           # seed categories, prompt templates, source docs
+python scripts/dev.py count-rows     # print row counts + embedding coverage for seeded tables
+python scripts/dev.py check-health   # GET /health → 200
+python scripts/dev.py test           # pytest
+python scripts/dev.py verify         # up → migrate → uvicorn → health + pytest
+python scripts/dev.py verify-schema  # up → migrate → db-schema tests (16 checks)
+```
+
+On macOS/Linux you can also use `make <target>` as a shorthand.
+
+---
+
+## Browser UI
+
+The app serves a single-page frontend at `GET /` from `src/app/static/index.html` — plain HTML + vanilla JS, no build step required.
+
+### Starting the app
+
+```bash
+# Windows PowerShell
+$env:PYTHONPATH="src"; python.exe -m uvicorn app.main:app --reload
+
+# macOS / Linux
+PYTHONPATH=src uvicorn app.main:app --reload
+```
+
+Then open **http://localhost:8000** in your browser.
+
+### Manual UI test walkthrough
+
+**1. Use a golden preset button**
+
+Three preset buttons pre-fill the form with the same inputs used in `test_golden.py`:
+
+| Button         | Destination | Days | Budget   | Style  | Expected path                  |
+| -------------- | ----------- | ---- | -------- | ------ | ------------------------------ |
+| Family trip    | Sydney      | 5    | moderate | family | High-confidence → no RAG       |
+| Budget trip    | Melbourne   | 3    | budget   | budget | High-confidence → no RAG       |
+| Low-confidence | Sydney      | 4    | moderate | family | Low-confidence → RAG triggered |
+
+Click a preset, then click **Generate Itinerary**.
+
+**2. Watch the SSE step panels**
+
+Each workflow step appears as a panel as it arrives in real time:
+
+- Green left border = `completed`
+- Red left border = `error`
+- The `generate` step panel highlights `prompt_template_key` and `prompt_template_version` in amber
+
+**3. Check the Trace Log table**
+
+After the stream finishes the page automatically calls `GET /traces/{session_id}` and renders all trace rows in a table showing step, status, latency, template version, and degraded mode.
+
+**4. Try the optional template version override**
+
+Enter a version number in the **Template version** field before submitting to test a specific prompt template version (equivalent to `?template_version=N` on the API).
+
+### Clearing trace data between manual runs
+
+To start with a clean trace table:
+
+```sql
+TRUNCATE TABLE trace_events RESTART IDENTITY;
+```
+
+Via Docker:
+
+```bash
+docker exec -it <postgres-container> psql -U <user> -d <dbname> -c "TRUNCATE TABLE trace_events RESTART IDENTITY;"
+```
+
+This is safe for manual UI exploration. Automated tests mock the DB and are unaffected.
 
 ---
 
@@ -151,70 +298,6 @@ curl -N -X POST "http://localhost:8000/generate?template_version=2" \
   -H "Content-Type: application/json" \
   -d '{"destination": "Sydney", "trip_length": 5, "budget": "moderate", "travel_style": "family"}'
 ```
-
----
-
-## Browser UI
-
-The app serves a single-page frontend at `GET /` from `src/app/static/index.html` — plain HTML + vanilla JS, no build step required.
-
-### Starting the app
-
-```bash
-# Windows PowerShell
-$env:PYTHONPATH="src"; python.exe -m uvicorn app.main:app --reload
-
-# macOS / Linux
-PYTHONPATH=src uvicorn app.main:app --reload
-```
-
-Then open **http://localhost:8000** in your browser.
-
-### Manual UI test walkthrough
-
-**1. Use a golden preset button**
-
-Three preset buttons pre-fill the form with the same inputs used in `test_golden.py`:
-
-| Button         | Destination | Days | Budget   | Style  | Expected path                  |
-| -------------- | ----------- | ---- | -------- | ------ | ------------------------------ |
-| Family trip    | Sydney      | 5    | moderate | family | High-confidence → no RAG       |
-| Budget trip    | Melbourne   | 3    | budget   | budget | High-confidence → no RAG       |
-| Low-confidence | Sydney      | 4    | moderate | family | Low-confidence → RAG triggered |
-
-Click a preset, then click **Generate Itinerary**.
-
-**2. Watch the SSE step panels**
-
-Each workflow step appears as a panel as it arrives in real time:
-
-- Green left border = `completed`
-- Red left border = `error`
-- The `generate` step panel highlights `prompt_template_key` and `prompt_template_version` in amber
-
-**3. Check the Trace Log table**
-
-After the stream finishes the page automatically calls `GET /traces/{session_id}` and renders all trace rows in a table showing step, status, latency, template version, and degraded mode.
-
-**4. Try the optional template version override**
-
-Enter a version number in the **Template version** field before submitting to test a specific prompt template version (equivalent to `?template_version=N` on the API).
-
-### Clearing trace data between manual runs
-
-To start with a clean trace table:
-
-```sql
-TRUNCATE TABLE trace_events RESTART IDENTITY;
-```
-
-Via Docker:
-
-```bash
-docker exec -it <postgres-container> psql -U <user> -d <dbname> -c "TRUNCATE TABLE trace_events RESTART IDENTITY;"
-```
-
-This is safe for manual UI exploration. Automated tests mock the DB and are unaffected.
 
 ### GET /traces/{session_id}
 
@@ -471,103 +554,34 @@ WHERE step_name = 'validate_output'
 
 ---
 
-## Tech Stack
+## Running Tests
 
-| Layer            | Technology                                          |
-| ---------------- | --------------------------------------------------- |
-| API              | FastAPI + sse-starlette                             |
-| Workflow         | Agno (`Step`, `Condition`)                          |
-| Knowledge base   | Agno `Knowledge` + `PgVector` (`travel_docs` table) |
-| Database         | PostgreSQL 16 + pgvector                            |
-| ORM / migrations | SQLAlchemy 2 + Alembic                              |
-| LLM              | Gemini 2.0 Flash (`google-genai`)                   |
-| Embeddings       | `gemini-embedding-001` (Google, 768 dims)           |
-| Validation       | Pydantic v2                                         |
+Tests are split into two tiers:
 
----
-
-## Prerequisites
-
-- Python 3.11+
-- Docker Desktop
-
----
-
-## Setup
-
-**1. Clone and copy env file**
+**Unit tests** — no database or API key required, run anywhere:
 
 ```bash
-git clone <repo-url>
-cd Agno_Travel_Agent
-cp .env.example .env
-# fill in GEMINI_API_KEY in .env
+python -m pytest tests/ -m "not integration" -v
 ```
 
-**2. Install dependencies**
+**Integration tests** — require Docker (PostgreSQL) and a real `GEMINI_API_KEY` in `.env`. Includes the 3 golden tests and the end-to-end `POST /generate` test:
 
 ```bash
-python scripts/dev.py install
-```
-
-**3. Start PostgreSQL**
-
-```bash
+# 1. start db + apply migrations + seed data
 python scripts/dev.py up
-```
-
-**4. Apply migrations**
-
-```bash
 python scripts/dev.py migrate
+python scripts/dev.py seed
+
+# 2. run integration tests only (golden + observability + cag-match)
+python -m pytest tests/ -m integration -v
+
+# 3. or run everything together
+python -m pytest tests/ -v
 ```
 
-**5. Start the app**
+Golden and end-to-end tests are marked `@pytest.mark.integration` and are skipped in the unit-test run.
 
-```bash
-PYTHONPATH=src uvicorn app.main:app --reload   # macOS / Linux
-$env:PYTHONPATH="src"; uvicorn app.main:app --reload  # Windows PowerShell
-```
-
----
-
-## Dev Commands
-
-All commands work on Windows and Unix via the Python task runner:
-
-```bash
-python scripts/dev.py up             # start PostgreSQL
-python scripts/dev.py down           # stop PostgreSQL
-python scripts/dev.py install        # pip install -e ".[dev]"
-python scripts/dev.py migrate        # alembic upgrade head
-python scripts/dev.py seed           # seed categories, prompt templates, source docs
-python scripts/dev.py count-rows     # print row counts + embedding coverage for seeded tables
-python scripts/dev.py check-health   # GET /health → 200
-python scripts/dev.py test           # pytest
-python scripts/dev.py verify         # up → migrate → uvicorn → health + pytest
-python scripts/dev.py verify-schema  # up → migrate → db-schema tests (16 checks)
-```
-
-On macOS/Linux you can also use `make <target>` as a shorthand.
-
----
-
-## Environment Variables
-
-All variables are documented in [.env.example](.env.example).
-
-| Variable            | Purpose                                                                           |
-| ------------------- | --------------------------------------------------------------------------------- |
-| `POSTGRES_USER`     | PostgreSQL username                                                               |
-| `POSTGRES_PASSWORD` | PostgreSQL password                                                               |
-| `POSTGRES_DB`       | Database name                                                                     |
-| `POSTGRES_PORT`     | Host port to expose (default `5432`)                                              |
-| `DATABASE_URL`      | Full SQLAlchemy / Alembic DSN                                                     |
-| `GEMINI_API_KEY`    | Google Gemini API key                                                             |
-| `LLM_MODEL`         | Gemini model for generation (e.g. `gemini-2.0-flash`)                             |
-| `EMBEDDING_MODEL`   | Embedding model — must match seed and cag_match (default: `gemini-embedding-001`) |
-| `APP_HOST`          | Uvicorn bind host                                                                 |
-| `APP_PORT`          | Uvicorn bind port                                                                 |
+`tests/conftest.py` loads `.env` automatically so environment variables do not need to be exported manually before running pytest.
 
 ---
 
@@ -642,6 +656,29 @@ All variables are documented in [.env.example](.env.example).
 
 ---
 
+## Current Status
+
+**Branch: `feat/ui`** — browser UI with SSE step panels, trace viewer, and golden preset buttons. Also adds `GET /traces/{session_id}` endpoint.
+
+| Branch                    | Scope                                                       | Status |
+| ------------------------- | ----------------------------------------------------------- | ------ |
+| `feat/project-scaffold`   | Dependencies, Docker, directory layout, health endpoint     | Done   |
+| `feat/db-schema`          | Alembic migrations, SQLAlchemy models                       | Done   |
+| `feat/db-seed`            | Category embeddings, prompt templates, source documents     | Done   |
+| `feat/workflow-skeleton`  | Agno workflow with 6 stub steps, SSE emitter                | Done   |
+| `feat/intake`             | Input validation and normalisation (Step 1)                 | Done   |
+| `feat/cag-match`          | Embedding-based intent classification (Step 2)              | Done   |
+| `feat/retrieval-decision` | Confidence threshold routing (Step 3)                       | Done   |
+| `feat/rag-retrieve`       | Agno Knowledge + PgVector top-5 retrieval (Step 4)          | Done   |
+| `feat/generate`           | DB-template prompt construction + LLM call (Step 5)         | Done   |
+| `feat/validate-output`    | Pydantic validation + retry logic (Step 6)                  | Done   |
+| `feat/fastapi-service`    | `POST /generate` SSE endpoint                               | Done   |
+| `feat/observability`      | `trace_events` writes across all steps                      | Done   |
+| `feat/testing`            | Unit, integration, end-to-end, and golden tests             | Done   |
+| `feat/ui`                 | Browser UI, `GET /traces/{session_id}`, static file serving | Done   |
+
+---
+
 ## feat/testing — Branch Changes
 
 This branch completes the full test suite and adds three functional improvements to the workflow.
@@ -679,37 +716,6 @@ Values `"budget"`, `"moderate"`, `"luxury"` are now enforced at the Pydantic lay
 
 ---
 
-## Running Tests
-
-Tests are split into two tiers:
-
-**Unit tests** — no database or API key required, run anywhere:
-
-```bash
-python -m pytest tests/ -m "not integration" -v
-```
-
-**Integration tests** — require Docker (PostgreSQL) and a real `GEMINI_API_KEY` in `.env`. Includes the 3 golden tests and the end-to-end `POST /generate` test:
-
-```bash
-# 1. start db + apply migrations + seed data
-python scripts/dev.py up
-python scripts/dev.py migrate
-python scripts/dev.py seed
-
-# 2. run integration tests only (golden + observability + cag-match)
-python -m pytest tests/ -m integration -v
-
-# 3. or run everything together
-python -m pytest tests/ -v
-```
-
-Golden and end-to-end tests are marked `@pytest.mark.integration` and are skipped in the unit-test run.
-
-`tests/conftest.py` loads `.env` automatically so environment variables do not need to be exported manually before running pytest.
-
----
-
 ## feat/ui — Branch Changes
 
 This branch adds a browser UI and a traces read endpoint on top of the completed API.
@@ -740,5 +746,6 @@ This branch adds a browser UI and a traces read endpoint on top of the completed
 ## Design Docs
 
 - [DESIGN.md](docs/DESIGN.md) — data model, workflow steps, SSE contract, prompt strategy
+- [api.md](docs/api.md) — full API reference: request/response formats, SSE event shapes per step
 - [git-workflow.md](docs/git-workflow.md) — branch order, scope, and merge checklist
 - [CLAUDE.md](docs/CLAUDE.md) — AI tool usage rules and architecture constraints
