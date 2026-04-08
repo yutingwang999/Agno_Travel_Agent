@@ -1,13 +1,13 @@
 """feat/retrieval-decision merge checklist tests.
 
 Verifies:
-  - confidence_score >= 0.78 → evaluator returns False (rag_retrieve skipped)
-  - confidence_score <  0.78 → evaluator returns True  (rag_retrieve runs)
-  - Boundary: exactly 0.78 → returns False (threshold is inclusive)
+  - confidence_score >= 0.85 → evaluator returns False (rag_retrieve skipped)
+  - confidence_score <  0.85 → evaluator returns True  (rag_retrieve runs)
+  - Boundary: exactly 0.85 → returns False (threshold is inclusive)
   - SSE event data field contains routing_decision, confidence_score, threshold
   - Missing cag_match output defaults to retrieval (safe fallback)
   - Malformed cag_match output defaults to retrieval (safe fallback)
-  - RETRIEVAL_CONFIDENCE_THRESHOLD constant equals 0.78
+  - RETRIEVAL_CONFIDENCE_THRESHOLD constant equals 0.85
 """
 
 import json
@@ -81,7 +81,7 @@ def test_retrieval_decision_evaluator_importable():
 def test_retrieval_confidence_threshold_constant():
     from app.workflow.steps.retrieval_decision import RETRIEVAL_CONFIDENCE_THRESHOLD
 
-    assert RETRIEVAL_CONFIDENCE_THRESHOLD == pytest.approx(0.78)
+    assert RETRIEVAL_CONFIDENCE_THRESHOLD == pytest.approx(0.85)
 
 
 # ---------------------------------------------------------------------------
@@ -90,7 +90,7 @@ def test_retrieval_confidence_threshold_constant():
 
 
 def test_high_confidence_returns_false(capsys):
-    """confidence_score >= 0.78 → evaluator returns False → rag_retrieve skipped."""
+    """confidence_score >= 0.85 → evaluator returns False → rag_retrieve skipped."""
     from app.workflow.steps.retrieval_decision import retrieval_decision_evaluator
 
     result = retrieval_decision_evaluator(_make_step_input(confidence_score=0.90))
@@ -99,7 +99,7 @@ def test_high_confidence_returns_false(capsys):
 
 
 def test_low_confidence_returns_true(capsys):
-    """confidence_score < 0.78 → evaluator returns True → rag_retrieve runs."""
+    """confidence_score < 0.85 → evaluator returns True → rag_retrieve runs."""
     from app.workflow.steps.retrieval_decision import retrieval_decision_evaluator
 
     result = retrieval_decision_evaluator(_make_step_input(confidence_score=0.50))
@@ -108,19 +108,19 @@ def test_low_confidence_returns_true(capsys):
 
 
 def test_exactly_at_threshold_returns_false(capsys):
-    """Boundary: confidence_score == 0.78 → evaluator returns False (inclusive)."""
+    """Boundary: confidence_score == 0.85 → evaluator returns False (inclusive)."""
     from app.workflow.steps.retrieval_decision import retrieval_decision_evaluator
 
-    result = retrieval_decision_evaluator(_make_step_input(confidence_score=0.78))
+    result = retrieval_decision_evaluator(_make_step_input(confidence_score=0.85))
 
     assert result is False
 
 
 def test_just_below_threshold_returns_true(capsys):
-    """confidence_score = 0.7799 (just below 0.78) → evaluator returns True."""
+    """confidence_score = 0.8499 (just below 0.85) → evaluator returns True."""
     from app.workflow.steps.retrieval_decision import retrieval_decision_evaluator
 
-    result = retrieval_decision_evaluator(_make_step_input(confidence_score=0.7799))
+    result = retrieval_decision_evaluator(_make_step_input(confidence_score=0.8499))
 
     assert result is True
 
@@ -175,7 +175,7 @@ def test_sse_event_data_contains_threshold(capsys):
     captured = capsys.readouterr()
     event = json.loads(captured.out.strip())
 
-    assert event["data"]["threshold"] == pytest.approx(0.78)
+    assert event["data"]["threshold"] == pytest.approx(0.85)
 
 
 def test_sse_event_structure(capsys):
