@@ -42,10 +42,10 @@ def _get_mock_match_result():
 
 
 _VALID_ITINERARY_JSON = (
-    '{"destination": "Sydney", "trip_length_days": 5, "budget_level": "moderate",'
+    '{"destination": "Sydney", "trip_length_days": 1, "budget_level": "moderate",'
     ' "travel_style": "family", "daily_itinerary": [{"day": 1, "morning": "Bondi Beach",'
     ' "afternoon": "Lunch", "evening": "Dinner", "estimated_cost_aud": 150.0}],'
-    ' "total_estimated_cost_aud": 750.0, "key_tips": ["Book ahead"]}'
+    ' "total_estimated_cost_aud": 150.0, "key_tips": ["Book ahead"]}'
 )
 
 
@@ -60,7 +60,7 @@ def patch_external_services(monkeypatch):
     )
     monkeypatch.setattr(
         "app.workflow.steps.generate.resolve_template",
-        lambda template_key, db_url: ("Plan a trip to {destination}.", 1),
+        lambda template_key, db_url, version=None: ("Plan a trip to {destination}.", 1),
     )
     monkeypatch.setattr(
         "app.workflow.steps.generate._call_llm",
@@ -71,7 +71,7 @@ def patch_external_services(monkeypatch):
     # fails (e.g. when no generate output is present in the step input).
     monkeypatch.setattr(
         "app.workflow.steps.validate_output.resolve_template",
-        lambda template_key, db_url: ("Fix this: {validation_errors}\n{raw_llm_output}", 1),
+        lambda template_key, db_url, version=None: ("Fix this: {validation_errors}\n{raw_llm_output}", 1),
     )
     monkeypatch.setattr(
         "app.workflow.steps.validate_output._call_llm",

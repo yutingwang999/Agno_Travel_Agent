@@ -6,7 +6,7 @@ An AI-powered travel itinerary planning service for Australian destinations. The
 
 ## Current Status
 
-**Branch: `feat/observability`** — per-step trace writes to `trace_events` complete across all 6 workflow steps.
+**Branch: `feat/testing`** — full test suite complete: unit, integration, end-to-end, and golden tests. Also includes `budget` enum guardrail, prompt version override, and a content-level output guardrail.
 
 | Branch | Scope | Status |
 |--------|-------|--------|
@@ -22,7 +22,7 @@ An AI-powered travel itinerary planning service for Australian destinations. The
 | `feat/validate-output` | Pydantic validation + retry logic (Step 6) | Done |
 | `feat/fastapi-service` | `POST /generate` SSE endpoint | Done |
 | `feat/observability` | `trace_events` writes across all steps | Done |
-| `feat/testing` | Unit, integration, end-to-end, and golden tests | Pending |
+| `feat/testing` | Unit, integration, end-to-end, and golden tests | Done |
 
 ---
 
@@ -68,7 +68,7 @@ The `POST /generate` endpoint is the public entry point for the workflow. It val
 ### Request
 
 ```http
-POST /generate
+POST /generate?template_version=2
 Content-Type: application/json
 
 {
@@ -79,7 +79,22 @@ Content-Type: application/json
 }
 ```
 
-All four fields are required. Missing or invalid fields return **422 Unprocessable Entity** — never a 500.
+All four body fields are required. Missing or invalid fields return **422 Unprocessable Entity** — never a 500.
+
+| Field | Type | Values | Notes |
+|---|---|---|---|
+| `destination` | `string` | free text | normalised to lowercase |
+| `trip_length` | `integer` | ≥ 1 | number of days |
+| `budget` | `enum` | `"budget"`, `"moderate"`, `"luxury"` | any other value → 422 |
+| `travel_style` | `string` | free text | used for CAG semantic matching |
+
+**Optional query parameter:**
+
+| Parameter | Type | Default | Effect |
+|---|---|---|---|
+| `template_version` | `integer` | none | fetch a specific prompt template version instead of the active one |
+
+When `template_version` is omitted the active template (`is_active=true`) is used. Pass an explicit version to reproduce a past run or test a specific template version.
 
 ### Response
 
@@ -124,7 +139,13 @@ POST /generate
 ### Try it
 
 ```bash
+# Active template (default)
 curl -N -X POST http://localhost:8000/generate \
+  -H "Content-Type: application/json" \
+  -d '{"destination": "Sydney", "trip_length": 5, "budget": "moderate", "travel_style": "family"}'
+
+# Specific template version
+curl -N -X POST "http://localhost:8000/generate?template_version=2" \
   -H "Content-Type: application/json" \
   -d '{"destination": "Sydney", "trip_length": 5, "budget": "moderate", "travel_style": "family"}'
 ```
@@ -178,8 +199,9 @@ generate_executor
   ├── selects template key:
   │     confidence_score >= 0.78  →  high_confidence_minimal_context
   │     confidence_score <  0.78  →  low_confidence_with_retrieval
-  ├── template_resolver.resolve_template(template_key, db_url)
-  │     └── queries prompt_templates WHERE template_key=? AND is_active=true
+  ├── template_resolver.resolve_template(template_key, db_url, version=None)
+  │     ├── version=None  → WHERE template_key=? AND is_active=true
+  │     └── version=N     → WHERE template_key=? AND version=N
   ├── _format_template(template_text, variables)
   │     └── regex substitution — safely handles literal { } in the JSON schema example
   └── _call_llm(prompt, api_key, model)  →  raw_llm_output
@@ -227,7 +249,8 @@ validate_output_executor
   ├── parse_llm_output(raw_text)                        [attempt 1]
   │     ├── strip markdown fences (```json … ```)
   │     ├── json.loads(cleaned_text)
-  │     └── ItineraryOutput.model_validate(data)
+  │     ├── ItineraryOutput.model_validate(data)
+  │     └── content guardrail: len(daily_itinerary) == trip_length_days
   │
   ├── [success] → emit SSE with itinerary + degraded_mode=False
   │
@@ -467,15 +490,17 @@ All variables are documented in [.env.example](.env.example).
 │               └── validate_output.py     # Step 6 — Pydantic validation, retry once, structured error
 ├── tests/
 │   ├── conftest.py              # loads .env; redirects Agno logger to stderr
-│   ├── test_db_schema.py        # 16 tests covering the db-schema merge checklist
-│   ├── test_workflow_skeleton.py # 22 tests covering the workflow-skeleton merge checklist
-│   ├── test_intake.py           # 22 tests covering the intake merge checklist
-│   ├── test_cag_match.py        # 15 unit + 3 integration tests covering the cag-match checklist
-│   ├── test_retrieval_decision.py # 16 tests covering the retrieval-decision merge checklist
-│   ├── test_rag_retrieve.py     # 17 tests covering the rag-retrieve merge checklist
-│   ├── test_generate.py         # 24 tests covering the generate merge checklist
-│   ├── test_validate_output.py  # 26 tests covering the validate-output merge checklist
-│   └── test_observability.py    # unit + integration tests covering the observability checklist
+│   ├── test_db_schema.py        # db-schema merge checklist (migrations, models, live DB)
+│   ├── test_workflow_skeleton.py # workflow-skeleton checklist (SSE structure, 6-step run)
+│   ├── test_intake.py           # intake checklist + BudgetLevel enum tests
+│   ├── test_cag_match.py        # cag-match checklist (unit + integration)
+│   ├── test_retrieval_decision.py # retrieval-decision checklist (threshold logic, SSE)
+│   ├── test_rag_retrieve.py     # rag-retrieve checklist (top-k, graceful degradation)
+│   ├── test_generate.py         # generate checklist + template version override tests
+│   ├── test_validate_output.py  # validate-output checklist + content guardrail tests
+│   ├── test_observability.py    # observability checklist (unit + integration)
+│   ├── test_fastapi_service.py  # fastapi-service checklist (HTTP layer, 422s, SSE shape)
+│   └── test_golden.py           # 3 golden tests + 1 end-to-end POST /generate test
 ├── alembic/
 │   ├── env.py               # loads .env, imports models, runs migrations
 │   ├── script.py.mako       # migration file template
@@ -500,6 +525,43 @@ All variables are documented in [.env.example](.env.example).
 
 ---
 
+## feat/testing — Branch Changes
+
+This branch completes the full test suite and adds three functional improvements to the workflow.
+
+### Test coverage added
+
+| File | Type | What it covers |
+|---|---|---|
+| `test_golden.py` | integration | 3 golden tests (family, budget, low-confidence) + 1 end-to-end `POST /generate` |
+| `test_fastapi_service.py` | unit | `template_version` query param forwarded correctly |
+| `test_generate.py` | unit | `resolve_template` version override, `None` default |
+| `test_validate_output.py` | unit | content guardrail pass and fail cases |
+
+**Golden tests** assert structure and branch correctness — not exact LLM output strings:
+
+1. **Family trip** — high-confidence path, no `rag_retrieve` event, structured itinerary returned
+2. **Budget trip** — same branch, different destination and style
+3. **Low-confidence** — `rag_retrieve` event present, `retrieved_context` non-empty, itinerary returned
+
+**End-to-end test** makes a real HTTP call to `POST /generate` via `TestClient` (no mocking of `_run_workflow`) and asserts all 6 step names appear in the SSE stream with correct structure.
+
+### Functional changes
+
+**`budget` field changed to enum** (`BudgetLevel`):  
+Values `"budget"`, `"moderate"`, `"luxury"` are now enforced at the Pydantic layer. Any other string returns 422. `travel_style` remains free text so the CAG step can perform semantic matching on it.
+
+**Prompt template version override** (`?template_version=N`):  
+`POST /generate` accepts an optional `template_version` query parameter. When set, `resolve_template` fetches that specific version instead of the active one — enabling reproducibility and A/B testing without changing the database. The version is propagated through `additional_data` to `generate_executor`.
+
+**Content-level output guardrail**:  
+`parse_llm_output` now checks that `len(daily_itinerary) == trip_length_days` after Pydantic schema validation. A mismatch triggers the existing retry mechanism in `validate_output_executor` — no extra code path needed.
+
+**Seed script robustness fix**:  
+`scripts/seed.py` detects when `travel_docs` exists but is missing the `embedding` column (caused by a partial or legacy seed run) and drops + recreates the table before inserting documents.
+
+---
+
 ## Running Tests
 
 Tests are split into two tiers:
@@ -509,19 +571,21 @@ Tests are split into two tiers:
 python -m pytest tests/ -m "not integration" -v
 ```
 
-**Integration tests** — require Docker (PostgreSQL) and a real `GEMINI_API_KEY` in `.env`:
+**Integration tests** — require Docker (PostgreSQL) and a real `GEMINI_API_KEY` in `.env`. Includes the 3 golden tests and the end-to-end `POST /generate` test:
 ```bash
 # 1. start db + apply migrations + seed data
 python scripts/dev.py up
 python scripts/dev.py migrate
 python scripts/dev.py seed
 
-# 2. run integration tests only
+# 2. run integration tests only (golden + observability + cag-match)
 python -m pytest tests/ -m integration -v
 
 # 3. or run everything together
 python -m pytest tests/ -v
 ```
+
+Golden and end-to-end tests are marked `@pytest.mark.integration` and are skipped in the unit-test run.
 
 `tests/conftest.py` loads `.env` automatically so environment variables do not need to be exported manually before running pytest.
 
