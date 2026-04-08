@@ -7,15 +7,32 @@ that this model produces.
 Fields (all required):
     destination   — free-text location, normalised to lowercase + stripped
     trip_length   — number of days (must be >= 1)
-    budget        — budget descriptor (e.g. "budget", "moderate", "luxury")
-    travel_style  — style descriptor (e.g. "family", "adventure", "romantic")
+    budget        — enumerated budget level: "budget", "moderate", or "luxury"
+    travel_style  — free-text style descriptor (e.g. "family", "adventure");
+                    kept as free text so the CAG step can perform semantic
+                    matching against it
 
 Validation errors raise ``pydantic.ValidationError``, which FastAPI maps to a
 422 Unprocessable Entity response.  The intake step must not swallow this
 exception — callers are expected to handle or propagate it.
 """
 
+from enum import StrEnum
+
 from pydantic import BaseModel, ConfigDict, field_validator
+
+
+class BudgetLevel(StrEnum):
+    """Enumerated budget levels accepted by the travel planning form.
+
+    Using StrEnum means each member is also a plain ``str``, so it serialises
+    to JSON, formats into prompt templates, and compares with string literals
+    without any conversion.
+    """
+
+    budget = "budget"
+    moderate = "moderate"
+    luxury = "luxury"
 
 
 class TravelRequest(BaseModel):
@@ -25,7 +42,7 @@ class TravelRequest(BaseModel):
 
     destination: str
     trip_length: int
-    budget: str
+    budget: BudgetLevel
     travel_style: str
 
     @field_validator("destination")
@@ -44,15 +61,6 @@ class TravelRequest(BaseModel):
         if value < 1:
             raise ValueError("trip_length must be at least 1")
         return value
-
-    @field_validator("budget")
-    @classmethod
-    def validate_budget(cls, value: str) -> str:
-        """Budget must be a non-empty string."""
-        stripped = value.strip()
-        if not stripped:
-            raise ValueError("budget must not be empty")
-        return stripped
 
     @field_validator("travel_style")
     @classmethod

@@ -120,7 +120,7 @@ def _make_workflow_side_effect(template_events=None):
     """
     events = template_events or _TEMPLATE_EVENTS
 
-    def _side_effect(session_id, travel_request):
+    def _side_effect(session_id, travel_request, template_version=None):
         return [{**ev, "session_id": session_id} for ev in events]
 
     return _side_effect
@@ -384,7 +384,7 @@ def test_post_generate_destination_normalised_to_lowercase(client):
     """Destination is lowercased by TravelRequest before reaching _run_workflow."""
     received_requests = []
 
-    def _capture(session_id, travel_request):
+    def _capture(session_id, travel_request, template_version=None):
         received_requests.append(travel_request)
         return [{
             "session_id": session_id,
@@ -406,11 +406,53 @@ def test_post_generate_workflow_called_once_per_request(client, mock_workflow):
     assert mock_workflow.call_count == 1
 
 
+def test_post_generate_template_version_forwarded_to_workflow(client):
+    """Optional template_version query param must be forwarded to _run_workflow."""
+    captured = {}
+
+    def _capture(session_id, travel_request, template_version=None):
+        captured["template_version"] = template_version
+        return [{
+            "session_id": session_id,
+            "step": "intake",
+            "status": "completed",
+            "timestamp": "2024-01-01T00:00:00+00:00",
+            "data": {},
+            "error": None,
+        }]
+
+    with patch("app.main._run_workflow", side_effect=_capture):
+        client.post("/generate?template_version=3", json=VALID_BODY)
+
+    assert captured.get("template_version") == 3
+
+
+def test_post_generate_no_template_version_forwards_none(client):
+    """When template_version is omitted, _run_workflow receives None."""
+    captured = {}
+
+    def _capture(session_id, travel_request, template_version=None):
+        captured["template_version"] = template_version
+        return [{
+            "session_id": session_id,
+            "step": "intake",
+            "status": "completed",
+            "timestamp": "2024-01-01T00:00:00+00:00",
+            "data": {},
+            "error": None,
+        }]
+
+    with patch("app.main._run_workflow", side_effect=_capture):
+        client.post("/generate", json=VALID_BODY)
+
+    assert captured.get("template_version") is None
+
+
 def test_post_generate_workflow_receives_correct_session_id(client):
     """The session_id passed to _run_workflow must match the one in SSE events."""
     captured = {}
 
-    def _capture(session_id, travel_request):
+    def _capture(session_id, travel_request, template_version=None):
         captured["session_id"] = session_id
         return [{
             "session_id": session_id,

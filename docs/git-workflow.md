@@ -253,6 +253,51 @@ avoids premature test investment against unstable interfaces.
 
 ---
 
+### Branch 14 — `feat/ui`
+
+**Scope**
+
+Backend additions:
+- `GET /traces/{session_id}` endpoint — queries `trace_events` for all rows matching
+  `session_id`, returns a JSON array ordered by `created_at`; returns 404 when no rows exist
+- `StaticFiles` mount in `app/main.py` serving `src/app/static/` at `/`
+
+Frontend (`src/app/static/`):
+- `index.html` — single-page form UI with no build step (plain HTML + vanilla JS)
+- Form fields matching the `TravelRequest` schema: `destination` (text), `trip_length`
+  (number), `budget` (select: budget / moderate / luxury), `travel_style` (text), and an
+  optional `template_version` (number) input
+- SSE stream consumer: opens `EventSource` on form submit, renders each step event as it
+  arrives in a structured per-step panel showing `step`, `status`, `latency_ms` (from
+  trace), and the full `data` payload
+- Prompt template version display: highlights `prompt_template_key` and
+  `prompt_template_version` from the `generate` step event
+- Trace viewer: after the stream completes, fetches `GET /traces/{session_id}` and renders
+  all 6 trace rows in a table (step, status, latency_ms, prompt_template_version,
+  degraded_mode)
+- 3 golden test preset buttons — pre-fill the form with the same inputs used in
+  `test_golden.py`:
+  1. **Family trip** — Sydney, 5 days, moderate, family
+  2. **Budget trip** — Melbourne, 3 days, budget, budget
+  3. **Low-confidence** — Sydney, 4 days, moderate, family (triggers RAG path)
+
+Tests:
+- `tests/test_ui_api.py` — unit tests for `GET /traces/{session_id}`:
+  - returns 200 + correct JSON when rows exist (DB mocked)
+  - returns 404 when no rows found
+  - row fields include `session_id`, `step_name`, `status`, `latency_ms`, `created_at`
+  - `generate` row includes `prompt_template_key` and `prompt_template_version`
+- End-to-end browser test is manual only (no Playwright/Selenium dependency introduced)
+
+**Why fourteenth**
+The UI is a consumer of the completed API. Adding it before the API and observability
+layers are stable would require the frontend to handle undefined or changing contracts.
+`GET /traces/{session_id}` is added here rather than in `feat/observability` because it
+exists specifically to serve the UI trace viewer — it has no purpose until there is a
+client to call it.
+
+---
+
 ## 3. Merge Checklist
 
 ### Common checklist (every branch)
@@ -390,6 +435,26 @@ avoids premature test investment against unstable interfaces.
 
 ---
 
+### `feat/ui`
+
+- [ ] `GET /traces/{session_id}` returns 200 with a JSON array when rows exist
+- [ ] `GET /traces/{session_id}` returns 404 when no rows match the session_id
+- [ ] Every object in the response array includes `session_id`, `step_name`, `status`,
+      `latency_ms`, and `created_at`
+- [ ] The object for the `generate` step includes `prompt_template_key` and
+      `prompt_template_version`
+- [ ] `uvicorn app.main:app` serves `index.html` at `GET /`
+- [ ] Submitting the form opens an SSE stream and renders each step event as it arrives —
+      no full-page reload
+- [ ] The `generate` step panel displays `prompt_template_key` and `prompt_template_version`
+- [ ] After stream completes, the trace table is populated by a call to
+      `GET /traces/{session_id}`
+- [ ] All 3 golden preset buttons pre-fill the form with the correct values and can be
+      submitted without modification
+- [ ] `pytest` exits 0 (unit tests for the traces endpoint pass without a live DB)
+
+---
+
 ## 4. Why This Order
 
 The sequence follows a strict dependency chain: each layer can only be built on top of a stable
@@ -423,7 +488,14 @@ during the same branch as the business logic, a DB write failure will mask wheth
 itself is correct. A dedicated observability branch makes the instrumentation reviewable in
 isolation and ensures that step correctness is proven before tracing is layered on.
 
-**Testing last** — unit tests for isolated helpers can be written earlier, but integration,
-end-to-end, and golden tests require the complete pipeline. Consolidating all test work into a
-single branch also avoids the maintenance burden of updating tests every time a preceding step's
-interface changes.
+**Testing last (before UI)** — unit tests for isolated helpers can be written earlier, but
+integration, end-to-end, and golden tests require the complete pipeline. Consolidating all test
+work into a single branch also avoids the maintenance burden of updating tests every time a
+preceding step's interface changes.
+
+**UI after testing** — the frontend is a pure consumer: it calls `POST /generate` and
+`GET /traces/{session_id}` and renders the results. Both endpoints must be stable and tested
+before the UI is built against them. The 3 golden preset inputs in the UI are derived directly
+from `test_golden.py` — so the test branch must exist first to define those inputs. Building the
+UI last also keeps it isolated from workflow logic changes and makes the diff reviewable on its
+own terms.

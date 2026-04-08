@@ -92,6 +92,18 @@ def parse_llm_output(raw_text: str) -> tuple[ItineraryOutput | None, str | None]
 
     try:
         output = ItineraryOutput.model_validate(data)
-        return output, None
     except ValidationError as exc:
         return None, str(exc)
+
+    # Content-level guardrail: daily_itinerary length must match trip_length_days.
+    # The LLM is asked to produce exactly one entry per day; a mismatch means the
+    # output is structurally plausible but content-incorrect and should be retried.
+    actual_days = len(output.daily_itinerary)
+    if actual_days != output.trip_length_days:
+        return None, (
+            f"Content guardrail failed: daily_itinerary has {actual_days} "
+            f"day(s) but trip_length_days={output.trip_length_days}. "
+            f"Expected exactly {output.trip_length_days} daily entry/entries."
+        )
+
+    return output, None

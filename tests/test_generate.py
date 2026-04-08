@@ -361,7 +361,7 @@ def test_high_confidence_uses_minimal_context_template():
 
     captured_key = {}
 
-    def fake_resolve(template_key, db_url):
+    def fake_resolve(template_key, db_url, version=None):
         captured_key["key"] = template_key
         return ("Plan a trip to {destination}.", 1)
 
@@ -386,7 +386,7 @@ def test_low_confidence_uses_retrieval_template():
 
     captured_key = {}
 
-    def fake_resolve(template_key, db_url):
+    def fake_resolve(template_key, db_url, version=None):
         captured_key["key"] = template_key
         return ("Plan a trip to {destination}. Context: {retrieved_context}.", 1)
 
@@ -408,7 +408,7 @@ def test_template_never_hardcoded_resolve_template_always_called():
 
     resolve_called = {"called": False}
 
-    def fake_resolve(template_key, db_url):
+    def fake_resolve(template_key, db_url, version=None):
         resolve_called["called"] = True
         return ("Trip to {destination}.", 1)
 
@@ -463,3 +463,100 @@ def test_resolve_template_raises_when_not_found():
                 template_key="nonexistent_key",
                 db_url="postgresql://fake",
             )
+
+
+def test_resolve_template_with_version_override_returns_that_version():
+    """When version is supplied, resolve_template returns that specific version."""
+    from app.workflow.template_resolver import resolve_template
+
+    mock_template = MagicMock()
+    mock_template.template_text = "Version 3 template."
+    mock_template.version = 3
+
+    with patch("app.workflow.template_resolver.create_engine"), patch(
+        "app.workflow.template_resolver.Session"
+    ) as MockSession:
+        MockSession.return_value.__enter__.return_value.scalar.return_value = mock_template
+
+        text, version = resolve_template(
+            template_key="high_confidence_minimal_context",
+            db_url="postgresql://fake",
+            version=3,
+        )
+
+    assert text == "Version 3 template."
+    assert version == 3
+
+
+def test_resolve_template_version_override_raises_when_not_found():
+    """Requesting a non-existent specific version raises TemplateNotFoundError."""
+    from app.workflow.template_resolver import TemplateNotFoundError, resolve_template
+
+    with patch("app.workflow.template_resolver.create_engine"), patch(
+        "app.workflow.template_resolver.Session"
+    ) as MockSession:
+        MockSession.return_value.__enter__.return_value.scalar.return_value = None
+
+        with pytest.raises(TemplateNotFoundError):
+            resolve_template(
+                template_key="high_confidence_minimal_context",
+                db_url="postgresql://fake",
+                version=99,
+            )
+
+
+def test_generate_executor_passes_version_override_to_resolve_template():
+    """When template_version is in additional_data, it is forwarded to resolve_template."""
+    from app.workflow.steps.generate import generate_executor
+
+    resolve_calls = []
+
+    def fake_resolve(template_key, db_url, version=None):
+        resolve_calls.append(version)
+        return ("Plan a trip to {destination}.", 5)
+
+    step_input = _make_step_input(
+        cag_data={"matched_category": "family", "confidence_score": 0.90},
+        additional_data={"template_version": 5},
+    )
+
+    with (
+        patch("app.workflow.steps.generate.resolve_template", side_effect=fake_resolve),
+        patch("app.workflow.steps.generate._call_llm", return_value='{"ok": true}'),
+        patch("app.workflow.steps.generate.write_trace"),
+        patch.dict("os.environ", {"DATABASE_URL": "postgresql://fake", "GEMINI_API_KEY": "k"}),
+    ):
+        generate_executor(step_input)
+
+    assert resolve_calls, "resolve_template was never called"
+    assert resolve_calls[0] == 5, (
+        f"Expected version=5 forwarded to resolve_template, got {resolve_calls[0]!r}"
+    )
+
+
+def test_generate_executor_no_version_override_passes_none_to_resolve_template():
+    """When template_version is absent, resolve_template receives version=None."""
+    from app.workflow.steps.generate import generate_executor
+
+    resolve_calls = []
+
+    def fake_resolve(template_key, db_url, version=None):
+        resolve_calls.append(version)
+        return ("Plan a trip to {destination}.", 1)
+
+    step_input = _make_step_input(
+        cag_data={"matched_category": "family", "confidence_score": 0.90},
+    )
+
+    with (
+        patch("app.workflow.steps.generate.resolve_template", side_effect=fake_resolve),
+        patch("app.workflow.steps.generate._call_llm", return_value='{"ok": true}'),
+        patch("app.workflow.steps.generate.write_trace"),
+        patch.dict("os.environ", {"DATABASE_URL": "postgresql://fake", "GEMINI_API_KEY": "k"}),
+    ):
+        generate_executor(step_input)
+
+    assert resolve_calls, "resolve_template was never called"
+    assert resolve_calls[0] is None, (
+        f"Expected version=None when no override, got {resolve_calls[0]!r}"
+    )
