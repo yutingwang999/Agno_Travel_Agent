@@ -151,7 +151,7 @@ def test_retrieved_context_list_in_data():
 
     fake_chunks = _make_fake_chunks(5)
     step_input = _make_step_input(
-        intake_data={"destination": "melbourne", "travel_style": "budget", "trip_length": 7, "budget": "low"},
+        intake_data={"destination": "melbourne", "travel_style": "budget", "trip_length": 7, "budget": "budget"},
         cag_data={"matched_category": "budget", "confidence_score": 0.60},
     )
 
@@ -268,7 +268,7 @@ def test_sse_event_structure():
     from app.workflow.steps.rag_retrieve import rag_retrieve_executor
 
     step_input = _make_step_input(
-        intake_data={"destination": "brisbane", "travel_style": "budget", "trip_length": 3, "budget": "low"},
+        intake_data={"destination": "brisbane", "travel_style": "budget", "trip_length": 3, "budget": "budget"},
         session_id="abc-123",
     )
 

@@ -26,7 +26,7 @@ import pytest
 
 VALID_ITINERARY = {
     "destination": "Sydney",
-    "trip_length_days": 3,
+    "trip_length_days": 1,
     "budget_level": "moderate",
     "travel_style": "family",
     "daily_itinerary": [
@@ -112,7 +112,7 @@ def test_parse_valid_json_returns_itinerary_output():
     assert errors is None
     assert isinstance(output, ItineraryOutput)
     assert output.destination == "Sydney"
-    assert output.trip_length_days == 3
+    assert output.trip_length_days == 1
     assert len(output.daily_itinerary) == 1
     assert output.key_tips == ["Book ahead", "Use Opal card"]
 
@@ -172,6 +172,32 @@ def test_parse_missing_required_field_returns_error():
 
     assert output is None
     assert errors is not None
+
+
+def test_parse_daily_itinerary_length_mismatch_returns_error():
+    """Guardrail: daily_itinerary length != trip_length_days returns (None, error)."""
+    from app.workflow.output_validator import parse_llm_output
+
+    mismatched = dict(VALID_ITINERARY)
+    mismatched["trip_length_days"] = 3  # claims 3 days but only 1 entry
+    output, errors = parse_llm_output(json.dumps(mismatched))
+
+    assert output is None
+    assert errors is not None
+    assert "Content guardrail" in errors
+    assert "trip_length_days=3" in errors
+
+
+def test_parse_daily_itinerary_length_matches_passes():
+    """Guardrail: daily_itinerary length == trip_length_days succeeds."""
+    from app.workflow.output_validator import parse_llm_output
+
+    # VALID_ITINERARY already has trip_length_days=1 and 1 daily entry
+    output, errors = parse_llm_output(VALID_ITINERARY_JSON)
+
+    assert errors is None
+    assert output is not None
+    assert len(output.daily_itinerary) == output.trip_length_days
 
 
 def test_parse_model_dump_round_trips():
@@ -308,7 +334,7 @@ def test_retry_corrective_prompt_uses_db_template():
 
     resolve_called = {"called": False}
 
-    def fake_resolve(template_key, db_url):
+    def fake_resolve(template_key, db_url, version=None):
         resolve_called["called"] = True
         assert template_key == "validate_output_correction"
         return (CORRECTION_TEMPLATE_TEXT, 1)

@@ -741,6 +741,18 @@ def seed_prompt_templates(session: Session) -> None:
     session.commit()
 
 
+def _travel_docs_has_embedding_column(db_url: str) -> bool:
+    """Return True if the ai.travel_docs table has an 'embedding' column."""
+    from sqlalchemy import inspect as sa_inspect
+
+    engine = create_engine(db_url)
+    insp = sa_inspect(engine)
+    if not insp.has_table("travel_docs", schema="ai"):
+        return False
+    columns = {col["name"] for col in insp.get_columns("travel_docs", schema="ai")}
+    return "embedding" in columns
+
+
 def seed_source_documents() -> None:
     """Insert source documents into the Agno Knowledge base (travel_docs table).
 
@@ -748,6 +760,11 @@ def seed_source_documents() -> None:
     Agno's PgVector creates and manages the travel_docs table automatically.
     Destination and category metadata are stored in the document's meta_data
     field so they are retrievable after search.
+
+    If the travel_docs table already exists but is missing the 'embedding' column
+    (which can happen when the table was created by an older version of Agno or a
+    partial seed run), the table is dropped so that PgVector can recreate it with
+    the correct schema including the vector column.
     """
     print("Seeding knowledge base (travel_docs)...")
     knowledge = build_knowledge(
@@ -755,6 +772,18 @@ def seed_source_documents() -> None:
         api_key=GEMINI_API_KEY,
         embedding_model=EMBEDDING_MODEL,
     )
+
+    if not _travel_docs_has_embedding_column(DATABASE_URL):
+        print(
+            "  [warn] travel_docs table is missing the 'embedding' column — "
+            "dropping and recreating so PgVector can add it."
+        )
+        knowledge.vector_db.drop()
+
+    # Ensure the table exists with the correct schema (including the embedding
+    # column) before any inserts. This is a no-op when the table already has
+    # the correct schema, and is required after a drop to recreate it.
+    knowledge.vector_db.create()
 
     for data in SOURCE_DOCUMENTS:
         print(f"  [insert] title={data['title']!r}")

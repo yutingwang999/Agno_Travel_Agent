@@ -48,6 +48,16 @@ def test_travel_request_model_importable():
     from app.workflow.intake_model import TravelRequest  # noqa: F401
 
 
+def test_budget_level_enum_importable():
+    from app.workflow.intake_model import BudgetLevel  # noqa: F401
+
+
+def test_budget_level_enum_has_three_values():
+    from app.workflow.intake_model import BudgetLevel
+
+    assert set(BudgetLevel) == {BudgetLevel.budget, BudgetLevel.moderate, BudgetLevel.luxury}
+
+
 def test_travel_request_accepts_all_four_fields():
     from app.workflow.intake_model import TravelRequest
 
@@ -143,6 +153,25 @@ def test_empty_budget_raises_validation_error():
 
     with pytest.raises(ValidationError):
         TravelRequest(destination="Perth", trip_length=3, budget="", travel_style="solo")
+
+
+def test_invalid_budget_value_raises_validation_error():
+    """Any string not in BudgetLevel enum must raise ValidationError (→ 422)."""
+    from app.workflow.intake_model import TravelRequest
+
+    with pytest.raises(ValidationError):
+        TravelRequest(destination="Perth", trip_length=3, budget="low", travel_style="solo")
+
+
+@pytest.mark.parametrize("valid_budget", ["budget", "moderate", "luxury"])
+def test_all_budget_enum_values_accepted(valid_budget):
+    """All three BudgetLevel values must be accepted without error."""
+    from app.workflow.intake_model import TravelRequest
+
+    request = TravelRequest(
+        destination="Sydney", trip_length=3, budget=valid_budget, travel_style="family"
+    )
+    assert request.budget == valid_budget
 
 
 def test_empty_travel_style_raises_validation_error():

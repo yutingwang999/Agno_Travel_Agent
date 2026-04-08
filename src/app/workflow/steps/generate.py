@@ -207,6 +207,10 @@ def generate_executor(step_input: StepInput) -> StepOutput:
     budget: str = additional_data.get("budget", "")
     travel_style: str = additional_data.get("travel_style", "")
 
+    # Optional template version override forwarded from the API query parameter.
+    # None means "use the active version" (default behaviour).
+    template_version_override: int | None = additional_data.get("template_version")
+
     # Read CAG output from the cag_match SSE event
     confidence_score: float = _extract_confidence_score(step_input)
     matched_category: str = _extract_from_step(step_input, "cag_match", "matched_category")
@@ -219,11 +223,14 @@ def generate_executor(step_input: StepInput) -> StepOutput:
     # Choose template based on confidence threshold
     template_key: str = _select_template_key(confidence_score)
 
-    # Fetch the active template from the database — never hardcode prompt text
+    # Fetch the prompt template from the database — never hardcode prompt text.
+    # When a version override is present, fetch that specific version.
+    # Otherwise, fetch the active version and fall back to low_confidence on failure.
     try:
         template_text, template_version = resolve_template(
             template_key=template_key,
             db_url=db_url,
+            version=template_version_override,
         )
     except TemplateNotFoundError:
         logger.error(
@@ -231,10 +238,34 @@ def generate_executor(step_input: StepInput) -> StepOutput:
             "falling back to low_confidence_with_retrieval",
             template_key,
         )
-        template_text, template_version = resolve_template(
-            template_key=LOW_CONFIDENCE_TEMPLATE_KEY,
-            db_url=db_url,
-        )
+        fallback_key = LOW_CONFIDENCE_TEMPLATE_KEY
+        try:
+            if template_key != fallback_key:
+                template_text, template_version = resolve_template(
+                    template_key=fallback_key,
+                    db_url=db_url,
+                    version=template_version_override,
+                )
+            else:
+                raise TemplateNotFoundError(
+                    f"No active template found for template_key={template_key!r}"
+                )
+        except TemplateNotFoundError:
+            latency_ms = (time.monotonic() - start) * 1000
+            write_trace(
+                db_url=db_url,
+                session_id=session_id,
+                step_name="generate",
+                status="error",
+                latency_ms=latency_ms,
+            )
+            error_event = build_sse_event(
+                session_id=session_id,
+                step="generate",
+                status="error",
+                error=f"No active template found for key {template_key!r}",
+            )
+            return StepOutput(content=sse_event_to_json(error_event))
 
     # Format the template by substituting all known variables
     variables = {

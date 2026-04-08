@@ -32,7 +32,7 @@ import pytest
 
 VALID_ITINERARY = {
     "destination": "Sydney",
-    "trip_length_days": 3,
+    "trip_length_days": 1,
     "budget_level": "moderate",
     "travel_style": "family",
     "daily_itinerary": [
@@ -441,7 +441,7 @@ def test_generate_calls_write_trace_once(monkeypatch):
     monkeypatch.setattr("app.workflow.steps.generate.write_trace", mock_write)
     monkeypatch.setattr(
         "app.workflow.steps.generate.resolve_template",
-        lambda template_key, db_url: ("Plan a trip to {destination}.", 1),
+        lambda template_key, db_url, version=None: ("Plan a trip to {destination}.", 1),
     )
     monkeypatch.setattr(
         "app.workflow.steps.generate._call_llm",
@@ -462,7 +462,7 @@ def test_generate_trace_includes_prompt_template_key(monkeypatch):
     monkeypatch.setattr("app.workflow.steps.generate.write_trace", mock_write)
     monkeypatch.setattr(
         "app.workflow.steps.generate.resolve_template",
-        lambda template_key, db_url: ("Plan a trip to {destination}.", 1),
+        lambda template_key, db_url, version=None: ("Plan a trip to {destination}.", 1),
     )
     monkeypatch.setattr(
         "app.workflow.steps.generate._call_llm",
@@ -485,7 +485,7 @@ def test_generate_trace_includes_prompt_template_version(monkeypatch):
     monkeypatch.setattr("app.workflow.steps.generate.write_trace", mock_write)
     monkeypatch.setattr(
         "app.workflow.steps.generate.resolve_template",
-        lambda template_key, db_url: ("Plan a trip to {destination}.", 7),
+        lambda template_key, db_url, version=None: ("Plan a trip to {destination}.", 7),
     )
     monkeypatch.setattr(
         "app.workflow.steps.generate._call_llm",
@@ -508,7 +508,7 @@ def test_generate_trace_common_fields(monkeypatch):
     monkeypatch.setattr("app.workflow.steps.generate.write_trace", mock_write)
     monkeypatch.setattr(
         "app.workflow.steps.generate.resolve_template",
-        lambda template_key, db_url: ("Plan a trip to {destination}.", 1),
+        lambda template_key, db_url, version=None: ("Plan a trip to {destination}.", 1),
     )
     monkeypatch.setattr(
         "app.workflow.steps.generate._call_llm",
@@ -535,7 +535,7 @@ def test_generate_trace_low_confidence_uses_low_confidence_key(monkeypatch):
     monkeypatch.setattr("app.workflow.steps.generate.write_trace", mock_write)
     monkeypatch.setattr(
         "app.workflow.steps.generate.resolve_template",
-        lambda template_key, db_url: ("Plan a trip to {destination}.", 1),
+        lambda template_key, db_url, version=None: ("Plan a trip to {destination}.", 1),
     )
     monkeypatch.setattr(
         "app.workflow.steps.generate._call_llm",
@@ -604,7 +604,7 @@ def test_validate_output_trace_degraded_mode_true_on_retry_success(monkeypatch):
     )
     monkeypatch.setattr(
         "app.workflow.steps.validate_output.resolve_template",
-        lambda template_key, db_url: (
+        lambda template_key, db_url, version=None: (
             "Fix this: {validation_errors}\n{raw_llm_output}", 1
         ),
     )
@@ -634,7 +634,7 @@ def test_validate_output_trace_degraded_mode_true_on_both_failed(monkeypatch):
     )
     monkeypatch.setattr(
         "app.workflow.steps.validate_output.resolve_template",
-        lambda template_key, db_url: (
+        lambda template_key, db_url, version=None: (
             "Fix this: {validation_errors}\n{raw_llm_output}", 1
         ),
     )
@@ -664,7 +664,7 @@ def test_validate_output_trace_called_once_on_both_failed(monkeypatch):
     )
     monkeypatch.setattr(
         "app.workflow.steps.validate_output.resolve_template",
-        lambda template_key, db_url: (
+        lambda template_key, db_url, version=None: (
             "Fix this: {validation_errors}\n{raw_llm_output}", 1
         ),
     )
@@ -690,7 +690,7 @@ def test_validate_output_trace_called_once_on_correction_template_missing(monkey
     from app.workflow.template_resolver import TemplateNotFoundError
     monkeypatch.setattr(
         "app.workflow.steps.validate_output.resolve_template",
-        lambda template_key, db_url: (_ for _ in ()).throw(
+        lambda template_key, db_url, version=None: (_ for _ in ()).throw(
             TemplateNotFoundError("not found")
         ),
     )
