@@ -6,7 +6,7 @@ git-workflow.md branch 4 (feat/workflow-skeleton).
 Workflow steps:
     1. intake              — validate and normalise user input
     2. cag_match           — classify intent via semantic matching
-    3. retrieval_decision  — Condition: route to rag_retrieve when confidence < 0.78
+    3. retrieval_decision  — Condition: route to rag_retrieve when confidence < 0.85
     4. rag_retrieve        — retrieve top-k documents (conditional on step 3)
     5. generate            — resolve prompt template and call LLM
     6. validate_output     — validate LLM output; retry once on failure

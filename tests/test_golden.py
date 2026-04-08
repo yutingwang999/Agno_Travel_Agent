@@ -50,6 +50,7 @@ def _run_workflow_and_collect_events(
     budget: str,
     travel_style: str,
     confidence_score: float,
+    is_fallback: bool = False,
 ) -> list[dict]:
     """Run the travel workflow with a mocked CAG matcher and return all SSE events.
 
@@ -64,6 +65,8 @@ def _run_workflow_and_collect_events(
         budget:           Budget level string.
         travel_style:     Travel style string.
         confidence_score: Mocked CAG confidence score controlling branch path.
+        is_fallback:      Whether the CAG matcher fell back to a default category
+                          because no match exceeded minimum similarity.
 
     Returns:
         List of parsed SSE event dicts emitted by the workflow.
@@ -72,11 +75,11 @@ def _run_workflow_and_collect_events(
     from app.workflow.travel_workflow import travel_workflow
 
     mock_result = MatchResult(
-        category_key=travel_style,
+        category_key="general" if is_fallback else "weekend",
         confidence_score=confidence_score,
         tone="friendly",
         constraints="suitable for all",
-        is_fallback=False,
+        is_fallback=is_fallback,
     )
 
     with patch(
@@ -275,11 +278,12 @@ def test_golden_low_confidence_rag_path_taken():
     session_id = f"golden-lowconf-{uuid.uuid4()}"
     events = _run_workflow_and_collect_events(
         session_id=session_id,
-        destination="sydney",
+        destination="abcdefg hi",
         trip_length=4,
         budget="moderate",
-        travel_style="family",
-        confidence_score=0.50,  # below threshold → trigger RAG
+        travel_style="spontaneous_urban_nomad",  # unusual style → low-confidence match
+        confidence_score=0.50,  # below 0.85 threshold → trigger RAG
+        is_fallback=False,  # a category was matched, just not confidently enough to skip RAG
     )
 
     step_names = [e.get("step") for e in events]

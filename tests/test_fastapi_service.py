@@ -84,7 +84,7 @@ _TEMPLATE_EVENTS = [
         "data": {
             "routing_decision": "generate",
             "confidence_score": 0.85,
-            "threshold": 0.78,
+            "threshold": 0.85,
         },
         "error": None,
     },

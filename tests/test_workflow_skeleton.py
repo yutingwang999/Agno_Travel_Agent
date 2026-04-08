@@ -295,7 +295,7 @@ def test_workflow_run_produces_six_sse_events(capsys):
     from app.workflow.cag_matcher import MatchResult
     from app.workflow.travel_workflow import travel_workflow
 
-    # Use low confidence (< 0.78) so rag_retrieve runs and all 6 events are emitted.
+    # Use low confidence (<0.85) so rag_retrieve runs and all 6 events are emitted.
     low_confidence_result = MatchResult(
         category_key="family",
         confidence_score=0.50,

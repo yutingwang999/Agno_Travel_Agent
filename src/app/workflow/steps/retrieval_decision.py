@@ -3,8 +3,8 @@
 Implements the Agno Condition node evaluator defined in DESIGN.md section 6.
 
 Threshold:
-    confidence_score >= 0.78  →  evaluator returns False  →  skip rag_retrieve
-    confidence_score <  0.78  →  evaluator returns True   →  run  rag_retrieve
+    confidence_score >= 0.85  →  evaluator returns False  →  skip rag_retrieve
+    confidence_score <  0.85  →  evaluator returns True   →  run  rag_retrieve
 
 The branch decision is written to the SSE event ``data`` field.
 """
@@ -15,17 +15,16 @@ import time
 
 from agno.workflow.types import StepInput
 
+from app.workflow.config import RETRIEVAL_CONFIDENCE_THRESHOLD
 from app.workflow.sse import build_sse_event, sse_event_to_json
 from app.workflow.trace_logger import write_trace
-
-RETRIEVAL_CONFIDENCE_THRESHOLD = 0.78
 
 
 def retrieval_decision_evaluator(step_input: StepInput) -> bool:
     """Route the workflow based on CAG confidence score.
 
     Reads ``confidence_score`` from the cag_match step output, compares it
-    against the 0.78 threshold defined in DESIGN.md, and returns:
+    against the 0.85 threshold defined in DESIGN.md, and returns:
 
         True  → execute rag_retrieve (low confidence, retrieval needed)
         False → skip rag_retrieve, proceed directly to generate
@@ -37,7 +36,7 @@ def retrieval_decision_evaluator(step_input: StepInput) -> bool:
                     session metadata in ``additional_data``.
 
     Returns:
-        True when retrieval is needed (confidence_score < 0.78).
+        True when retrieval is needed (confidence_score < 0.85).
         False when confidence is high enough to skip retrieval.
     """
     additional_data: dict = step_input.additional_data or {}

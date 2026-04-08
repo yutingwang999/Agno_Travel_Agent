@@ -10,8 +10,8 @@ Reads upstream workflow state to build a fully resolved prompt:
   rag_retrieve was skipped due to high confidence)
 
 Template key selection:
-    confidence_score >= 0.78  →  ``high_confidence_minimal_context``
-    confidence_score <  0.78  →  ``low_confidence_with_retrieval``
+    confidence_score >= 0.85  →  ``high_confidence_minimal_context``
+    confidence_score <  0.85  →  ``low_confidence_with_retrieval``
 
 The active versioned template is fetched from ``prompt_templates`` by
 ``template_key`` and ``is_active=True`` — never hardcoded.
@@ -29,13 +29,12 @@ import time
 from agno.workflow.types import StepInput, StepOutput
 from google import genai
 
+from app.workflow.config import RETRIEVAL_CONFIDENCE_THRESHOLD
 from app.workflow.sse import build_sse_event, sse_event_to_json
 from app.workflow.template_resolver import TemplateNotFoundError, resolve_template
 from app.workflow.trace_logger import write_trace
 
 logger = logging.getLogger(__name__)
-
-RETRIEVAL_CONFIDENCE_THRESHOLD = 0.78
 HIGH_CONFIDENCE_TEMPLATE_KEY = "high_confidence_minimal_context"
 LOW_CONFIDENCE_TEMPLATE_KEY = "low_confidence_with_retrieval"
 DEFAULT_LLM_MODEL = "gemini-2.0-flash"
@@ -125,7 +124,7 @@ def _select_template_key(confidence_score: float) -> str:
 
     Returns:
         ``"high_confidence_minimal_context"`` when confidence is at or above
-        the 0.78 threshold; ``"low_confidence_with_retrieval"`` otherwise.
+        the 0.85 threshold; ``"low_confidence_with_retrieval"`` otherwise.
     """
     if confidence_score >= RETRIEVAL_CONFIDENCE_THRESHOLD:
         return HIGH_CONFIDENCE_TEMPLATE_KEY

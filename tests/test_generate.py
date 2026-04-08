@@ -6,8 +6,8 @@ Verifies:
   - prompt_template_version written to workflow state after step 5
   - raw_llm_output present in workflow state after step 5
   - SSE event structure matches DESIGN.md section 9
-  - template key selection: confidence >= 0.78 → high_confidence_minimal_context
-  - template key selection: confidence < 0.78  → low_confidence_with_retrieval
+  - template key selection: confidence >= 0.85 → high_confidence_minimal_context
+  - template key selection: confidence < 0.85  → low_confidence_with_retrieval
   - _format_template only replaces identifier placeholders, leaves JSON braces intact
   - retrieved_context is empty string when rag_retrieve step was skipped
   - retrieved_context is populated when rag_retrieve step ran
@@ -114,19 +114,19 @@ def test_template_resolver_importable():
 
 
 def test_select_template_key_high_confidence():
-    """confidence_score >= 0.78 must select high_confidence_minimal_context."""
+    """confidence_score >= 0.85 must select high_confidence_minimal_context."""
     from app.workflow.steps.generate import (
         HIGH_CONFIDENCE_TEMPLATE_KEY,
         _select_template_key,
     )
 
-    assert _select_template_key(0.78) == HIGH_CONFIDENCE_TEMPLATE_KEY
+    assert _select_template_key(0.85) == HIGH_CONFIDENCE_TEMPLATE_KEY
     assert _select_template_key(0.90) == HIGH_CONFIDENCE_TEMPLATE_KEY
     assert _select_template_key(1.00) == HIGH_CONFIDENCE_TEMPLATE_KEY
 
 
 def test_select_template_key_low_confidence():
-    """confidence_score < 0.78 must select low_confidence_with_retrieval."""
+    """confidence_score < 0.85 must select low_confidence_with_retrieval."""
     from app.workflow.steps.generate import (
         LOW_CONFIDENCE_TEMPLATE_KEY,
         _select_template_key,
@@ -137,11 +137,11 @@ def test_select_template_key_low_confidence():
     assert _select_template_key(0.00) == LOW_CONFIDENCE_TEMPLATE_KEY
 
 
-def test_threshold_is_0_78():
-    """RETRIEVAL_CONFIDENCE_THRESHOLD must equal 0.78 (DESIGN.md section 6)."""
+def test_threshold_is_0_85():
+    """RETRIEVAL_CONFIDENCE_THRESHOLD must equal 0.85."""
     from app.workflow.steps.generate import RETRIEVAL_CONFIDENCE_THRESHOLD
 
-    assert RETRIEVAL_CONFIDENCE_THRESHOLD == 0.78
+    assert RETRIEVAL_CONFIDENCE_THRESHOLD == 0.85
 
 
 # ---------------------------------------------------------------------------
@@ -351,7 +351,7 @@ def test_sse_event_structure():
 
 
 def test_high_confidence_uses_minimal_context_template():
-    """confidence_score >= 0.78 must resolve high_confidence_minimal_context template."""
+    """confidence_score >= 0.85 must resolve high_confidence_minimal_context template."""
     from app.workflow.steps.generate import (
         HIGH_CONFIDENCE_TEMPLATE_KEY,
         generate_executor,
@@ -376,7 +376,7 @@ def test_high_confidence_uses_minimal_context_template():
 
 
 def test_low_confidence_uses_retrieval_template():
-    """confidence_score < 0.78 must resolve low_confidence_with_retrieval template."""
+    """confidence_score < 0.85 must resolve low_confidence_with_retrieval template."""
     from app.workflow.steps.generate import (
         LOW_CONFIDENCE_TEMPLATE_KEY,
         generate_executor,

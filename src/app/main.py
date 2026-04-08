@@ -1,21 +1,28 @@
 """FastAPI application entry point.
 
 Exposes:
-    GET  /health    — liveness probe
-    POST /generate  — execute the travel itinerary workflow and stream results
-                      as Server-Sent Events (text/event-stream)
+    GET  /health                  — liveness probe
+    POST /generate                — execute the travel itinerary workflow and stream results
+                                    as Server-Sent Events (text/event-stream)
+    GET  /traces/{session_id}     — return all trace_events rows for a session as JSON
+    GET  /                        — serve the static frontend (index.html)
 """
 
 import contextlib
 import io
 import json
+import os
 import uuid
 from typing import Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 
+from app.models.trace_event import TraceEvent
 from app.workflow.intake_model import TravelRequest
 from app.workflow.travel_workflow import travel_workflow
 
@@ -144,6 +151,59 @@ def _run_workflow(
     return all_events
 
 
+@app.get("/traces/{session_id}")
+def get_traces(session_id: str):
+    """Return all trace_events rows for the given session_id as a JSON array.
+
+    Rows are ordered by ``created_at`` ascending.  Returns 404 when no rows
+    exist for the session_id.
+
+    Args:
+        session_id: The session identifier used when the workflow was executed.
+
+    Returns:
+        A JSON array of trace event objects.  Each object contains at minimum:
+        ``session_id``, ``step_name``, ``status``, ``latency_ms``, ``created_at``.
+        The ``generate`` step row also includes ``prompt_template_key`` and
+        ``prompt_template_version``.
+
+    Raises:
+        HTTPException 404: when no trace rows exist for the session_id.
+    """
+    db_url = os.environ.get("DATABASE_URL")
+    if not db_url:
+        raise HTTPException(status_code=500, detail="DATABASE_URL not configured")
+
+    engine = create_engine(db_url)
+    with Session(engine) as db_session:
+        rows = db_session.execute(
+            select(TraceEvent)
+            .where(TraceEvent.session_id == session_id)
+            .order_by(TraceEvent.created_at)
+        ).scalars().all()
+
+    if not rows:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No trace events found for session_id={session_id!r}",
+        )
+
+    return [
+        {
+            "session_id": row.session_id,
+            "step_name": row.step_name,
+            "status": row.status,
+            "latency_ms": row.latency_ms,
+            "prompt_template_key": row.prompt_template_key,
+            "prompt_template_version": row.prompt_template_version,
+            "degraded_mode": row.degraded_mode,
+            "error_type": row.error_type,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        }
+        for row in rows
+    ]
+
+
 @app.post("/generate")
 async def generate(
     request: TravelRequest,
@@ -189,3 +249,12 @@ async def generate(
             yield {"data": json.dumps(event)}
 
     return EventSourceResponse(event_generator())
+
+
+# ---------------------------------------------------------------------------
+# Static frontend — mount last so API routes take precedence
+# ---------------------------------------------------------------------------
+
+_STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+if os.path.isdir(_STATIC_DIR):
+    app.mount("/", StaticFiles(directory=_STATIC_DIR, html=True), name="static")
