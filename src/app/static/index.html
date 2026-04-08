@@ -1,0 +1,622 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Travel Itinerary Planner</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family: system-ui, sans-serif;
+        background: #f5f7fa;
+        color: #1a1a2e;
+        min-height: 100vh;
+      }
+
+      header {
+        background: #16213e;
+        color: #e0e0e0;
+        padding: 1rem 2rem;
+        font-size: 1.25rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+      }
+
+      main {
+        max-width: 900px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+
+      /* ---- Form ---- */
+      .card {
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+      }
+
+      .card h2 {
+        font-size: 1rem;
+        font-weight: 600;
+        margin-bottom: 1rem;
+        color: #16213e;
+      }
+
+      .preset-buttons {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        margin-bottom: 1rem;
+      }
+
+      .preset-btn {
+        padding: 0.35rem 0.75rem;
+        border: 1px solid #16213e;
+        border-radius: 4px;
+        background: transparent;
+        color: #16213e;
+        cursor: pointer;
+        font-size: 0.85rem;
+        transition:
+          background 0.15s,
+          color 0.15s;
+      }
+
+      .preset-btn:hover {
+        background: #16213e;
+        color: #fff;
+      }
+
+      .form-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+      }
+
+      @media (max-width: 540px) {
+        .form-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .field label {
+        display: block;
+        font-size: 0.8rem;
+        font-weight: 500;
+        margin-bottom: 0.3rem;
+        color: #555;
+      }
+
+      .field input,
+      .field select {
+        width: 100%;
+        padding: 0.45rem 0.6rem;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 0.95rem;
+      }
+
+      .field input:focus,
+      .field select:focus {
+        outline: 2px solid #0f3460;
+        border-color: transparent;
+      }
+
+      .field.optional label::after {
+        content: " (optional)";
+        color: #aaa;
+        font-weight: 400;
+      }
+
+      .submit-btn {
+        margin-top: 1rem;
+        padding: 0.6rem 1.5rem;
+        background: #0f3460;
+        color: #fff;
+        border: none;
+        border-radius: 4px;
+        font-size: 0.95rem;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+
+      .submit-btn:hover {
+        background: #16213e;
+      }
+      .submit-btn:disabled {
+        background: #999;
+        cursor: not-allowed;
+      }
+
+      /* ---- Step panels ---- */
+      #steps-container {
+        margin-bottom: 1.5rem;
+      }
+
+      .step-panel {
+        border-left: 4px solid #ccc;
+        background: #fff;
+        border-radius: 0 6px 6px 0;
+        padding: 0.85rem 1rem;
+        margin-bottom: 0.6rem;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+        animation: fadeIn 0.2s ease;
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(4px);
+        }
+        to {
+          opacity: 1;
+        }
+      }
+
+      .step-panel.completed {
+        border-left-color: #27ae60;
+      }
+      .step-panel.error {
+        border-left-color: #e74c3c;
+      }
+      .step-panel.running {
+        border-left-color: #f39c12;
+      }
+
+      .step-header {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.4rem;
+      }
+
+      .step-name {
+        font-weight: 600;
+        font-size: 0.95rem;
+      }
+
+      .step-status {
+        font-size: 0.75rem;
+        padding: 0.1rem 0.45rem;
+        border-radius: 20px;
+        font-weight: 500;
+        text-transform: uppercase;
+      }
+
+      .step-status.completed {
+        background: #d4edda;
+        color: #155724;
+      }
+      .step-status.error {
+        background: #f8d7da;
+        color: #721c24;
+      }
+
+      .step-latency {
+        margin-left: auto;
+        font-size: 0.75rem;
+        color: #888;
+      }
+
+      .step-data {
+        font-size: 0.78rem;
+        background: #f8f9fa;
+        border-radius: 4px;
+        padding: 0.5rem 0.7rem;
+        overflow-x: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-family: monospace;
+        color: #333;
+      }
+
+      .template-highlight {
+        background: #fff3cd;
+        border: 1px solid #ffc107;
+        border-radius: 4px;
+        padding: 0.4rem 0.7rem;
+        font-size: 0.82rem;
+        margin-top: 0.4rem;
+      }
+
+      /* ---- Trace table ---- */
+      #trace-section {
+        display: none;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.82rem;
+      }
+
+      th,
+      td {
+        text-align: left;
+        padding: 0.5rem 0.7rem;
+        border-bottom: 1px solid #e8e8e8;
+      }
+
+      th {
+        background: #16213e;
+        color: #e0e0e0;
+        font-weight: 500;
+      }
+
+      tr:nth-child(even) td {
+        background: #f9f9f9;
+      }
+
+      .true-val {
+        color: #e74c3c;
+        font-weight: 600;
+      }
+      .false-val {
+        color: #27ae60;
+      }
+
+      #error-banner {
+        background: #f8d7da;
+        border: 1px solid #f5c6cb;
+        border-radius: 6px;
+        padding: 0.75rem 1rem;
+        color: #721c24;
+        margin-bottom: 1rem;
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <header>Travel Itinerary Planner</header>
+
+    <main>
+      <!-- Error banner -->
+      <div id="error-banner" role="alert"></div>
+
+      <!-- Input form -->
+      <div class="card">
+        <h2>Plan Your Trip</h2>
+
+        <div class="preset-buttons">
+          <button class="preset-btn" onclick="fillPreset('family')">
+            Family trip
+          </button>
+          <button class="preset-btn" onclick="fillPreset('budget')">
+            Budget trip
+          </button>
+          <button class="preset-btn" onclick="fillPreset('lowconf')">
+            Low-confidence
+          </button>
+        </div>
+
+        <form id="travel-form" onsubmit="submitForm(event)">
+          <div class="form-grid">
+            <div class="field">
+              <label for="destination">Destination</label>
+              <input
+                id="destination"
+                name="destination"
+                type="text"
+                placeholder="e.g. Sydney"
+                required
+              />
+            </div>
+            <div class="field">
+              <label for="trip_length">Trip length (days)</label>
+              <input
+                id="trip_length"
+                name="trip_length"
+                type="number"
+                min="1"
+                placeholder="e.g. 5"
+                required
+              />
+            </div>
+            <div class="field">
+              <label for="budget">Budget</label>
+              <select id="budget" name="budget" required>
+                <option value="" disabled selected>Select…</option>
+                <option value="budget">Budget</option>
+                <option value="moderate">Moderate</option>
+                <option value="luxury">Luxury</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="travel_style">Travel style</label>
+              <input
+                id="travel_style"
+                name="travel_style"
+                type="text"
+                placeholder="e.g. family, adventure, solo"
+                required
+              />
+            </div>
+            <div class="field optional">
+              <label for="template_version">Template version</label>
+              <input
+                id="template_version"
+                name="template_version"
+                type="number"
+                min="1"
+                placeholder="leave blank for active"
+              />
+            </div>
+          </div>
+          <button class="submit-btn" id="submit-btn" type="submit">
+            Generate Itinerary
+          </button>
+        </form>
+      </div>
+
+      <!-- Step-by-step SSE panels -->
+      <div id="steps-container"></div>
+
+      <!-- Trace table (shown after stream completes) -->
+      <div id="trace-section" class="card">
+        <h2>Trace Log</h2>
+        <table id="trace-table">
+          <thead>
+            <tr>
+              <th>Step</th>
+              <th>Status</th>
+              <th>Latency (ms)</th>
+              <th>Template key</th>
+              <th>Version</th>
+              <th>Degraded</th>
+              <th>Created at</th>
+            </tr>
+          </thead>
+          <tbody id="trace-tbody"></tbody>
+        </table>
+      </div>
+    </main>
+
+    <script>
+      // ---------------------------------------------------------------------------
+      // Preset values (mirrors test_golden.py inputs)
+      // ---------------------------------------------------------------------------
+      const PRESETS = {
+        family: {
+          destination: "Sydney",
+          trip_length: 5,
+          budget: "moderate",
+          travel_style: "family",
+        },
+        budget: {
+          destination: "Melbourne",
+          trip_length: 3,
+          budget: "budget",
+          travel_style: "budget",
+        },
+        lowconf: {
+          destination: "abcdefg hi",
+          trip_length: 4,
+          budget: "moderate",
+          travel_style: "spontaneous_urban_nomad",
+        },
+      };
+
+      function fillPreset(key) {
+        const p = PRESETS[key];
+        document.getElementById("destination").value = p.destination;
+        document.getElementById("trip_length").value = p.trip_length;
+        document.getElementById("budget").value = p.budget;
+        document.getElementById("travel_style").value = p.travel_style;
+        document.getElementById("template_version").value = "";
+      }
+
+      // ---------------------------------------------------------------------------
+      // Form submit → SSE stream
+      // ---------------------------------------------------------------------------
+      let currentSessionId = null;
+
+      function showError(msg) {
+        const banner = document.getElementById("error-banner");
+        banner.textContent = msg;
+        banner.style.display = "block";
+      }
+
+      function hideError() {
+        document.getElementById("error-banner").style.display = "none";
+      }
+
+      function setSubmitDisabled(disabled) {
+        document.getElementById("submit-btn").disabled = disabled;
+        document.getElementById("submit-btn").textContent = disabled
+          ? "Generating…"
+          : "Generate Itinerary";
+      }
+
+      function clearResults() {
+        document.getElementById("steps-container").innerHTML = "";
+        document.getElementById("trace-section").style.display = "none";
+        document.getElementById("trace-tbody").innerHTML = "";
+        currentSessionId = null;
+      }
+
+      function submitForm(event) {
+        event.preventDefault();
+        hideError();
+        clearResults();
+        setSubmitDisabled(true);
+
+        const destination = document.getElementById("destination").value.trim();
+        const trip_length = parseInt(
+          document.getElementById("trip_length").value,
+          10,
+        );
+        const budget = document.getElementById("budget").value;
+        const travel_style = document
+          .getElementById("travel_style")
+          .value.trim();
+        const tv = document.getElementById("template_version").value.trim();
+        const template_version = tv ? parseInt(tv, 10) : null;
+
+        // Build request body
+        const body = { destination, trip_length, budget, travel_style };
+
+        // Build URL (template_version as query param if provided)
+        let url = "/generate";
+        if (template_version !== null)
+          url += `?template_version=${template_version}`;
+
+        // Use fetch + ReadableStream to consume SSE
+        fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        })
+          .then((response) => {
+            if (!response.ok) {
+              return response.json().then((err) => {
+                throw new Error(err.detail || `HTTP ${response.status}`);
+              });
+            }
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = "";
+
+            function pump() {
+              return reader.read().then(({ done, value }) => {
+                if (done) {
+                  setSubmitDisabled(false);
+                  if (currentSessionId) loadTrace(currentSessionId);
+                  return;
+                }
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split("\n");
+                buffer = lines.pop(); // last incomplete line stays in buffer
+                for (const line of lines) {
+                  const trimmed = line.trim();
+                  if (trimmed.startsWith("data: ")) {
+                    try {
+                      const event = JSON.parse(trimmed.slice(6));
+                      handleStepEvent(event);
+                    } catch (_) {}
+                  }
+                }
+                return pump();
+              });
+            }
+            return pump();
+          })
+          .catch((err) => {
+            setSubmitDisabled(false);
+            showError("Error: " + err.message);
+          });
+      }
+
+      // ---------------------------------------------------------------------------
+      // Render a single step event as a panel
+      // ---------------------------------------------------------------------------
+      function handleStepEvent(event) {
+        if (event.session_id && !currentSessionId) {
+          currentSessionId = event.session_id;
+        }
+
+        const container = document.getElementById("steps-container");
+        const panel = document.createElement("div");
+        const status = event.status || "unknown";
+        panel.className = `step-panel ${status}`;
+
+        // Header row
+        const header = document.createElement("div");
+        header.className = "step-header";
+
+        const nameEl = document.createElement("span");
+        nameEl.className = "step-name";
+        nameEl.textContent = event.step || "unknown";
+        header.appendChild(nameEl);
+
+        const statusEl = document.createElement("span");
+        statusEl.className = `step-status ${status}`;
+        statusEl.textContent = status;
+        header.appendChild(statusEl);
+
+        // latency_ms comes from trace; show from data if available
+        const latency =
+          event.data && event.data.latency_ms != null
+            ? event.data.latency_ms
+            : null;
+        if (latency !== null) {
+          const latEl = document.createElement("span");
+          latEl.className = "step-latency";
+          latEl.textContent = `${latency.toFixed(1)} ms`;
+          header.appendChild(latEl);
+        }
+
+        panel.appendChild(header);
+
+        // Data payload
+        if (event.data && Object.keys(event.data).length > 0) {
+          const dataEl = document.createElement("pre");
+          dataEl.className = "step-data";
+          dataEl.textContent = JSON.stringify(event.data, null, 2);
+          panel.appendChild(dataEl);
+        }
+
+        // Highlight prompt template info for the generate step
+        if (event.step === "generate" && event.data) {
+          const key = event.data.prompt_template_key;
+          const version = event.data.prompt_template_version;
+          if (key || version != null) {
+            const highlight = document.createElement("div");
+            highlight.className = "template-highlight";
+            highlight.textContent = `Template: ${key || "—"}  |  Version: ${version != null ? version : "—"}`;
+            panel.appendChild(highlight);
+          }
+        }
+
+        container.appendChild(panel);
+        panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+
+      // ---------------------------------------------------------------------------
+      // Fetch and render trace table
+      // ---------------------------------------------------------------------------
+      function loadTrace(sessionId) {
+        fetch(`/traces/${encodeURIComponent(sessionId)}`)
+          .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+          .then((rows) => {
+            const tbody = document.getElementById("trace-tbody");
+            tbody.innerHTML = "";
+            for (const row of rows) {
+              const tr = document.createElement("tr");
+              tr.innerHTML = `
+          <td>${esc(row.step_name)}</td>
+          <td>${esc(row.status)}</td>
+          <td>${row.latency_ms != null ? row.latency_ms.toFixed(1) : "—"}</td>
+          <td>${esc(row.prompt_template_key) || "—"}</td>
+          <td>${row.prompt_template_version != null ? row.prompt_template_version : "—"}</td>
+          <td class="${row.degraded_mode ? "true-val" : "false-val"}">${row.degraded_mode ? "yes" : "no"}</td>
+          <td>${esc(row.created_at) || "—"}</td>
+        `;
+              tbody.appendChild(tr);
+            }
+            document.getElementById("trace-section").style.display = "block";
+          })
+          .catch(() => {
+            // Trace not available — not fatal, just skip
+          });
+      }
+
+      function esc(val) {
+        if (val == null) return "";
+        return String(val)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+    </script>
+  </body>
+</html>

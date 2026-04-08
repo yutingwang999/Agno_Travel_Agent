@@ -137,8 +137,8 @@ implemented until `cag_match` produces the score it reads.
 **Scope**
 
 - Step 3 implementation: Agno `Condition` node
-- Threshold: `confidence_score >= 0.78` → skip `rag_retrieve`, proceed directly to `generate`
-- Threshold: `confidence_score < 0.78` → execute `rag_retrieve` before `generate`
+- Threshold: `confidence_score >= 0.85` → skip `rag_retrieve`, proceed directly to `generate`
+- Threshold: `confidence_score < 0.85` → execute `rag_retrieve` before `generate`
 - Branch decision written to SSE event `data` field
 
 **Why seventh**
@@ -237,7 +237,7 @@ Adding it as a dedicated branch also makes the diff reviewable on its own terms.
 **Scope**
 
 - `pytest` configuration (`pyproject.toml` or `pytest.ini`), test database fixture
-- Unit tests: template resolver, 0.78 threshold logic, output validator helpers
+- Unit tests: template resolver, 0.85 threshold logic, output validator helpers
 - Integration tests: DB migrations apply correctly, prompt lookup by key + active version,
   `trace_events` row written after workflow run
 - End-to-end test: `POST /generate` → SSE stream contains all 6 step events
@@ -258,11 +258,13 @@ avoids premature test investment against unstable interfaces.
 **Scope**
 
 Backend additions:
+
 - `GET /traces/{session_id}` endpoint — queries `trace_events` for all rows matching
   `session_id`, returns a JSON array ordered by `created_at`; returns 404 when no rows exist
 - `StaticFiles` mount in `app/main.py` serving `src/app/static/` at `/`
 
 Frontend (`src/app/static/`):
+
 - `index.html` — single-page form UI with no build step (plain HTML + vanilla JS)
 - Form fields matching the `TravelRequest` schema: `destination` (text), `trip_length`
   (number), `budget` (select: budget / moderate / luxury), `travel_style` (text), and an
@@ -282,6 +284,7 @@ Frontend (`src/app/static/`):
   3. **Low-confidence** — Sydney, 4 days, moderate, family (triggers RAG path)
 
 Tests:
+
 - `tests/test_ui_api.py` — unit tests for `GET /traces/{session_id}`:
   - returns 200 + correct JSON when rows exist (DB mocked)
   - returns 404 when no rows found
@@ -369,9 +372,9 @@ client to call it.
 
 ### `feat/retrieval-decision`
 
-- [ ] A request with `confidence_score >= 0.78` does not execute `rag_retrieve` (verify via SSE
+- [ ] A request with `confidence_score >= 0.85` does not execute `rag_retrieve` (verify via SSE
       events — no `rag_retrieve` event in stream)
-- [ ] A request with `confidence_score < 0.78` does execute `rag_retrieve` (event present)
+- [ ] A request with `confidence_score < 0.85` does execute `rag_retrieve` (event present)
 - [ ] SSE event for `retrieval_decision` includes the routing decision in its `data` field
 
 ---
