@@ -2,6 +2,9 @@
 
 All notable changes to this project are documented here, ordered from most recent to oldest.
 
+## [0.1.0] — 2026-10-22
+- Snapshot of the current working MVP, tagged as a baseline before the project is expanded further.
+
 ---
 
 ## [Unreleased] — 2026-04-08
