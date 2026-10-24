@@ -644,7 +644,7 @@ Golden and end-to-end tests are marked `@pytest.mark.integration` and are skippe
 │   ├── dev.py               # cross-platform task runner
 │   └── seed.py              # seed itinerary_categories, prompt_templates, source_documents
 ├── docs/
-│   ├── DESIGN.md            # single source of truth for system design
+│   ├── DESIGN.md            # original v0.1.0 design (OpenSpec specs/changes take precedence)
 │   ├── CLAUDE.md            # AI usage guidelines for this repo
 │   └── git-workflow.md      # feature branch order and merge checklist
 ├── alembic.ini              # Alembic config (DB URL injected from env)

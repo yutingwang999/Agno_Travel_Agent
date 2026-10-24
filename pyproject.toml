@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "agno-travel-agent"
@@ -8,24 +8,24 @@ version = "0.1.0"
 description = "Travel Itinerary Planner using CAG + RAG with Agno workflow orchestration"
 requires-python = ">=3.11"
 dependencies = [
-    "fastapi==0.115.0",
-    "uvicorn[standard]==0.30.6",
-    "agno==1.7.4",
-    "sqlalchemy==2.0.35",
-    "alembic==1.13.3",
-    "psycopg2-binary==2.9.9",
-    "pgvector==0.3.2",
-    "pydantic==2.9.2",
-    "sse-starlette==2.1.3",
-    "python-dotenv==1.0.1",
+    "fastapi==0.128.0",
+    "uvicorn[standard]==0.40.0",
+    "agno==2.5.14",
+    "sqlalchemy==2.0.48",
+    "alembic==1.18.4",
+    "psycopg2-binary==2.9.11",
+    "pgvector==0.4.1",
+    "pydantic==2.12.5",
+    "sse-starlette==2.2.1",
+    "python-dotenv==1.2.1",
     "google-genai==1.60.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest==8.3.3",
-    "pytest-asyncio==0.24.0",
-    "httpx==0.27.2",
+    "pytest==9.0.2",
+    "pytest-asyncio==1.3.0",
+    "httpx==0.28.1",
 ]
 
 [tool.setuptools.packages.find]
