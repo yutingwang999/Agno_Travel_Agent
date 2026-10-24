@@ -1,5 +1,7 @@
 # DESIGN.md
 
+> **v0.1.0 design.** Later behaviour changes are made through OpenSpec (`openspec/changes/`, `openspec/specs/`), which takes precedence over this document where they conflict. See the root `CLAUDE.md` → "Sources of truth".
+
 ## 1. Domain Choice and Rationale
 
 ### Chosen Domain
