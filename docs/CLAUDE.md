@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+> **v0.1.0 document.** Behaviour is now changed deliberately through OpenSpec (`openspec/changes/`, `openspec/specs/`), which takes precedence over this file and `DESIGN.md` where they conflict. See the root `CLAUDE.md` → "Sources of truth".
+
 ## Purpose
 
 This file defines how AI tools (e.g. Claude, ChatGPT, Copilot) must operate in this repository.
