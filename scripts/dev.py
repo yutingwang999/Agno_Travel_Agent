@@ -7,7 +7,11 @@ Usage:
     python scripts/dev.py install
     python scripts/dev.py migrate
     python scripts/dev.py check-health
-    python scripts/dev.py test
+    python scripts/dev.py test              # unit tests only (pytest default)
+    python scripts/dev.py test-db-setup     # create + migrate + seed the test database
+    python scripts/dev.py test-integration  # -m integration (test database + Gemini)
+    python scripts/dev.py test-destructive  # -m destructive, then re-seed the test database
+    python scripts/dev.py test-all          # unit -> integration -> destructive + re-seed
     python scripts/dev.py verify
     python scripts/dev.py verify-schema
 """
@@ -19,9 +23,24 @@ import time
 import urllib.request
 import urllib.error
 
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+# Destructive tests refuse any other database name (see tests/test_db_schema.py).
+TEST_DB_SUFFIX = "_test_db"
+
+
+def load_env() -> None:
+    """Load .env without overriding variables already set in the shell."""
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(os.path.join(ROOT_DIR, ".env"), override=False)
+    except ImportError:
+        pass
+
 
 def run(cmd: list[str], check: bool = True, env: dict | None = None) -> int:
     merged_env = {**os.environ, **(env or {})}
+    sys.stdout.flush()  # keep our headings in order with the subprocess output
     result = subprocess.run(cmd, env=merged_env)
     if check and result.returncode != 0:
         print(f"ERROR: command failed: {' '.join(cmd)}")
@@ -66,8 +85,88 @@ def check_health(retries: int = 5, delay: float = 1.0):
 
 
 def test():
-    print("--- running pytest ---")
+    print("--- running unit tests ---")
+    if not os.environ.get("TEST_DATABASE_URL"):
+        print(
+            "note: TEST_DATABASE_URL is not set, so integration and destructive tests "
+            "will be skipped (see .env.example)"
+        )
     run([sys.executable, "-m", "pytest"])
+
+
+def test_database_url() -> str:
+    """Return TEST_DATABASE_URL, exiting if it is unset or not a *_test_db database."""
+    from sqlalchemy import make_url
+
+    url = os.environ.get("TEST_DATABASE_URL")
+    if not url:
+        print("ERROR: TEST_DATABASE_URL not set - add it to .env (see .env.example)")
+        sys.exit(1)
+    name = make_url(url).database or ""
+    if not name.endswith(TEST_DB_SUFFIX):
+        print(f"ERROR: TEST_DATABASE_URL database {name!r} must end with {TEST_DB_SUFFIX!r}")
+        sys.exit(1)
+    return url
+
+
+def create_database_if_missing(database_url: str) -> None:
+    """Create the database named in database_url on the same server, if absent."""
+    from sqlalchemy import create_engine, make_url, text
+
+    url = make_url(database_url)
+    server = create_engine(url.set(database="postgres"), isolation_level="AUTOCOMMIT")
+    with server.connect() as conn:
+        exists = conn.execute(
+            text("SELECT 1 FROM pg_database WHERE datname = :name"), {"name": url.database}
+        ).scalar()
+        if exists:
+            print(f"database {url.database} already exists")
+        else:
+            conn.execute(text(f'CREATE DATABASE "{url.database}"'))
+            print(f"created database {url.database}")
+    server.dispose()
+
+
+def migrate_database(database_url: str) -> None:
+    print("--- running alembic upgrade head ---")
+    run([sys.executable, "-m", "alembic", "upgrade", "head"], env={"DATABASE_URL": database_url})
+
+
+def test_db_setup():
+    """Create (if missing), migrate and seed the test database. Safe to re-run."""
+    url = test_database_url()
+    print("--- preparing test database ---")
+    create_database_if_missing(url)
+    migrate_database(url)
+    print("--- running seed script against the test database ---")
+    run([sys.executable, "scripts/seed.py"], env={"DATABASE_URL": url})
+    count_rows(url)
+
+
+def test_integration():
+    print("--- running integration tests ---")
+    test_database_url()
+    run([sys.executable, "-m", "pytest", "-m", "integration"])
+
+
+def test_destructive():
+    """Run the migration tests, then restore the test database whatever the outcome."""
+    print("--- running destructive tests ---")
+    test_database_url()
+    code = run([sys.executable, "-m", "pytest", "-m", "destructive"], check=False)
+    print("--- restoring test database ---")
+    test_db_setup()
+    if code != 0:
+        print("ERROR: destructive tests failed")
+        sys.exit(code)
+
+
+def test_all():
+    """Full check before merging: unit -> integration -> destructive + restore."""
+    test()
+    test_integration()
+    test_destructive()
+    print("--- all test tiers passed ---")
 
 
 def verify():
@@ -113,33 +212,25 @@ def seed():
     run([sys.executable, "scripts/seed.py"])
 
 
-def count_rows():
-    """Print row counts for all seeded tables."""
-    root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    src_dir = os.path.join(root_dir, "src")
+def count_rows(database_url: str | None = None):
+    """Print row counts for all seeded tables (DATABASE_URL unless a URL is given)."""
+    src_dir = os.path.join(ROOT_DIR, "src")
     if src_dir not in sys.path:
         sys.path.insert(0, src_dir)
 
-    # Load .env so DATABASE_URL is available without requiring it in the shell
-    try:
-        from dotenv import load_dotenv
-        load_dotenv(os.path.join(root_dir, ".env"))
-    except ImportError:
-        pass
-
-    database_url = os.environ.get("DATABASE_URL")
+    database_url = database_url or os.environ.get("DATABASE_URL")
     if not database_url:
         print("ERROR: DATABASE_URL not set")
         sys.exit(1)
 
-    from sqlalchemy import create_engine, text
+    from sqlalchemy import create_engine, make_url, text
 
     engine = create_engine(database_url)
     tables = ["itinerary_categories", "prompt_templates", "source_documents", "trace_events"]
 
     embedded_tables = ["itinerary_categories", "source_documents"]
 
-    print("--- row counts ---")
+    print(f"--- row counts ({make_url(database_url).database}) ---")
     with engine.connect() as conn:
         for table in tables:
             count = conn.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar()
@@ -175,7 +266,8 @@ def count_rows():
 
 
 def verify_schema():
-    """Full db-schema merge checklist: up -> pg_isready -> migrate -> test_db_schema."""
+    """db-schema checklist on the test database, then restore its seed data."""
+    url = test_database_url()
     up()
 
     print("--- waiting for postgres ---")
@@ -186,10 +278,20 @@ def verify_schema():
         "-d", os.environ.get("POSTGRES_DB", "travel_agent_db"),
     ])
 
-    migrate()
+    create_database_if_missing(url)
+    migrate_database(url)
 
     print("--- running db-schema tests ---")
-    run([sys.executable, "-m", "pytest", "tests/test_db_schema.py", "-v"])
+    code = run(
+        [sys.executable, "-m", "pytest", "tests/test_db_schema.py",
+         "-m", "integration or destructive", "-v"],
+        check=False,
+    )
+    print("--- restoring test database ---")
+    test_db_setup()
+    if code != 0:
+        print("ERROR: db-schema tests failed")
+        sys.exit(code)
 
     print("--- db-schema checklist passed ---")
 
@@ -203,6 +305,10 @@ COMMANDS = {
     "count-rows": count_rows,
     "check-health": check_health,
     "test": test,
+    "test-db-setup": test_db_setup,
+    "test-integration": test_integration,
+    "test-destructive": test_destructive,
+    "test-all": test_all,
     "verify": verify,
     "verify-schema": verify_schema,
 }
@@ -211,4 +317,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2 or sys.argv[1] not in COMMANDS:
         print(f"Usage: python scripts/dev.py [{' | '.join(COMMANDS)}]")
         sys.exit(1)
+    load_env()
     COMMANDS[sys.argv[1]]()

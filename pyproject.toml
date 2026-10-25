@@ -35,6 +35,9 @@ where = ["src"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 pythonpath = ["src"]
+# Plain `pytest` runs unit tests only; a -m on the command line overrides this.
+addopts = "-m 'not integration and not destructive'"
 markers = [
-    "integration: tests that require a live PostgreSQL database and Gemini API key",
+    "integration: requires the seeded test database (TEST_DATABASE_URL) and GEMINI_API_KEY; does not alter the schema or delete seed data (writes trace rows). Run with -m integration",
+    "destructive: runs alembic downgrade/upgrade and wipes the test database; run with -m destructive, then re-seed with `python scripts/dev.py test-db-setup`",
 ]
