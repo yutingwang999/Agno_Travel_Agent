@@ -40,7 +40,7 @@ After schema validation passes, the step SHALL require the sum of `daily_itinera
 - **THEN** the cost consistency rule passes
 
 ### Requirement: Budget ceiling rule
-After schema validation passes, the step SHALL require `total_estimated_cost_aud`, interpreted as AUD per person, to be no greater than the configured per-person per-day upper bound for the requested budget level multiplied by the requested trip length; the `luxury` level SHALL have no upper bound. A violation SHALL fail validation with a message beginning `"Business rule failed: budget"`.
+After schema validation passes, the step SHALL require `total_estimated_cost_aud`, interpreted as AUD per person excluding accommodation, to be no greater than the configured per-person per-day upper bound for the requested budget level multiplied by the requested trip length; the `luxury` level SHALL have no upper bound. A violation SHALL fail validation with a message beginning `"Business rule failed: budget"`.
 
 #### Scenario: Budget trip over the ceiling
 - **WHEN** a 3-day `budget` request produces a total above 3 times the `budget` per-person per-day upper bound

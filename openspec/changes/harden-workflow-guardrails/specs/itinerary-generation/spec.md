@@ -39,11 +39,11 @@ If the LLM call raises an exception, the generate step SHALL log it, SHALL emit 
 - **AND** the request still completes with a `validate_output` event
 
 ### Requirement: Cost unit in templates
-Every active generation template and the `validate_output_correction` template SHALL state that all costs are estimated in AUD per person.
+Every active generation template and the `validate_output_correction` template SHALL state that all costs are estimated in AUD per person, excluding accommodation.
 
 #### Scenario: Active templates state the unit
 - **WHEN** the seed has run
-- **THEN** every active template text contains the phrase "AUD per person"
+- **THEN** every active template text contains the phrase "AUD per person, excluding accommodation"
 
 ### Requirement: Seeded template set
 `scripts/seed.py` SHALL insert every `(template_key, version)` it defines that is not yet in the database, and SHALL mark the highest defined version of each key as the active one.
