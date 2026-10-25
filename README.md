@@ -117,6 +117,7 @@ All variables are documented in [.env.example](.env.example).
 | `POSTGRES_DB`       | Database name                                                                     |
 | `POSTGRES_PORT`     | Host port to expose (default `5432`)                                              |
 | `DATABASE_URL`      | Full SQLAlchemy / Alembic DSN                                                     |
+| `TEST_DATABASE_URL` | Test database for integration / destructive tests; name must end with `_test_db`  |
 | `GEMINI_API_KEY`    | Google Gemini API key                                                             |
 | `LLM_MODEL`         | Gemini model for generation (e.g. `gemini-2.0-flash`)                             |
 | `EMBEDDING_MODEL`   | Embedding model — must match seed and cag_match (default: `gemini-embedding-001`) |
@@ -137,9 +138,13 @@ python scripts/dev.py migrate        # alembic upgrade head
 python scripts/dev.py seed           # seed categories, prompt templates, source docs
 python scripts/dev.py count-rows     # print row counts + embedding coverage for seeded tables
 python scripts/dev.py check-health   # GET /health → 200
-python scripts/dev.py test           # pytest
-python scripts/dev.py verify         # up → migrate → uvicorn → health + pytest
-python scripts/dev.py verify-schema  # up → migrate → db-schema tests (16 checks)
+python scripts/dev.py test              # unit tests only (plain pytest)
+python scripts/dev.py test-db-setup     # create + migrate + seed the test database
+python scripts/dev.py test-integration  # integration + golden tests on the test database
+python scripts/dev.py test-destructive  # migration tests, then re-seed the test database
+python scripts/dev.py test-all          # unit → integration → destructive + re-seed
+python scripts/dev.py verify            # up → migrate → uvicorn → health + unit tests
+python scripts/dev.py verify-schema     # db-schema tests on the test database, then re-seed
 ```
 
 On macOS/Linux you can also use `make <target>` as a shorthand.
@@ -556,32 +561,42 @@ WHERE step_name = 'validate_output'
 
 ## Running Tests
 
-Tests are split into two tiers:
+Tests never touch the development database. Integration and migration tests run against a separate test database, `travel_agent_test_db`, in the same Postgres container: `tests/conftest.py` replaces `DATABASE_URL` with `TEST_DATABASE_URL` before any application code is imported.
 
-**Unit tests** — no database or API key required, run anywhere:
+Tests are split into three tiers:
+
+| Tier | Marker | Needs | Command |
+| --- | --- | --- | --- |
+| Unit | none | nothing (DB and LLM are mocked) | `python -m pytest` or `python scripts/dev.py test` |
+| Integration | `integration` | seeded test database + `GEMINI_API_KEY`; costs API calls | `python -m pytest -m integration` or `python scripts/dev.py test-integration` |
+| Destructive | `destructive` | test database; **wipes it** (`alembic downgrade base`) | `python scripts/dev.py test-destructive` |
+
+Plain `pytest` runs unit tests only (`addopts` in `pyproject.toml`); a `-m` on the command line overrides that. Run a single test with `python -m pytest tests/test_generate.py::test_name -v`.
+
+**One-time setup for integration and destructive tests**
+
+1. Copy `TEST_DATABASE_URL` from `.env.example` into `.env` (the database name must end with `_test_db`).
+2. Start Postgres and prepare the test database:
 
 ```bash
-python -m pytest tests/ -m "not integration" -v
-```
-
-**Integration tests** — require Docker (PostgreSQL) and a real `GEMINI_API_KEY` in `.env`. Includes the 3 golden tests and the end-to-end `POST /generate` test:
-
-```bash
-# 1. start db + apply migrations + seed data
 python scripts/dev.py up
-python scripts/dev.py migrate
-python scripts/dev.py seed
-
-# 2. run integration tests only (golden + observability + cag-match)
-python -m pytest tests/ -m integration -v
-
-# 3. or run everything together
-python -m pytest tests/ -v
+python scripts/dev.py test-db-setup   # create (if missing) -> migrate -> seed; safe to re-run
 ```
 
-Golden and end-to-end tests are marked `@pytest.mark.integration` and are skipped in the unit-test run.
+Seeding is idempotent: rows that already exist are skipped before any embedding call, so re-running `test-db-setup` costs nothing.
 
-`tests/conftest.py` loads `.env` automatically so environment variables do not need to be exported manually before running pytest.
+**When to run what**
+
+- Day to day: `python scripts/dev.py test`
+- After changing workflow behaviour: `python scripts/dev.py test-integration` (includes the golden tests and the end-to-end `POST /generate` test)
+- After changing a migration: `python scripts/dev.py test-destructive` — it runs `alembic downgrade base` / `upgrade head` on the test database, then re-runs `test-db-setup` automatically to restore the seed data, whether the tests passed or failed
+- Before merging: `python scripts/dev.py test-all` (unit → integration → destructive + restore)
+
+Don't use `pytest -m ""` to run everything at once: files run in alphabetical order, so the migration tests would empty the test database before the golden tests.
+
+If `TEST_DATABASE_URL` is not set, integration and destructive tests are skipped with a reason, and unit tests point `DATABASE_URL` at an unreachable placeholder rather than the development database. The migration tests also refuse to run against any database whose name does not end with `_test_db`.
+
+`tests/conftest.py` loads `.env` automatically, so environment variables do not need to be exported manually before running pytest.
 
 ---
 

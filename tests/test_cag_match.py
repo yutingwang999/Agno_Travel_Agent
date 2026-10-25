@@ -10,8 +10,9 @@ Verifies:
   - cag_match_executor produces a valid SSE event with the required structure
 
 Most tests mock match_category so no database or API key is required.
-Integration tests (marked with pytest.mark.integration) require a live
-PostgreSQL + pgvector database and a valid GEMINI_API_KEY.
+Integration tests (marked with pytest.mark.integration) require the seeded
+test database (TEST_DATABASE_URL) and a valid GEMINI_API_KEY; conftest.py
+skips them when either is missing.
 """
 
 import json
@@ -285,11 +286,8 @@ def test_cag_matcher_embedding_dimensions_match_seed():
 @pytest.mark.integration
 def test_match_category_returns_result_with_seeded_db():
     """Integration: match_category returns a valid MatchResult against seeded DB."""
-    db_url = os.environ.get("DATABASE_URL")
-    api_key = os.environ.get("GEMINI_API_KEY")
-
-    if not db_url or not api_key:
-        pytest.skip("DATABASE_URL and GEMINI_API_KEY required for integration tests")
+    db_url = os.environ["DATABASE_URL"]
+    api_key = os.environ["GEMINI_API_KEY"]
 
     from app.workflow.cag_matcher import MatchResult, match_category
 
@@ -309,12 +307,6 @@ def test_match_category_returns_result_with_seeded_db():
 @pytest.mark.integration
 def test_cag_match_executor_integration():
     """Integration: cag_match_executor returns matched_category and confidence_score."""
-    db_url = os.environ.get("DATABASE_URL")
-    api_key = os.environ.get("GEMINI_API_KEY")
-
-    if not db_url or not api_key:
-        pytest.skip("DATABASE_URL and GEMINI_API_KEY required for integration tests")
-
     from agno.workflow.types import StepInput
 
     from app.workflow.steps.cag_match import cag_match_executor
@@ -344,11 +336,8 @@ def test_cag_match_executor_integration():
 @pytest.mark.integration
 def test_match_category_fallback_when_below_threshold():
     """Integration: low-similarity intent still returns a result without raising."""
-    db_url = os.environ.get("DATABASE_URL")
-    api_key = os.environ.get("GEMINI_API_KEY")
-
-    if not db_url or not api_key:
-        pytest.skip("DATABASE_URL and GEMINI_API_KEY required for integration tests")
+    db_url = os.environ["DATABASE_URL"]
+    api_key = os.environ["GEMINI_API_KEY"]
 
     from app.workflow.cag_matcher import match_category
 
