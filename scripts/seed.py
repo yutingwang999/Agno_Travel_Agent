@@ -30,7 +30,7 @@ load_dotenv(os.path.join(ROOT_DIR, ".env"))
 
 from google import genai  # noqa: E402
 from google.genai import types  # noqa: E402
-from sqlalchemy import create_engine, select  # noqa: E402
+from sqlalchemy import create_engine, make_url, select  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from app.models.itinerary_category import ItineraryCategory  # noqa: E402
@@ -800,7 +800,7 @@ def seed_source_documents() -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    print(f"Connecting to database: {DATABASE_URL}")
+    print(f"Connecting to database: {make_url(DATABASE_URL).render_as_string(hide_password=True)}")
     engine = create_engine(DATABASE_URL)
 
     with Session(engine) as session:
