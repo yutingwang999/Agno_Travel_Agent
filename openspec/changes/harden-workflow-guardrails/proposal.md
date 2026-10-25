@@ -21,6 +21,7 @@ v0.1.0 only checks whether the output "looks like the right format"; nothing pro
 - **Input guardrails**: return 422 (`destination_out_of_scope`) when the destination is not in the Australian place-name table; the table holds both English names and common Chinese names (e.g. "悉尼"), and a match is replaced with the canonical English name. Return 422 (`input_rejected`) when a free-text field matches a prompt injection pattern.
 - **Cost unit**: the generation and correction templates state explicitly that "all costs are per person, in AUD", and the budget rule is computed per person.
 - **Template versions**: when seed adds a new version, older versions are automatically set inactive; the database guarantees at most one active version per template key (today, upgrading a template leaves two active versions, and `resolve_template` returns either one).
+- **Agno telemetry off**: `travel_workflow` is created with `telemetry=False`, so `POST /generate` no longer sends a run event to `os-api.agno.com` on every request; `.env.example` documents `AGNO_TELEMETRY` as the override that applies to every Agno instance.
 - Fix outdated code comments; replace the destination `"abcdefg hi"` used in the golden test to produce low confidence with a valid Australian place name (otherwise the new destination guardrail would reject it).
 
 "Attractions really are in the destination" is **not checked at runtime in this change**: without geocoding only the LLM itself could judge it, which is unreliable. In this change it is measured by the evaluation harness's judge model; once roadmap item 4 integrates OpenStreetMap / Nominatim, it becomes a code check.
@@ -45,6 +46,7 @@ v0.1.0 only checks whether the output "looks like the right format"; nothing pro
 - New Alembic migration: a partial unique index on `prompt_templates` (`template_key` WHERE `is_active`)
 - `scripts/seed.py`: bump the template definitions to new versions (adding the "per person" wording), and handle them as "the highest version of each key is active"
 - `tests/test_golden.py`: use a valid destination for the low-confidence case
+- `travel_workflow.py` (`telemetry=False`), `.env.example` (`AGNO_TELEMETRY` documented)
 - Reuse the per-budget-level daily cost caps that `build-evaluation-harness` defines in `config.py`
 - New `error_type` values appear in traces; the API adds two 422 reason codes
 - **Dependencies**: after `build-evaluation-harness` (needed to measure the change before and after)

@@ -46,15 +46,20 @@ python scripts/dev.py test | verify | verify-schema
 
 Run the app (Windows): `$env:PYTHONPATH="src"; python -m uvicorn app.main:app --reload` → UI at http://localhost:8000.
 
-Tests (`pythonpath = ["src"]` is set in pyproject):
+Tests (`pythonpath = ["src"]` is set in pyproject) never touch the development database: `tests/conftest.py` replaces `DATABASE_URL` with `TEST_DATABASE_URL` (`travel_agent_test_db`, same container) before the app is imported.
 
 ```
-python -m pytest tests/ -m "not integration"            # unit only: no DB, no API key
-python -m pytest tests/ -m integration                  # needs seeded Postgres + GEMINI_API_KEY; costs API calls
+python -m pytest                                        # unit only (addopts); no DB, no API key, seconds
 python -m pytest tests/test_generate.py::test_name -v   # single test
+python scripts/dev.py test-db-setup                     # create + migrate + seed the test DB; idempotent
+python scripts/dev.py test-integration                  # -m integration: golden etc.; costs Gemini calls
+python scripts/dev.py test-destructive                  # -m destructive (downgrade/upgrade), then re-seeds -> re-embeds
+python scripts/dev.py test-all                          # before merging: unit -> integration -> destructive
 ```
 
-**Current hazard (until `isolate-test-database` is applied):** bare `pytest` runs everything, and the DB tests in `tests/test_db_schema.py` are not marked `integration` — `test_downgrade_removes_all_tables` runs `alembic downgrade base` against the **dev database** from `.env`, wiping seeded data (re-run `migrate` + `seed` afterwards). Don't run the full suite or that file casually. After that change lands, the plan is: `pytest` = unit only (`addopts`), `-m integration` for golden/integration, `-m destructive` for migration tests, a separate `travel_agent_test_db`, and `dev.py test-db-setup / test-integration / test-destructive / test-all`.
+- Tiers: unmarked = unit; `integration` = needs the seeded test DB + Gemini, read-only apart from trace rows; `destructive` = wipes the test DB. Don't run `pytest -m ""` — the migration tests empty the DB before the golden tests run.
+- In unit tests `psycopg2.connect` fails immediately (conftest fixture). A new test that needs a database must be marked `integration`, not given a real connection.
+- Migration changes: update `tests/test_db_schema.py` (migration chain, table/column checks) and run `test-destructive`. The destructive tests refuse any database whose name doesn't end with `_test_db`.
 
 ## Architecture
 

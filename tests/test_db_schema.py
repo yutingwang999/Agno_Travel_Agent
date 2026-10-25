@@ -1,9 +1,14 @@
 """
 feat/db-schema merge checklist tests.
 
-Requires:
+Static checks run as unit tests. Live-database checks are marked
+`integration` (read-only) or `destructive` (alembic downgrade/upgrade) and run
+against the test database (conftest.py points DATABASE_URL at
+TEST_DATABASE_URL).
+
+Requires for the live checks:
   - docker compose up (postgres running)
-  - alembic upgrade head applied before running
+  - python scripts/dev.py test-db-setup
 
 Run via:
   python scripts/dev.py verify-schema
@@ -14,13 +19,25 @@ import re
 from pathlib import Path
 
 import pytest
-from dotenv import load_dotenv
-from sqlalchemy import create_engine, inspect, text
-
-load_dotenv()
+from sqlalchemy import create_engine, inspect, make_url, text
 
 MIGRATIONS_DIR = Path(__file__).parent.parent / "alembic" / "versions"
-DATABASE_URL = os.environ["DATABASE_URL"]
+
+# Safety guard: destructive tests only ever run against a database whose name
+# ends with this suffix, so a misconfigured URL cannot wipe the dev database.
+TEST_DB_SUFFIX = "_test_db"
+
+
+def _database_url() -> str:
+    return os.environ["DATABASE_URL"]
+
+
+def _assert_test_database(url: str) -> None:
+    name = make_url(url).database or ""
+    assert name.endswith(TEST_DB_SUFFIX), (
+        f"Refusing to run a destructive migration test against database {name!r}: "
+        f"its name must end with {TEST_DB_SUFFIX!r}. Check TEST_DATABASE_URL in .env."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -127,11 +144,12 @@ def test_trace_event_model_columns():
 
 @pytest.fixture(scope="module")
 def db_engine():
-    engine = create_engine(DATABASE_URL)
+    engine = create_engine(_database_url())
     yield engine
     engine.dispose()
 
 
+@pytest.mark.integration
 def test_pgvector_extension_is_active(db_engine):
     """The vector extension must be present in the live database."""
     with db_engine.connect() as conn:
@@ -142,6 +160,7 @@ def test_pgvector_extension_is_active(db_engine):
     assert row is not None, "pgvector extension is not installed in the database"
 
 
+@pytest.mark.integration
 def test_all_four_tables_exist(db_engine):
     """All 4 tables must exist after alembic upgrade head."""
     inspector = inspect(db_engine)
@@ -156,6 +175,7 @@ def test_all_four_tables_exist(db_engine):
     assert not missing, f"Missing tables after upgrade head: {missing}"
 
 
+@pytest.mark.integration
 def test_itinerary_categories_db_columns(db_engine):
     """Live itinerary_categories columns must match DESIGN.md section 5."""
     inspector = inspect(db_engine)
@@ -166,6 +186,7 @@ def test_itinerary_categories_db_columns(db_engine):
     )
 
 
+@pytest.mark.integration
 def test_prompt_templates_db_columns(db_engine):
     """Live prompt_templates columns must match DESIGN.md section 5."""
     inspector = inspect(db_engine)
@@ -176,6 +197,7 @@ def test_prompt_templates_db_columns(db_engine):
     )
 
 
+@pytest.mark.integration
 def test_source_documents_db_columns(db_engine):
     """Live source_documents columns must match DESIGN.md section 5."""
     inspector = inspect(db_engine)
@@ -186,6 +208,7 @@ def test_source_documents_db_columns(db_engine):
     )
 
 
+@pytest.mark.integration
 def test_trace_events_db_columns(db_engine):
     """Live trace_events columns must match DESIGN.md section 5."""
     inspector = inspect(db_engine)
@@ -200,6 +223,7 @@ def test_trace_events_db_columns(db_engine):
     )
 
 
+@pytest.mark.integration
 def test_trace_events_has_session_id_index(db_engine):
     """trace_events must have an index on session_id for query performance."""
     inspector = inspect(db_engine)
@@ -210,10 +234,14 @@ def test_trace_events_has_session_id_index(db_engine):
     )
 
 
+@pytest.mark.destructive
 def test_downgrade_removes_all_tables(db_engine):
     """alembic downgrade base must remove all 4 tables and the vector extension."""
     import subprocess
     import sys
+
+    database_url = _database_url()
+    _assert_test_database(database_url)
 
     project_root = str(Path(__file__).parent.parent)
     result = subprocess.run(
@@ -228,7 +256,7 @@ def test_downgrade_removes_all_tables(db_engine):
     # Refresh connection after DDL
     db_engine.dispose()
     from sqlalchemy import create_engine as _ce
-    fresh_engine = _ce(DATABASE_URL)
+    fresh_engine = _ce(database_url)
     inspector = inspect(fresh_engine)
     remaining = set(inspector.get_table_names()) & {
         "itinerary_categories", "prompt_templates", "source_documents", "trace_events"
@@ -237,6 +265,7 @@ def test_downgrade_removes_all_tables(db_engine):
     assert not remaining, f"Tables still exist after downgrade base: {remaining}"
 
 
+@pytest.mark.destructive
 def test_upgrade_head_reapplies_cleanly(db_engine):
     """alembic upgrade head must succeed after a full downgrade."""
     import subprocess
@@ -252,7 +281,7 @@ def test_upgrade_head_reapplies_cleanly(db_engine):
     assert result.returncode == 0, f"alembic upgrade head failed after downgrade:\n{result.stderr}"
 
     from sqlalchemy import create_engine as _ce
-    fresh_engine = _ce(DATABASE_URL)
+    fresh_engine = _ce(_database_url())
     inspector = inspect(fresh_engine)
     existing = set(inspector.get_table_names())
     fresh_engine.dispose()

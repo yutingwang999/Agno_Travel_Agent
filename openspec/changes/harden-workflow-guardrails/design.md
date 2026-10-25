@@ -8,6 +8,7 @@
 - `parse_llm_output` first strips markdown code fences, then runs `json.loads`, then Pydantic validation, and finally checks whether `len(daily_itinerary)` equals the `trip_length_days` in the output.
 - The input has only Pydantic field validation; `travel_style` is free text and is spliced straight into the prompt.
 - `build-evaluation-harness` has already defined the per-budget-level daily cost caps in `config.py`.
+- Agno's `Workflow` defaults to `telemetry=True` and sends one event per run (workflow id, session id, run id, db type) to `os-api.agno.com`. The `AGNO_TELEMETRY` environment variable, when set, overrides the constructor value, and it is read again before every send. `tests/conftest.py` already sets `AGNO_TELEMETRY=false` for tests (`isolate-test-database`); the running app still sends it.
 
 ## Goals / Non-Goals
 
@@ -54,6 +55,9 @@
     - The original "Seeded templates" requirement hardcoded "3 rows", which stops being true as soon as a template is upgraded, so it is replaced by "Seeded template set", which does not depend on a specific count. Later changes (e.g. `rebuild-rag`) that add template versions do not need to change this requirement again.
 
 11. **The low-confidence case in the golden test**: change the destination from `"abcdefg hi"` to a valid Australian place name (e.g. `"alice springs"`), still using a rare travel_style to produce low confidence. During implementation, actually run it once to confirm the confidence really is below 0.85.
+
+12. **Agno telemetry is off by default in code, with the environment variable as the override.** `travel_workflow` is constructed with `telemetry=False`, so every environment (local, deployment, evaluation runs) is off without depending on each machine's `.env`. `.env.example` gets a commented-out `AGNO_TELEMETRY=false` explaining that, when set, it overrides the code for every Agno instance — which matters once roadmap item 4 adds an `Agent`, since each Agno instance has its own `telemetry` flag. The conftest setting stays as a safety net for tests.
+    Alternative: rely on `AGNO_TELEMETRY` in `.env` only — any environment that forgets it would silently send telemetry.
 
 ## Risks / Trade-offs
 
