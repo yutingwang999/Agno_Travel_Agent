@@ -11,7 +11,7 @@
 
 - [ ] 2.1 Add an Alembic migration: first set every active row except the highest version of each key inactive, then create the partial unique index `UNIQUE (template_key) WHERE is_active`; add this migration to the migration-chain check in `test_db_schema.py` and add a read-only "partial unique index exists" check (`integration`); Verify: `upgrade head` / `downgrade -1` both succeed on the test database; inserting a second active row makes the database raise an error; `dev.py test-destructive` passes
 - [ ] 2.2 Change seed to "insert missing versions; the highest version of each key is active, the others inactive"; Verify: on a database that already has v1, add a v2 definition and run seed; v2 becomes active and v1 inactive
-- [ ] 2.3 Add a new version of each of the three templates stating "all costs are AUD per person"; Verify: after seeding, query all active templates; every text contains "AUD per person"
+- [ ] 2.3 Add a new version of each of the three templates stating "all costs are AUD per person, excluding accommodation"; Verify: after seeding, query all active templates; every text contains "AUD per person, excluding accommodation"
 
 ## 3. Structured output
 

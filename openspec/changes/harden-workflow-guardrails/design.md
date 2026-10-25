@@ -47,7 +47,7 @@
 
 8. **Where the "knowledge context" comes from**: validate_output takes each chunk's `chunk_text` from the `retrieved_context` of the `rag_retrieve` event and joins them as the comparison text for the "unsupported specifics" rule; it is empty when retrieval did not run. After `rebuild-rag`, chunks gain more fields but `chunk_text` stays the same, so this rule does not need to change with it.
 
-9. **Costs are always computed as "per person, in AUD".** Both the generation and the correction templates say so; the budget cap uses the "per person per day" caps that `build-evaluation-harness` defines in `config.py`. Template text is changed by adding new versions (old versions are not edited); old versions are kept so v0.1.0 results can be reproduced with `template_version`.
+9. **Costs are always computed as "per person, in AUD, excluding accommodation".** Both the generation and the correction templates say so (the itinerary has no stay, so including one would make the caps meaningless); the budget cap uses the "per person per day" caps that `build-evaluation-harness` defines in `config.py`. Template text is changed by adding new versions (old versions are not edited); old versions are kept so v0.1.0 results can be reproduced with `template_version`.
 
 10. **Only one active version is allowed per template key.**
     - Database layer: a new migration creates the partial unique index `UNIQUE (template_key) WHERE is_active` on `prompt_templates`.

@@ -19,7 +19,7 @@ v0.1.0 only checks whether the output "looks like the right format"; nothing pro
   - The total cost does not exceed the cap for the budget level
   - No opening hours or prices appear that are absent from the knowledge context
 - **Input guardrails**: return 422 (`destination_out_of_scope`) when the destination is not in the Australian place-name table; the table holds both English names and common Chinese names (e.g. "悉尼"), and a match is replaced with the canonical English name. Return 422 (`input_rejected`) when a free-text field matches a prompt injection pattern.
-- **Cost unit**: the generation and correction templates state explicitly that "all costs are per person, in AUD", and the budget rule is computed per person.
+- **Cost unit**: the generation and correction templates state explicitly that "all costs are per person, in AUD, excluding accommodation", and the budget rule is computed per person.
 - **Template versions**: when seed adds a new version, older versions are automatically set inactive; the database guarantees at most one active version per template key (today, upgrading a template leaves two active versions, and `resolve_template` returns either one).
 - **Agno telemetry off**: `travel_workflow` is created with `telemetry=False`, so `POST /generate` no longer sends a run event to `os-api.agno.com` on every request; `.env.example` documents `AGNO_TELEMETRY` as the override that applies to every Agno instance.
 - Fix outdated code comments; replace the destination `"abcdefg hi"` used in the golden test to produce low confidence with a valid Australian place name (otherwise the new destination guardrail would reject it).
