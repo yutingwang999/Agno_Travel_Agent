@@ -5,6 +5,7 @@
 - [ ] 1.3 Catch exceptions from `_call_llm` in generate, emit a `"LLM call failed: <type>"` error event, and write `error_type="llm_call_failed"` to the trace; Verify: a unit test mocks the LLM to raise and asserts no exception escapes
 - [ ] 1.4 When the generate event is an error, validate_output emits `"Generation failed upstream"` directly; catch exceptions from the correction call and write `error_type="correction_call_failed"` to the trace; Verify: unit tests assert no exception escapes in either case, and in the first case `_call_llm` is not called
 - [ ] 1.5 Fix the docstring of `steps/cag_match.py` (in-memory cosine computation, not a pgvector query) and the comments in `steps/rag_retrieve.py` that mention `source_documents`; Verify: code review
+- [ ] 1.6 Construct `travel_workflow` with `telemetry=False`; add a commented-out `AGNO_TELEMETRY=false` to `.env.example` explaining that it overrides the code for all Agno instances; Verify: a unit test asserts `travel_workflow.telemetry is False`; with the app running and `AGNO_TELEMETRY` unset, a `POST /generate` makes no request to `os-api.agno.com`
 
 ## 2. Template versions and cost unit
 
