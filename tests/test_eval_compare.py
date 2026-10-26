@@ -25,7 +25,8 @@ def _summary(run_id: str, dirty: bool, recall: float, tags: dict) -> dict:
                              "without_context": {"supported_share": 0.0}},
             "constraints": {"trip_length_rate": 1.0, "budget_rate": 0.375, "destination_rate": 1.0},
             "system": {"format_pass_rate": 1.0, "retry_rate": 0.0, "error_rate": 0.0,
-                       "latency_p50_ms": 4292.4, "latency_p95_ms": 5087.5},
+                       "latency_p50_ms": 4292.4, "latency_p95_ms": 5087.5,
+                       "step_latency_ms": {"generate": {"runs": 10, "mean_ms": 3133.2}}},
             "cost": {"mean_request_usd": 0.0011272, "judge_total_usd": 0.0212},
         },
     }
@@ -44,6 +45,7 @@ def test_one_column_per_run_and_one_row_per_metric():
     assert "| Slot extraction accuracy | N/A (no request parser) | N/A (no request parser) |" in lines
     assert "| Latency p50 | 4.29 s | 4.29 s |" in lines
     assert "| Cost per request | $0.00113 | $0.00113 |" in lines
+    assert "| Step latency: `generate` | 3133 ms (n=10) | 3133 ms (n=10) |" in lines
     # tags missing from one run show a dash
     assert "| Behaviour correctness: `prompt_injection` | — | 100.0% |" in lines
     assert "⚠️" not in table
