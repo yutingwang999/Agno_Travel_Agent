@@ -26,6 +26,9 @@ dev = [
     "pytest==9.0.2",
     "pytest-asyncio==1.3.0",
     "httpx==0.28.1",
+    # Evaluation harness (scripts/eval_*.py): judge client and YAML config files
+    "openai==2.14.0",
+    "pyyaml==6.0.3",
 ]
 
 [tool.setuptools.packages.find]
