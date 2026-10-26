@@ -14,16 +14,30 @@ The project SHALL keep a versioned evaluation dataset at `eval/dataset.jsonl` wi
 - **WHEN** an entry has no `expected_facts`
 - **THEN** the dataset still loads and the entry is evaluated
 
+### Requirement: Request notes in the dataset
+An entry's `form` MAY contain `notes`, free text of at most 500 characters holding request details the other form fields cannot express. The harness SHALL send `notes` with the request; a system without a `notes` field ignores it.
+
+#### Scenario: Notes sent to v0.1.0
+- **WHEN** an entry with `form.notes` is evaluated on the v0.1.0 configuration
+- **THEN** the request carries `notes` and is processed as if it had none
+
 ### Requirement: Dataset coverage
-The dataset SHALL cover several destinations, all three budget levels, a range of trip lengths, and several travel styles, and SHALL include entries tagged `contradictory`, `out_of_scope` (including at least one non-Australian destination), `prompt_injection`, and `mixed_language` (Chinese and English mixed in the `utterance`; the `form.destination` of a `mixed_language` entry SHALL be an English place name). Every entry tagged `prompt_injection` SHALL have `expected_behavior` = `refuse`.
+The dataset SHALL cover several destinations, all three budget levels, a range of trip lengths, and several travel styles, and SHALL include entries tagged `contradictory`, `out_of_scope` (including at least one non-Australian destination), `prompt_injection`, `mixed_language` (Chinese and English mixed in the `utterance`), and `chinese_destination`.
 
 #### Scenario: Coverage check
 - **WHEN** the coverage check runs over the dataset
 - **THEN** each required tag and each budget level appears at least once
 
+### Requirement: Tag labelling rules
+The `form.destination` of a `mixed_language` entry SHALL be an English place name; the `form.destination` of a `chinese_destination` entry SHALL be an Australian place name written in Chinese characters; every entry tagged `prompt_injection` SHALL have `expected_behavior` = `refuse`.
+
 #### Scenario: Mixed-language form stays in English
 - **WHEN** an entry is tagged `mixed_language`
 - **THEN** its `form.destination` contains only an English place name
+
+#### Scenario: Chinese destination in the form
+- **WHEN** an entry is tagged `chinese_destination`
+- **THEN** its `form.destination` is written in Chinese characters (e.g. `"悉尼"`)
 
 #### Scenario: Prompt injection expects a refusal
 - **WHEN** an entry is tagged `prompt_injection`
@@ -52,11 +66,15 @@ A retrieved chunk SHALL count as relevant to an entry when its `(source, section
 - **THEN** it is matched against labels as `("handwritten", "Family Adventure Travel in Australia")`
 
 ### Requirement: Slot extraction metric
-When the evaluated configuration includes a request parser, the harness SHALL report slot extraction accuracy per slot (destination, trip length, budget, preferences) against `gold_slots`; otherwise it SHALL report the metric as not applicable with the reason.
+When the evaluated configuration includes a request parser, the harness SHALL report slot extraction accuracy per slot (destination, trip length, budget, preferences) against `gold_slots`, over entries whose `expected_behavior` is `plan`; otherwise it SHALL report the metric as not applicable with the reason.
 
 #### Scenario: No parser in the configuration
 - **WHEN** the v0.1.0 configuration is evaluated
 - **THEN** slot extraction accuracy is reported as N/A, "no request parser"
+
+#### Scenario: Non-plan entries excluded
+- **WHEN** a configuration with a request parser is evaluated and an entry expects `refuse`
+- **THEN** that entry's slots are not counted in slot extraction accuracy
 
 ### Requirement: Retrieval metrics
 For every entry with non-empty `relevant_sections`, the harness SHALL run the intake and intent matching steps for that entry, build the retrieval query exactly as the workflow does, call the retrieval component directly, and report Recall@k and MRR@k (default k = 5), independent of whether the workflow would have routed the request to retrieval.

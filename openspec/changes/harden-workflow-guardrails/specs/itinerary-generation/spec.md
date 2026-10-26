@@ -12,11 +12,11 @@ If the selected template cannot be found, the step SHALL retry resolution with `
 - **THEN** the generate event and trace row both show `prompt_template_key` = `"low_confidence_with_retrieval"` and `prompt_template_version` = 1
 
 ### Requirement: LLM call
-The step SHALL send the resolved prompt to the Gemini model named by `LLM_MODEL` (default `gemini-2.0-flash`), requesting JSON output constrained by a response schema generated from `ItineraryOutput`, and SHALL pass the response text through unmodified as `raw_llm_output`.
+The step SHALL send the resolved prompt to the Gemini model named by `LLM_MODEL` (default `gemini-3.1-flash-lite`), requesting JSON output constrained by a response schema generated from `ItineraryOutput`, and SHALL pass the response text through unmodified as `raw_llm_output`.
 
 #### Scenario: Default model
 - **WHEN** `LLM_MODEL` is unset
-- **THEN** `gemini-2.0-flash` is called
+- **THEN** `gemini-3.1-flash-lite` is called
 
 #### Scenario: Structured output requested
 - **WHEN** the generate step calls the LLM
