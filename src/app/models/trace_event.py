@@ -18,6 +18,9 @@ class TraceEvent(Base):
     prompt_template_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_type: Mapped[str | None] = mapped_column(String(200), nullable=True)
     degraded_mode: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # LLM token usage summed over the step's LLM calls; null when there was none.
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

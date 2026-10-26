@@ -56,12 +56,13 @@ def test_first_migration_enables_pgvector_extension():
 
 
 def test_migration_chain_is_contiguous():
-    """Revisions 0001-0004 must form an unbroken chain."""
+    """Revisions 0001-0005 must form an unbroken chain."""
     expected_chain = [
         ("0001", None),
         ("0002", "0001"),
         ("0003", "0002"),
         ("0004", "0003"),
+        ("0005", "0004"),
     ]
     for revision, expected_down in expected_chain:
         files = list(MIGRATIONS_DIR.glob(f"{revision}_*.py"))
@@ -131,6 +132,7 @@ def test_trace_event_model_columns():
         "id", "session_id", "step_name", "status", "latency_ms",
         "prompt_template_key", "prompt_template_version",
         "error_type", "degraded_mode", "created_at",
+        "input_tokens", "output_tokens",
     }
     assert required == column_names, (
         f"TraceEvent columns mismatch.\nExpected: {sorted(required)}\nGot: {sorted(column_names)}"
@@ -217,6 +219,7 @@ def test_trace_events_db_columns(db_engine):
         "id", "session_id", "step_name", "status", "latency_ms",
         "prompt_template_key", "prompt_template_version",
         "error_type", "degraded_mode", "created_at",
+        "input_tokens", "output_tokens",
     }
     assert required == columns, (
         f"trace_events DB columns mismatch.\nExpected: {sorted(required)}\nGot: {sorted(columns)}"

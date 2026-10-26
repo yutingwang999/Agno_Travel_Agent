@@ -25,6 +25,8 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
+from app.workflow.llm_usage import LLMResult
+
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -216,6 +218,8 @@ def test_write_trace_row_fields_match_args(monkeypatch):
         prompt_template_version=1,
         degraded_mode=False,
         error_type=None,
+        input_tokens=1200,
+        output_tokens=800,
     )
 
     assert len(added_rows) == 1
@@ -229,6 +233,8 @@ def test_write_trace_row_fields_match_args(monkeypatch):
     assert row.prompt_template_version == 1
     assert row.degraded_mode is False
     assert row.error_type is None
+    assert row.input_tokens == 1200
+    assert row.output_tokens == 800
 
 
 # ---------------------------------------------------------------------------
@@ -445,7 +451,7 @@ def test_generate_calls_write_trace_once(monkeypatch):
     )
     monkeypatch.setattr(
         "app.workflow.steps.generate._call_llm",
-        lambda prompt, api_key, model: VALID_ITINERARY_JSON,
+        lambda prompt, api_key, model: LLMResult(VALID_ITINERARY_JSON),
     )
 
     from app.workflow.steps.generate import generate_executor
@@ -466,7 +472,7 @@ def test_generate_trace_includes_prompt_template_key(monkeypatch):
     )
     monkeypatch.setattr(
         "app.workflow.steps.generate._call_llm",
-        lambda prompt, api_key, model: VALID_ITINERARY_JSON,
+        lambda prompt, api_key, model: LLMResult(VALID_ITINERARY_JSON),
     )
 
     from app.workflow.steps.generate import generate_executor
@@ -489,7 +495,7 @@ def test_generate_trace_includes_prompt_template_version(monkeypatch):
     )
     monkeypatch.setattr(
         "app.workflow.steps.generate._call_llm",
-        lambda prompt, api_key, model: VALID_ITINERARY_JSON,
+        lambda prompt, api_key, model: LLMResult(VALID_ITINERARY_JSON),
     )
 
     from app.workflow.steps.generate import generate_executor
@@ -512,7 +518,7 @@ def test_generate_trace_common_fields(monkeypatch):
     )
     monkeypatch.setattr(
         "app.workflow.steps.generate._call_llm",
-        lambda prompt, api_key, model: VALID_ITINERARY_JSON,
+        lambda prompt, api_key, model: LLMResult(VALID_ITINERARY_JSON),
     )
 
     from app.workflow.steps.generate import generate_executor
@@ -539,7 +545,7 @@ def test_generate_trace_low_confidence_uses_low_confidence_key(monkeypatch):
     )
     monkeypatch.setattr(
         "app.workflow.steps.generate._call_llm",
-        lambda prompt, api_key, model: VALID_ITINERARY_JSON,
+        lambda prompt, api_key, model: LLMResult(VALID_ITINERARY_JSON),
     )
 
     from app.workflow.steps.generate import generate_executor
@@ -610,7 +616,7 @@ def test_validate_output_trace_degraded_mode_true_on_retry_success(monkeypatch):
     )
     monkeypatch.setattr(
         "app.workflow.steps.validate_output._call_llm",
-        lambda prompt, api_key, model: VALID_ITINERARY_JSON,
+        lambda prompt, api_key, model: LLMResult(VALID_ITINERARY_JSON),
     )
 
     from app.workflow.steps.validate_output import validate_output_executor
@@ -641,7 +647,7 @@ def test_validate_output_trace_degraded_mode_true_on_both_failed(monkeypatch):
     # Retry also returns invalid JSON
     monkeypatch.setattr(
         "app.workflow.steps.validate_output._call_llm",
-        lambda prompt, api_key, model: "still not json",
+        lambda prompt, api_key, model: LLMResult("still not json"),
     )
 
     from app.workflow.steps.validate_output import validate_output_executor
@@ -670,7 +676,7 @@ def test_validate_output_trace_called_once_on_both_failed(monkeypatch):
     )
     monkeypatch.setattr(
         "app.workflow.steps.validate_output._call_llm",
-        lambda prompt, api_key, model: "still not json",
+        lambda prompt, api_key, model: LLMResult("still not json"),
     )
 
     from app.workflow.steps.validate_output import validate_output_executor
@@ -704,6 +710,128 @@ def test_validate_output_trace_called_once_on_correction_template_missing(monkey
     assert kwargs["status"] == "error"
     assert kwargs["degraded_mode"] is True
     assert kwargs["error_type"] == "correction_template_unavailable"
+
+
+# ---------------------------------------------------------------------------
+# Token usage — read from the Gemini response, written to the trace
+# ---------------------------------------------------------------------------
+
+
+def _fake_gemini_response(text, prompt=None, candidates=None, thoughts=None, usage=True):
+    from google.genai import types
+
+    metadata = None
+    if usage:
+        metadata = types.GenerateContentResponseUsageMetadata(
+            prompt_token_count=prompt,
+            candidates_token_count=candidates,
+            thoughts_token_count=thoughts,
+        )
+    response = MagicMock()
+    response.text = text
+    response.usage_metadata = metadata
+    return response
+
+
+def test_result_from_response_counts_thinking_as_output():
+    """Output tokens are candidates + thoughts, since Gemini bills thinking as output."""
+    from app.workflow.llm_usage import result_from_response
+
+    result = result_from_response(_fake_gemini_response("x", prompt=1200, candidates=700, thoughts=100))
+    assert (result.text, result.input_tokens, result.output_tokens) == ("x", 1200, 800)
+
+
+def test_result_from_response_without_thoughts():
+    from app.workflow.llm_usage import result_from_response
+
+    result = result_from_response(_fake_gemini_response("x", prompt=50, candidates=20))
+    assert (result.input_tokens, result.output_tokens) == (50, 20)
+
+
+def test_result_from_response_without_usage_metadata():
+    """A response that reports no usage gives null token counts."""
+    from app.workflow.llm_usage import result_from_response
+
+    result = result_from_response(_fake_gemini_response("x", usage=False))
+    assert (result.text, result.input_tokens, result.output_tokens) == ("x", None, None)
+
+
+def test_generate_call_llm_returns_token_usage(monkeypatch):
+    """_call_llm passes the Gemini response's usage metadata through."""
+    fake_client = MagicMock()
+    fake_client.models.generate_content.return_value = _fake_gemini_response(
+        "itinerary", prompt=1200, candidates=800
+    )
+    monkeypatch.setattr("app.workflow.steps.generate.genai.Client", lambda api_key: fake_client)
+
+    from app.workflow.steps.generate import _call_llm
+
+    result = _call_llm(prompt="p", api_key="k", model="m")
+    assert (result.text, result.input_tokens, result.output_tokens) == ("itinerary", 1200, 800)
+
+
+def test_generate_trace_records_token_usage(monkeypatch):
+    """Spec scenario: 1,200 input and 800 output tokens land on the generate trace row."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql://x:x@localhost/x")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    mock_write = MagicMock()
+    monkeypatch.setattr("app.workflow.steps.generate.write_trace", mock_write)
+    monkeypatch.setattr(
+        "app.workflow.steps.generate.resolve_template",
+        lambda template_key, db_url, version=None: ("Plan a trip to {destination}.", 1),
+    )
+    monkeypatch.setattr(
+        "app.workflow.steps.generate._call_llm",
+        lambda prompt, api_key, model: LLMResult(VALID_ITINERARY_JSON, 1200, 800),
+    )
+
+    from app.workflow.steps.generate import generate_executor
+
+    generate_executor(_make_generate_step_input())
+
+    kwargs = mock_write.call_args.kwargs
+    assert kwargs["input_tokens"] == 1200
+    assert kwargs["output_tokens"] == 800
+
+
+def test_validate_output_trace_records_correction_tokens(monkeypatch):
+    """Spec scenario: the corrective call's token usage lands on the validate_output row."""
+    _patch_validate_env(monkeypatch)
+    mock_write = MagicMock()
+    monkeypatch.setattr("app.workflow.steps.validate_output.write_trace", mock_write)
+    monkeypatch.setattr(
+        "app.workflow.steps.validate_output.resolve_template",
+        lambda template_key, db_url, version=None: (
+            "Fix this: {validation_errors}\n{raw_llm_output}", 1
+        ),
+    )
+    monkeypatch.setattr(
+        "app.workflow.steps.validate_output._call_llm",
+        lambda prompt, api_key, model: LLMResult(VALID_ITINERARY_JSON, 300, 450),
+    )
+
+    from app.workflow.steps.validate_output import validate_output_executor
+
+    validate_output_executor(_make_validate_step_input(raw_llm_output="not json"))
+
+    kwargs = mock_write.call_args.kwargs
+    assert kwargs["input_tokens"] == 300
+    assert kwargs["output_tokens"] == 450
+
+
+def test_validate_output_trace_has_no_tokens_without_llm_call(monkeypatch):
+    """When the first validation passes there is no LLM call, so no token usage."""
+    _patch_validate_env(monkeypatch)
+    mock_write = MagicMock()
+    monkeypatch.setattr("app.workflow.steps.validate_output.write_trace", mock_write)
+
+    from app.workflow.steps.validate_output import validate_output_executor
+
+    validate_output_executor(_make_validate_step_input(raw_llm_output=VALID_ITINERARY_JSON))
+
+    kwargs = mock_write.call_args.kwargs
+    assert kwargs.get("input_tokens") is None
+    assert kwargs.get("output_tokens") is None
 
 
 # ---------------------------------------------------------------------------

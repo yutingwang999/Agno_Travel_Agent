@@ -25,6 +25,7 @@ import time
 from agno.workflow.types import StepInput, StepOutput
 from google import genai
 
+from app.workflow.llm_usage import LLMResult, result_from_response
 from app.workflow.output_validator import parse_llm_output
 from app.workflow.sse import build_sse_event, sse_event_to_json
 from app.workflow.template_resolver import TemplateNotFoundError, resolve_template
@@ -33,7 +34,7 @@ from app.workflow.trace_logger import write_trace
 logger = logging.getLogger(__name__)
 
 CORRECTION_TEMPLATE_KEY = "validate_output_correction"
-DEFAULT_LLM_MODEL = "gemini-2.0-flash"
+DEFAULT_LLM_MODEL = "gemini-3.1-flash-lite"
 
 
 def _extract_raw_llm_output(step_input: StepInput) -> str:
@@ -86,23 +87,23 @@ def _build_correction_prompt(
     return re.sub(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", _replacer, template_text)
 
 
-def _call_llm(prompt: str, api_key: str, model: str) -> str:
-    """Send *prompt* to the Gemini LLM and return the generated text.
+def _call_llm(prompt: str, api_key: str, model: str) -> LLMResult:
+    """Send *prompt* to the Gemini LLM and return the generated text and token usage.
 
     Args:
         prompt:  The fully resolved prompt string.
         api_key: Gemini API key.
-        model:   Gemini model name (e.g. ``"gemini-2.0-flash"``).
+        model:   Gemini model name (e.g. ``"gemini-3.1-flash-lite"``).
 
     Returns:
-        The raw text response from the LLM.
+        The raw text response from the LLM with its token counts.
     """
     client = genai.Client(api_key=api_key)
     response = client.models.generate_content(
         model=model,
         contents=prompt,
     )
-    return response.text
+    return result_from_response(response)
 
 
 def validate_output_executor(step_input: StepInput) -> StepOutput:
@@ -205,11 +206,12 @@ def validate_output_executor(step_input: StepInput) -> StepOutput:
         validation_errors=first_errors,
     )
 
-    retry_raw_output: str = _call_llm(
+    retry_result = _call_llm(
         prompt=correction_prompt,
         api_key=api_key,
         model=llm_model,
     )
+    retry_raw_output: str = retry_result.text
 
     retry_output, retry_errors = parse_llm_output(retry_raw_output)
 
@@ -233,6 +235,8 @@ def validate_output_executor(step_input: StepInput) -> StepOutput:
             latency_ms=latency_ms,
             degraded_mode=True,
             error_type="validation_retry_succeeded",
+            input_tokens=retry_result.input_tokens,
+            output_tokens=retry_result.output_tokens,
         )
         return StepOutput(content=sse_event_to_json(sse_event))
 
@@ -261,5 +265,7 @@ def validate_output_executor(step_input: StepInput) -> StepOutput:
         latency_ms=latency_ms,
         degraded_mode=True,
         error_type="validation_failed_after_retry",
+        input_tokens=retry_result.input_tokens,
+        output_tokens=retry_result.output_tokens,
     )
     return StepOutput(content=sse_event_to_json(sse_event))
