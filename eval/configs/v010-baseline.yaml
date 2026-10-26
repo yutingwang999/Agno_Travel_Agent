@@ -1,0 +1,12 @@
+# v0.1.0 logic, generating with gemini-3.1-flash-lite (design decision 16).
+name: v010-baseline
+description: v0.1.0 workflow (CAG routing at 0.85, two templates), corpus v1
+generation_model: gemini-3.1-flash-lite
+embedding_model: gemini-embedding-001
+judge_model: gpt-6-luna
+corpus_version: v1
+knowledge_table: travel_docs_v1
+retrieval_k: 5
+judge_concurrency: 4
+# v0.1.0 has no request parser, so slot extraction accuracy is N/A.
+request_parser: false

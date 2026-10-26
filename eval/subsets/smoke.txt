@@ -1,0 +1,13 @@
+# Smoke subset (design decision 21): one entry id per line.
+# Provisional selection; task 6.3 revisits it once the baseline shows which entries
+# take the high- and low-confidence paths.
+e001
+e002
+e003
+e019
+e026
+e011
+e054
+e013
+e014
+e015
