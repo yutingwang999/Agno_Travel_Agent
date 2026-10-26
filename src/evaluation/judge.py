@@ -111,7 +111,7 @@ class Judge:
     def __init__(self, client, model: str = DEFAULT_JUDGE_MODEL, prompts_dir: Path = PROMPTS_DIR):
         self._client = client
         self.model = model
-        self._prompts_dir = prompts_dir
+        self.prompts_dir = prompts_dir
 
     @classmethod
     def from_env(cls) -> "Judge":
@@ -127,7 +127,7 @@ class Judge:
 
     def faithfulness(self, itinerary: dict, context: str) -> JudgeCall:
         prompt = render(
-            load_prompt(*FAITHFULNESS_PROMPT, self._prompts_dir),
+            load_prompt(*FAITHFULNESS_PROMPT, self.prompts_dir),
             knowledge_context=context or "(no knowledge context was given)",
             itinerary=itinerary_text(itinerary),
         )
@@ -135,7 +135,7 @@ class Judge:
 
     def destination(self, itinerary: dict, destination: str, trip_length: int) -> JudgeCall:
         prompt = render(
-            load_prompt(*DESTINATION_PROMPT, self._prompts_dir),
+            load_prompt(*DESTINATION_PROMPT, self.prompts_dir),
             destination=destination,
             trip_length=str(trip_length),
             itinerary=itinerary_text(itinerary),
