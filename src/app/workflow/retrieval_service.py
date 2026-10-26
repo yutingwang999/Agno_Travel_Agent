@@ -52,7 +52,8 @@ def retrieve_documents(
 
     Delegates to Agno's :class:`Knowledge` class, which embeds *query_text*
     with the Gemini API and performs a vector similarity search against the
-    ``travel_docs`` table managed by :class:`~agno.vectordb.pgvector.PgVector`.
+    knowledge-base table (``travel_docs`` unless ``KNOWLEDGE_TABLE_NAME`` is
+    set) managed by :class:`~agno.vectordb.pgvector.PgVector`.
 
     On any exception (embedding failure, DB error, etc.) the error is logged
     and an empty list is returned so the workflow can continue without context.

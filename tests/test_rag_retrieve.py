@@ -259,6 +259,52 @@ def test_retrieve_documents_returns_empty_list_on_exception():
 
 
 # ---------------------------------------------------------------------------
+# Knowledge-base table name
+# ---------------------------------------------------------------------------
+
+
+def test_knowledge_table_name_defaults_to_travel_docs(monkeypatch):
+    """Without KNOWLEDGE_TABLE_NAME the development table is used."""
+    from app.workflow.knowledge_base import knowledge_table_name
+
+    monkeypatch.delenv("KNOWLEDGE_TABLE_NAME", raising=False)
+    assert knowledge_table_name() == "travel_docs"
+
+    monkeypatch.setenv("KNOWLEDGE_TABLE_NAME", "")
+    assert knowledge_table_name() == "travel_docs"
+
+
+def test_build_knowledge_uses_table_name_from_env(monkeypatch):
+    """build_knowledge passes KNOWLEDGE_TABLE_NAME to PgVector."""
+    from app.workflow import knowledge_base
+
+    monkeypatch.setenv("KNOWLEDGE_TABLE_NAME", "travel_docs_v1")
+    with (
+        patch.object(knowledge_base, "PgVector") as fake_pgvector,
+        patch.object(knowledge_base, "Knowledge"),
+    ):
+        knowledge_base.build_knowledge(db_url="postgresql://fake", api_key="fake-key")
+
+    assert fake_pgvector.call_args.kwargs["table_name"] == "travel_docs_v1"
+
+
+def test_build_knowledge_explicit_table_name_wins(monkeypatch):
+    """An explicit table_name argument overrides KNOWLEDGE_TABLE_NAME."""
+    from app.workflow import knowledge_base
+
+    monkeypatch.setenv("KNOWLEDGE_TABLE_NAME", "travel_docs_v1")
+    with (
+        patch.object(knowledge_base, "PgVector") as fake_pgvector,
+        patch.object(knowledge_base, "Knowledge"),
+    ):
+        knowledge_base.build_knowledge(
+            db_url="postgresql://fake", api_key="fake-key", table_name="travel_docs_v2"
+        )
+
+    assert fake_pgvector.call_args.kwargs["table_name"] == "travel_docs_v2"
+
+
+# ---------------------------------------------------------------------------
 # SSE event structure
 # ---------------------------------------------------------------------------
 

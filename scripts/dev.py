@@ -12,6 +12,7 @@ Usage:
     python scripts/dev.py test-integration  # -m integration (test database + Gemini)
     python scripts/dev.py test-destructive  # -m destructive, then re-seed the test database
     python scripts/dev.py test-all          # unit -> integration -> destructive + re-seed
+    python scripts/dev.py eval-db-setup     # create + migrate + seed the evaluation database
     python scripts/dev.py verify
     python scripts/dev.py verify-schema
 """
@@ -27,6 +28,15 @@ ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 # Destructive tests refuse any other database name (see tests/test_db_schema.py).
 TEST_DB_SUFFIX = "_test_db"
+
+# The evaluation database must be neither the development nor the test database.
+EVAL_DB_SUFFIX = "_eval_db"
+
+# Knowledge-base table for each corpus version in the evaluation database.
+# v1 = the 13 handwritten v0.1.0 documents in scripts/seed.py.
+EVAL_KNOWLEDGE_TABLES = {"v1": "travel_docs_v1"}
+
+DEFAULT_KNOWLEDGE_TABLE = "travel_docs"
 
 
 def load_env() -> None:
@@ -94,19 +104,24 @@ def test():
     run([sys.executable, "-m", "pytest"])
 
 
-def test_database_url() -> str:
-    """Return TEST_DATABASE_URL, exiting if it is unset or not a *_test_db database."""
+def required_database_url(variable: str, suffix: str) -> str:
+    """Return the URL in `variable`, exiting if it is unset or its database lacks `suffix`."""
     from sqlalchemy import make_url
 
-    url = os.environ.get("TEST_DATABASE_URL")
+    url = os.environ.get(variable)
     if not url:
-        print("ERROR: TEST_DATABASE_URL not set - add it to .env (see .env.example)")
+        print(f"ERROR: {variable} not set - add it to .env (see .env.example)")
         sys.exit(1)
     name = make_url(url).database or ""
-    if not name.endswith(TEST_DB_SUFFIX):
-        print(f"ERROR: TEST_DATABASE_URL database {name!r} must end with {TEST_DB_SUFFIX!r}")
+    if not name.endswith(suffix):
+        print(f"ERROR: {variable} database {name!r} must end with {suffix!r}")
         sys.exit(1)
     return url
+
+
+def test_database_url() -> str:
+    """Return TEST_DATABASE_URL, exiting if it is unset or not a *_test_db database."""
+    return required_database_url("TEST_DATABASE_URL", TEST_DB_SUFFIX)
 
 
 def create_database_if_missing(database_url: str) -> None:
@@ -169,6 +184,25 @@ def test_all():
     print("--- all test tiers passed ---")
 
 
+def eval_db_setup():
+    """Create (if missing), migrate and seed the evaluation database. Safe to re-run.
+
+    Categories and templates go into the usual tables; each corpus version's
+    documents go into its own knowledge-base table (EVAL_KNOWLEDGE_TABLES).
+    """
+    url = required_database_url("EVAL_DATABASE_URL", EVAL_DB_SUFFIX)
+    print("--- preparing evaluation database ---")
+    create_database_if_missing(url)
+    migrate_database(url)
+    for corpus, table in EVAL_KNOWLEDGE_TABLES.items():
+        print(f"--- running seed script against the evaluation database (corpus {corpus}) ---")
+        run(
+            [sys.executable, "scripts/seed.py"],
+            env={"DATABASE_URL": url, "KNOWLEDGE_TABLE_NAME": table},
+        )
+        count_rows(url, knowledge_table=table)
+
+
 def verify():
     src_path = os.path.join(os.path.dirname(__file__), "..", "src")
     src_path = os.path.abspath(src_path)
@@ -212,8 +246,12 @@ def seed():
     run([sys.executable, "scripts/seed.py"])
 
 
-def count_rows(database_url: str | None = None):
-    """Print row counts for all seeded tables (DATABASE_URL unless a URL is given)."""
+def count_rows(database_url: str | None = None, knowledge_table: str | None = None):
+    """Print row counts for all seeded tables (DATABASE_URL unless a URL is given).
+
+    The knowledge-base table is KNOWLEDGE_TABLE_NAME (default travel_docs)
+    unless one is given.
+    """
     src_dir = os.path.join(ROOT_DIR, "src")
     if src_dir not in sys.path:
         sys.path.insert(0, src_dir)
@@ -222,6 +260,10 @@ def count_rows(database_url: str | None = None):
     if not database_url:
         print("ERROR: DATABASE_URL not set")
         sys.exit(1)
+    knowledge_table = (
+        knowledge_table or os.environ.get("KNOWLEDGE_TABLE_NAME") or DEFAULT_KNOWLEDGE_TABLE
+    )
+    knowledge_label = f"ai.{knowledge_table}"
 
     from sqlalchemy import create_engine, make_url, text
 
@@ -238,10 +280,10 @@ def count_rows(database_url: str | None = None):
 
         # Agno-managed knowledge base table (ai schema) — created by PgVector on first seed
         try:
-            count = conn.execute(text("SELECT COUNT(*) FROM ai.travel_docs")).scalar()
-            print(f"  {'ai.travel_docs':<30} {count}")
+            count = conn.execute(text(f'SELECT COUNT(*) FROM ai."{knowledge_table}"')).scalar()
+            print(f"  {knowledge_label:<30} {count}")
         except Exception:
-            print(f"  {'ai.travel_docs':<30} (not yet created — run: python scripts/dev.py seed)")
+            print(f"  {knowledge_label:<30} (not yet created — run: python scripts/dev.py seed)")
 
     print("--- embedding coverage ---")
     with engine.connect() as conn:
@@ -255,12 +297,12 @@ def count_rows(database_url: str | None = None):
 
         # Agno knowledge base — check embedding coverage
         try:
-            total = conn.execute(text("SELECT COUNT(*) FROM ai.travel_docs")).scalar()
+            total = conn.execute(text(f'SELECT COUNT(*) FROM ai."{knowledge_table}"')).scalar()
             null_count = conn.execute(
-                text("SELECT COUNT(*) FROM ai.travel_docs WHERE embedding IS NULL")
+                text(f'SELECT COUNT(*) FROM ai."{knowledge_table}" WHERE embedding IS NULL')
             ).scalar()
             status = "OK" if null_count == 0 else f"WARNING: {null_count} null vector(s)"
-            print(f"  {'ai.travel_docs':<30} {total - null_count}/{total} have embeddings  [{status}]")
+            print(f"  {knowledge_label:<30} {total - null_count}/{total} have embeddings  [{status}]")
         except Exception:
             pass
 
@@ -309,6 +351,7 @@ COMMANDS = {
     "test-integration": test_integration,
     "test-destructive": test_destructive,
     "test-all": test_all,
+    "eval-db-setup": eval_db_setup,
     "verify": verify,
     "verify-schema": verify_schema,
 }
