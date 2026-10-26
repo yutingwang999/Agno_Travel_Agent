@@ -6,7 +6,7 @@
 - The form has no travel dates and no party size, only the trip length.
 - The knowledge base is 13 handwritten documents; the documents have no `source` / `section` metadata, only a title.
 - Traces record only latency and template version; Gemini responses carry usage metadata (input / output token counts), but the code does not read it.
-- The generation model defaults to `gemini-2.0-flash` in code (`steps/generate.py`) and can be overridden with the `LLM_MODEL` environment variable.
+- The generation and correction models default to `gemini-2.0-flash` in code (`steps/generate.py`, `steps/validate_output.py`) and can be overridden with the `LLM_MODEL` environment variable. Google shut `gemini-2.0-flash` down on 2026-06-01, so the default no longer works: any environment without `LLM_MODEL` fails at generation.
 - Each day of the itinerary has a single `estimated_cost_aud`; the template does not say what it covers (in particular whether accommodation is included).
 - The knowledge-base table name is a constant in `knowledge_base.py`, and `steps/rag_retrieve.py` does not pass one, so retrieval always reads `ai.travel_docs`.
 - Evaluation calls a paid API and depends on a database that tests do not wipe (see `isolate-test-database`).
@@ -27,6 +27,10 @@
 
 1. **Every evaluation entry contains both `form` and `utterance`.**
    `form` holds the structured form fields that drive the current system; `utterance` is a free-text phrasing of the same request (possibly mixed Chinese–English), used together with `gold_slots` to evaluate request parsing in the future (roadmap item 3). v0.1.0 has no parser, so slot accuracy is marked N/A.
+   `gold_slots` records only what the `utterance` states as travel information; values that exist only to make `form` valid (e.g. a trip length in a non-travel request) are `null`. Slot accuracy is computed over `plan` entries only: slots matter only when an itinerary is produced, and for refused or clarified requests the behaviour correctness rate is the measure.
+   `gold_slots` is used only as the reference answer for a request parser; no metric in the baseline reads it (or `utterance`). Two limits apply when that parser is evaluated (roadmap item 3):
+   - Each entry was written form first, then the `utterance` was written from the form by an author who knew the answer. Utterances are therefore tidier and more complete than real user text, and slot accuracy on them will likely be optimistic; the report says so, and the parser change can add utterances written independently of any form (typos, casual phrasing, shuffled order).
+   - The form carries values the utterance may not state (a form forces a choice on every field, e.g. a budget level). Where the utterance states a slot, the form must agree with it; where it does not, the form value is only a forced choice and `gold_slots` is `null`, so the right parser output is "not extracted". A comparison between the form path and the utterance path holds only on the slots the utterance states. On the utterance path, an entry whose `gold_slots.budget` is `null` stated no budget, so the budget constraint does not apply to it (reported N/A, as for `luxury`) unless the system explicitly settled on a budget level, in which case that level is checked.
    Alternative: store free text only — then the current system could not run the evaluation.
 
 2. **An `expected_behavior` field: `plan` / `refuse` / `clarify`.**
@@ -76,9 +80,10 @@
 
 15. **Gate thresholds may change, but a record must be left.** Intentional behaviour changes (e.g. starting to refuse out-of-scope requests) will lower some metrics. In that case, update the thresholds in the same change and write in `docs/experiments.md` which change did it and why.
 
-16. **Evaluation runs generate with `gemini-3.1-flash-lite`**, set through `LLM_MODEL` in the run configuration; the code default is not changed in this change. The baseline therefore measures "v0.1.0 logic with `gemini-3.1-flash-lite`", the model later changes will be compared on, so each later comparison changes one variable only. The run conditions table states the generation model.
+16. **Generation uses `gemini-3.1-flash-lite` everywhere.** Evaluation runs set it through `LLM_MODEL` in the run configuration, and the code default in `steps/generate.py` and `steps/validate_output.py` changes to it as well (`.env.example` too), because the old default `gemini-2.0-flash` has been shut down. Local development, evaluation and the code default then use the same model. The baseline therefore measures "v0.1.0 logic with `gemini-3.1-flash-lite`", the model later changes will be compared on, so each later comparison changes one variable only. The run conditions table states the generation model.
+    Alternative: keep `gemini-2.0-flash` as the code default — a default that can only fail.
 
-17. **The knowledge-base table is selected with a `KNOWLEDGE_TABLE_NAME` environment variable**, read by `knowledge_base.py` and passed through by `steps/rag_retrieve.py`; unset, it is `travel_docs`. Because the evaluation calls the app in-process, an environment variable is the only way to choose the table without changing the API. This, plus token recording, is the only change to `steps/`, and both are measurement-only.
+17. **The knowledge-base table is selected with a `KNOWLEDGE_TABLE_NAME` environment variable**, read by `knowledge_base.build_knowledge`, so runtime retrieval and `seed.py` both follow it; unset, it is `travel_docs`. Because the evaluation calls the app in-process, an environment variable is the only way to choose the table without changing the API. `steps/` is not touched for this; token recording is the only change there, and it is measurement-only.
 
 18. **`prompt_injection` entries are labelled `refuse`.** The correct behaviour on an injection is to refuse, which is what `harden-workflow-guardrails` implements (422 `input_rejected`). The baseline scores 0 on this tag and the guardrail change should raise it.
     Alternative: label them `plan` (ignore the injection and plan normally) — the guardrail's 422 would then count as wrong.
@@ -93,12 +98,21 @@
 
 23. **`mixed_language` entries behave like ordinary entries in the baseline.** v0.1.0 reads only `form`, whose `destination` is English for these entries, so the tag says nothing about mixed-language handling until a request parser reads `utterance`. The baseline report states this.
 
+24. **`form.notes` is in the dataset now, although v0.1.0 has no such field.** `rebuild-rag` adds an optional free-text `notes` to the request and to both the retrieval query and the prompt, and compares the new query construction with today's fixed concatenation. Without notes in the dataset that comparison would show no difference. `notes` holds details from the utterance that the form fields cannot express (children's ages, "a game at the MCG", "I use a wheelchair"), on roughly a third of the entries; the rest have none, as real requests would. v0.1.0's `TravelRequest` drops unknown fields, so the baseline sends the same inputs and ignores the notes, and the before/after difference is attributable to using them. One `prompt_injection` entry carries its injection in `notes`, for the injection guard once `notes` exists.
+    Alternative: add `notes` in `rebuild-rag` — the dataset would change after the baseline has been seen, which the dataset rules try to avoid.
+
+25. **A `chinese_destination` tag for forms whose destination is written in Chinese.** `harden-workflow-guardrails` adds Chinese names to its place-name table (悉尼 → sydney) to measure the effect on Chinese-speaking users, but the `mixed_language` rule keeps `form.destination` English, so no entry would exercise the table. `chinese_destination` entries change only the destination (the other fields stay English) and expect `plan`: v0.1.0 receives an unrecognised destination, and the guardrail change should improve this group.
+
+26. **Judge prompts live in versioned files under `eval/judge_prompts/`, not in the `prompt_templates` table.** The "prompts live in the database with versions" rule is about the product's prompts; the judge is an evaluation tool, and keeping its prompts in the product tables would put rows the product never uses into the development, test and evaluation databases. Each prompt is a file whose name carries its version (e.g. `faithfulness_v1.md`); a change adds a new file instead of editing an old one, and every run summary records the judge prompt names and versions it used.
+    Alternative: store them in `prompt_templates` — literal compliance with the rule, at the cost of mixing evaluation rows into product tables.
+
 ## Risks / Trade-offs
 
 - [The evaluation dataset is self-written and may be biased towards our own approach] → Write and commit the dataset before any experiment; the user reviews every entry; any later modification is recorded in `docs/experiments.md` with what changed and why.
 - [The judge model is itself biased] → Calibrate with manual scores and report the agreement rate; if the agreement rate is too low, improve the judge prompt first, then use the judge results.
-- [A full evaluation is expensive and can hit rate limits] → The accounts are on paid tiers; default concurrency 4, with retries and backoff; day to day, run only the smoke subset.
+- [A full evaluation is expensive and can hit rate limits] → The accounts are on paid tiers; default concurrency 4; judge calls are retried with backoff, but requests to the system under test are not (a failed LLM call is part of what v0.1.0 does, and the error rate must show it); day to day, run only the smoke subset.
 - [LLM output is non-deterministic, so two runs of the same configuration fluctuate] → Leave a margin in the smoke-subset gate thresholds; for formal comparisons run each configuration 2 times and report the mean.
+- [Hosted models are retired: Google lists 2027-05-07 as the earliest shutdown date for `gemini-3.1-flash-lite`] → After that the baseline cannot be re-run on the same model; every run records its models, and a comparison across a model change says so in its run conditions.
 - [The budget caps rest on rough reference prices] → They only flag "clearly over budget"; the derivation is kept next to the values so they can be revisited, and changes are recorded.
 
 ## Migration Plan

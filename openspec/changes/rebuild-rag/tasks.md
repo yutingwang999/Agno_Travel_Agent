@@ -8,6 +8,7 @@
 ## 2. Evaluation dataset
 
 - [ ] 2.1 Re-label the evaluation dataset's `relevant_sections` for the new corpus, bump the corpus version to v2, and record it in `docs/experiments.md`; Verify: the evaluation harness's coverage check passes
+- [ ] 2.2 Add `eval/judge_prompts/destination_v2.md` that also receives the request's `notes` and counts places the traveller explicitly asked for in the notes (e.g. a stop on the way) as in scope; v1 stays unchanged for re-running earlier results, and the run summary records which version was used; Verify: a judge unit test with notes naming a stop outside the destination; run it on 2 entries with notes and check the output by hand
 
 ## 3. Embedding and seed
 
@@ -25,11 +26,12 @@
 - [ ] 4.4 d: Cross-Encoder reranking, falling back to the pre-rerank order when model loading or inference fails; Verify: a unit test mocks a reranking failure; run the evaluation and record d along with memory usage
 - [ ] 4.5 Compare 2–3 chunk sizes and the embedding types before and after the change, decide the final configuration, and write it into design.md and `docs/experiments.md`; Verify: both Recall@5 and MRR of the final configuration are higher than a; if reranking is used, the added latency is ≤ 1 second
 - [ ] 4.6 Text chunks output all fields; query construction includes `notes`; Verify: update `test_rag_retrieve.py`
+- [ ] 4.7 Compare the query construction with `notes` against the fixed concatenation on the evaluation dataset, reporting entries with `form.notes` and entries without separately (without notes the two queries are identical); Verify: the `docs/experiments.md` entry shows Recall@5 and MRR for both groups
 
 ## 5. Interim routing and a single template
 
 - [ ] 5.1 `retrieval_decision` always routes to `rag_retrieve`; remove `threshold` from the event and delete `RETRIEVAL_CONFIDENCE_THRESHOLD`; Verify: update `test_retrieval_decision.py` to assert that confidence 0.95 also routes to retrieval
-- [ ] 5.2 Seed adds the `itinerary_with_context` template (with `{retrieved_context}`, `{notes}`, citation instructions and "AUD per person"); generate always uses it, and the logic for choosing templates by confidence and falling back is removed; Verify: update `test_generate.py` to cover Any confidence / Template table empty
+- [ ] 5.2 Seed adds the `itinerary_with_context` template (with `{retrieved_context}`, `{notes}`, citation instructions and "AUD per person, excluding accommodation"); generate always uses it, and the logic for choosing templates by confidence and falling back is removed; Verify: update `test_generate.py` to cover Any confidence / Template table empty
 - [ ] 5.3 Update `test_golden.py`: the two former high-confidence cases now assert that `rag_retrieve` appears, `retrieved_context` is non-empty and citations are valid; Verify: on the test database (small fixed corpus), `pytest -m integration tests/test_golden.py` passes completely
 
 ## 6. Source citations

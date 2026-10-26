@@ -28,10 +28,12 @@
 
 ## 5. Input guardrails
 
-- [ ] 5.1 Prepare `data/places/australia.tsv` (name → canonical English name; states, capitals, major towns and tourist destinations, from openly licensed place-name data; Chinese names of the major cities added by hand) and document its source and licence; Verify: the file contains every destination in the knowledge base and the evaluation dataset
+- [ ] 5.1 Prepare `data/places/australia.tsv` (name → canonical English name; states, capitals, major towns and tourist destinations, from openly licensed place-name data; Chinese names of the major cities added by hand) and document its source and licence; Verify: the file contains every Australian destination in the knowledge base and the evaluation dataset, including the Chinese names used by `chinese_destination` entries
 - [ ] 5.2 Implement the destination guardrail: on a match replace with the canonical name, otherwise return 422 + `destination_out_of_scope`, without calling any external API; Verify: API tests cover Foreign city / Australian city / Chinese city name, and when a request is rejected the mocked LLM and embedding are not called
-- [ ] 5.3 Implement the injection guardrail (pattern list in configuration), 422 + `input_rejected`; Verify: API tests cover both scenarios
-- [ ] 5.4 The README explains the two 422 reason codes, the supported Chinese place names, and that the place-name table may wrongly reject small places
+- [ ] 5.3 Implement the injection guardrail (pattern list in configuration, English and Chinese patterns), 422 + `input_rejected`; Verify: API tests cover the scenarios, including a Chinese injection and ordinary Chinese text that must pass
+- [ ] 5.4 Both guards reject through one exception class and FastAPI exception handler that returns `{"reason": <code>, "detail": <fixed message>}`; the message is fixed per code and never echoes input, the matched pattern or field, or any internal detail; Verify: API tests assert the exact body for each code, that a submitted injection string does not appear in the response, and that a field validation 422 has no `reason`
+- [ ] 5.5 Frontend: on a field validation 422, show each error's `msg` instead of `[object Object]` (render with `textContent`); guard rejections show `detail`; Verify: manually submit `trip_length` = 0 and an out-of-scope destination and check both banners
+- [ ] 5.6 The README and `docs/api.md` explain the two 422 reason codes and the rejection body, the supported Chinese place names, and that the place-name table may wrongly reject small places
 
 ## 6. Testing and regression
 

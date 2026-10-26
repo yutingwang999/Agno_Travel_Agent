@@ -26,6 +26,7 @@ v0.1.0 has no number that measures quality: we don't know whether retrieval is a
 ### Modified Capabilities
 
 - `travel-workflow`: traces add the token usage of LLM calls.
+- `itinerary-generation`: the default generation model becomes `gemini-3.1-flash-lite`.
 
 ## Impact
 
@@ -33,7 +34,8 @@ v0.1.0 has no number that measures quality: we don't know whether retrieval is a
 - New Alembic migration: add `input_tokens` and `output_tokens` columns to `trace_events`
 - `steps/generate.py`, `steps/validate_output.py`: read token counts from the usage metadata of the Gemini response and write them to the trace
 - `app/workflow/config.py`: add a daily cost cap per budget level, per person in AUD excluding accommodation: `budget` 70, `moderate` 200, `luxury` none (shared by the constraint satisfaction rate and the later guardrail rules)
-- `knowledge_base.py`, `steps/rag_retrieve.py`: knowledge-base table name configurable through `KNOWLEDGE_TABLE_NAME` (default `travel_docs`)
+- `knowledge_base.py`: knowledge-base table name configurable through `KNOWLEDGE_TABLE_NAME` (default `travel_docs`); `seed.py` follows it
+- `steps/generate.py`, `steps/validate_output.py`, `.env.example`: default model `gemini-3.1-flash-lite` (the old default `gemini-2.0-flash` was shut down on 2026-06-01)
 - `.env.example`: `EVAL_DATABASE_URL`, `OPENAI_API_KEY`
 - `pyproject.toml`: `openai==2.14.0` in the dev dependencies (the judge client; already present in the working environment)
 - **Paid API**: every full evaluation calls Gemini (generation, embedding) and OpenAI (judge); day-to-day regression runs only the smoke subset

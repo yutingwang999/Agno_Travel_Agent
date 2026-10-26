@@ -39,7 +39,7 @@
 
 1. **`retrieval_decision` always routes to `rag_retrieve`; the step itself is kept.** Confidence is still reported but no longer affects routing; `RETRIEVAL_CONFIDENCE_THRESHOLD` is deleted. The step is kept so that the new routing in roadmap item 3 has a place to plug in, and to avoid changing the step name and event structure a second time.
    Alternatives: (a) keep the status quo — retrieval improvements would not reach high-confidence requests, and the success criteria could not be met; (b) do the complete routing redesign now — too large in scope, and it still has undecided questions (see roadmap item 3).
-2. **The two generation templates merge into `itinerary_with_context`**, containing `{retrieved_context}`, `{notes}`, citation instructions, and the "AUD per person" that harden requires. The two old keys remain in the database (under harden's rules, the highest version of each is still active but no longer selected), so earlier results can be reproduced with `template_version`.
+2. **The two generation templates merge into `itinerary_with_context`**, containing `{retrieved_context}`, `{notes}`, citation instructions, and the "AUD per person, excluding accommodation" that harden requires. The two old keys remain in the database (under harden's rules, the highest version of each is still active but no longer selected), so earlier results can be reproduced with `template_version`.
 
 ### The spec constrains only external behaviour
 
@@ -86,6 +86,6 @@ Alternative: the full corpus in the test database too, plus the embedding cache 
 1. New Alembic migration: drop the `source_documents` table; delete the `SourceDocument` model and remove this table from `count-rows`.
 2. Generate the new corpus and write it into `travel_docs_v2_<config>` in the evaluation database, one per chunking configuration; once the experiments choose a configuration, drop `ai.travel_docs` on the development database and rebuild it with the chosen configuration (documents now embedded with `RETRIEVAL_DOCUMENT`).
 3. Label the evaluation dataset for the new corpus and bump the corpus version to v2.
-4. Seed adds the `itinerary_with_context` template (with `{notes}`, `{retrieved_context}`, citation instructions and "AUD per person"); the two old generation templates are kept.
+4. Seed adds the `itinerary_with_context` template (with `{notes}`, `{retrieved_context}`, citation instructions and "AUD per person, excluding accommodation"); the two old generation templates are kept.
 5. Deploy the code (always retrieve, single template, source citations).
 6. Rollback: the migration's downgrade recreates an empty `source_documents` table; the knowledge base is rebuilt with the old seed; restoring the previous code version returns to choosing templates by confidence (the old templates are still in the database).
