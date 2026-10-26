@@ -81,6 +81,26 @@ def _collect_step_result_events(step_results) -> list[dict]:
     return events
 
 
+def build_additional_data(
+    session_id: str,
+    travel_request: TravelRequest,
+    template_version: Optional[int] = None,
+) -> dict:
+    """Return the ``additional_data`` every workflow step reads its request fields from.
+
+    The evaluation harness builds retrieval queries from the same dict, so it
+    measures the query the workflow actually sends.
+    """
+    return {
+        "session_id": session_id,
+        "destination": travel_request.destination,
+        "trip_length": travel_request.trip_length,
+        "budget": travel_request.budget,
+        "travel_style": travel_request.travel_style,
+        "template_version": template_version,
+    }
+
+
 def _run_workflow(
     session_id: str,
     travel_request: TravelRequest,
@@ -105,14 +125,7 @@ def _run_workflow(
         intake → cag_match → retrieval_decision → (rag_retrieve) → generate
         → validate_output.
     """
-    additional_data = {
-        "session_id": session_id,
-        "destination": travel_request.destination,
-        "trip_length": travel_request.trip_length,
-        "budget": travel_request.budget,
-        "travel_style": travel_request.travel_style,
-        "template_version": template_version,
-    }
+    additional_data = build_additional_data(session_id, travel_request, template_version)
 
     # Capture stdout so the retrieval_decision evaluator's print() is collected
     # rather than sent to the server's stdout.
