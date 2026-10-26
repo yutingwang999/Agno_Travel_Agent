@@ -15,6 +15,8 @@ from unittest.mock import patch
 
 import pytest
 
+from app.workflow.llm_usage import LLMResult
+
 # ---------------------------------------------------------------------------
 # Module-level fixture: patch match_category for all skeleton tests.
 #
@@ -64,7 +66,7 @@ def patch_external_services(monkeypatch):
     )
     monkeypatch.setattr(
         "app.workflow.steps.generate._call_llm",
-        lambda prompt, api_key, model: _VALID_ITINERARY_JSON,
+        lambda prompt, api_key, model: LLMResult(_VALID_ITINERARY_JSON),
     )
     # validate_output: patch DB and LLM so the step runs without a live connection.
     # The correction template and retry LLM are only reached when the first validation
@@ -75,7 +77,7 @@ def patch_external_services(monkeypatch):
     )
     monkeypatch.setattr(
         "app.workflow.steps.validate_output._call_llm",
-        lambda prompt, api_key, model: _VALID_ITINERARY_JSON,
+        lambda prompt, api_key, model: LLMResult(_VALID_ITINERARY_JSON),
     )
 
 # ---------------------------------------------------------------------------

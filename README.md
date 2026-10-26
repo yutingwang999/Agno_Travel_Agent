@@ -119,7 +119,7 @@ All variables are documented in [.env.example](.env.example).
 | `DATABASE_URL`      | Full SQLAlchemy / Alembic DSN                                                     |
 | `TEST_DATABASE_URL` | Test database for integration / destructive tests; name must end with `_test_db`  |
 | `GEMINI_API_KEY`    | Google Gemini API key                                                             |
-| `LLM_MODEL`         | Gemini model for generation (e.g. `gemini-2.0-flash`)                             |
+| `LLM_MODEL`         | Gemini model for generation (e.g. `gemini-3.1-flash-lite`)                          |
 | `EMBEDDING_MODEL`   | Embedding model — must match seed and cag_match (default: `gemini-embedding-001`) |
 | `APP_HOST`          | Uvicorn bind host                                                                 |
 | `APP_PORT`          | Uvicorn bind port                                                                 |

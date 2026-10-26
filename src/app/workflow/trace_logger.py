@@ -38,6 +38,8 @@ def write_trace(
     prompt_template_version: int | None = None,
     degraded_mode: bool | None = None,
     error_type: str | None = None,
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
 ) -> None:
     """Insert one row into ``trace_events`` for the completed step.
 
@@ -53,6 +55,10 @@ def write_trace(
                                  was attempted.
         error_type:              ``validate_output`` step only — short description
                                  of the failure when the step ended in error.
+        input_tokens:            Steps that call the LLM — prompt tokens reported
+                                 by the provider, or None.
+        output_tokens:           Steps that call the LLM — output tokens (including
+                                 thinking tokens) reported by the provider, or None.
     """
     try:
         engine = create_engine(db_url)
@@ -66,6 +72,8 @@ def write_trace(
                 prompt_template_version=prompt_template_version,
                 degraded_mode=degraded_mode,
                 error_type=error_type,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
             )
             session.add(trace_event)
             session.commit()
