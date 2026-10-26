@@ -134,6 +134,23 @@ def test_phase_seconds_and_per_call_latency_are_recorded():
     assert "latency_ms" in record["judge"]["faithfulness"]
 
 
+def test_step_latencies_average_over_requests_that_ran_the_step():
+    from evaluation.runner import EntryRun, step_latencies
+    from evaluation.behaviour import Outcome
+
+    def entry_run(rows):
+        return EntryRun(entry=_entry("e"), outcome=Outcome("plan"), trace_rows=rows)
+
+    results = [
+        entry_run([{"step_name": "generate", "latency_ms": 3000}, {"step_name": "rag_retrieve", "latency_ms": 600}]),
+        entry_run([{"step_name": "generate", "latency_ms": 2000}, {"step_name": "intake", "latency_ms": None}]),
+    ]
+    assert step_latencies(results) == {
+        "rag_retrieve": {"runs": 1, "mean_ms": 600.0},
+        "generate": {"runs": 2, "mean_ms": 2500.0},
+    }
+
+
 def test_retrieval_error_is_recorded_not_raised():
     services, _ = _services([(200, _sse("s1", 2, with_rag=False))])
     services.retrieve = lambda q: (_ for _ in ()).throw(RuntimeError("pgvector down"))

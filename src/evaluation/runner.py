@@ -273,6 +273,25 @@ def result_record(result: EntryRun) -> dict:
     }
 
 
+STEP_ORDER = ("intake", "cag_match", "retrieval_decision", "rag_retrieve", "generate", "validate_output")
+
+
+def step_latencies(results: list[EntryRun]) -> dict:
+    """Mean latency of each workflow step, from the latency every step writes to its trace row.
+
+    ``runs`` is how many requests ran the step (rag_retrieve only runs on the
+    retrieval path), so each mean is over the requests that ran it.
+    """
+    samples: dict[str, list[float]] = {}
+    for result in results:
+        for row in result.trace_rows or []:
+            if row.get("latency_ms") is not None:
+                samples.setdefault(row["step_name"], []).append(row["latency_ms"])
+    ordered = [s for s in STEP_ORDER if s in samples] + sorted(set(samples) - set(STEP_ORDER))
+    return {step: {"runs": len(samples[step]), "mean_ms": round(sum(samples[step]) / len(samples[step]), 1)}
+            for step in ordered}
+
+
 def _rag_query(outcome: Outcome) -> str | None:
     """The query rag_retrieve embedded, when retrieval ran."""
     event = next((e for e in outcome.events if e.get("step") == "rag_retrieve"), None)
@@ -306,7 +325,8 @@ def summarise(results: list[EntryRun], config: RunConfig, pricing: Pricing) -> d
             "constraints": constraints,
             "faithfulness": {**faithfulness_summary(faith),
                              "judge_errors": sum(1 for r in results if r.judge_error)},
-            "system": system_metrics([r.outcome for r in results]),
+            "system": {**system_metrics([r.outcome for r in results]),
+                       "step_latency_ms": step_latencies(results)},
             "cost": summarize_costs([r.cost for r in results if r.cost], judge_usage,
                                     config.judge_model, pricing),
         },

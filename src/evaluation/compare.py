@@ -110,6 +110,20 @@ METRIC_ROWS: list[Row] = [
 ]
 
 
+def _step_rows(summaries: list[dict]) -> list[Row]:
+    steps: list[str] = []
+    for s in summaries:
+        for step in get(s, "metrics.system.step_latency_ms") or {}:
+            if step not in steps:
+                steps.append(step)
+
+    def render(s: dict, step: str) -> str:
+        item = (get(s, "metrics.system.step_latency_ms") or {}).get(step)
+        return MISSING if item is None else f"{item['mean_ms']:.0f} ms (n={item['runs']})"
+
+    return [(f"Step latency: `{step}`", lambda s, step=step: render(s, step)) for step in steps]
+
+
 def _tag_rows(summaries: list[dict]) -> list[Row]:
     tags = sorted({tag for s in summaries for tag in (get(s, "metrics.behaviour.by_tag") or {})})
     return [(f"Behaviour correctness: `{tag}`",
@@ -125,7 +139,7 @@ def comparison_table(summaries: list[dict]) -> str:
                for s in summaries]
     lines = ["| Item | " + " | ".join(f"`{h}`" if not h.startswith(DIRTY_MARK) else h for h in headers) + " |",
              "| --- |" + " --- |" * len(summaries)]
-    for label, render in CONDITION_ROWS + METRIC_ROWS + _tag_rows(summaries):
+    for label, render in CONDITION_ROWS + METRIC_ROWS + _step_rows(summaries) + _tag_rows(summaries):
         lines.append(f"| {label} | " + " | ".join(render(s) for s in summaries) + " |")
     if any(get(s, "conditions.git_dirty") for s in summaries):
         lines.append("")

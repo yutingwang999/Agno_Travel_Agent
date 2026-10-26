@@ -7,6 +7,6 @@ judge_model: gpt-6-luna
 corpus_version: v1
 knowledge_table: travel_docs_v1
 retrieval_k: 5
-judge_concurrency: 4
+judge_concurrency: 8
 # v0.1.0 has no request parser, so slot extraction accuracy is N/A.
 request_parser: false
