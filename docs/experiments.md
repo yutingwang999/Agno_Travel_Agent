@@ -144,4 +144,4 @@ Every modification of the evaluation dataset (`eval/dataset.jsonl`) must be reco
 
 | Date | Version | What changed | Reason | Entries affected |
 | --- | --- | --- | --- | --- |
-| — | v1 | Initial version | — | All |
+| 2026-10-25 | v1 | Initial version: 73 entries (54 plan / 12 refuse / 7 clarify), labelled against corpus v1 (the 13 handwritten v0.1.0 documents); 24 entries carry `form.notes` | Written and reviewed entry by entry before any experiment | All (e001–e073) |
