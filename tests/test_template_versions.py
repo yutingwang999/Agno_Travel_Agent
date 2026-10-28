@@ -44,18 +44,72 @@ def test_declared_key_not_defined_is_rejected():
         check_active_versions(_definitions(1), {KEY: 1, "other": 1})
 
 
-def test_seed_declaration_is_valid(monkeypatch):
-    """The definitions and the active map in scripts/seed.py agree."""
+COST_UNIT_PHRASE = "AUD per person, excluding accommodation"
+
+
+@pytest.fixture(scope="module")
+def seed_module():
+    """scripts/seed.py loaded as a module (it reads GEMINI_API_KEY at import)."""
     import importlib.util
     from pathlib import Path
 
-    monkeypatch.setenv("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY", "unused"))
     path = Path(__file__).parent.parent / "scripts" / "seed.py"
     spec = importlib.util.spec_from_file_location("seed_under_test", path)
     seed = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(seed)
+    # Only for the import: conftest decides from GEMINI_API_KEY whether
+    # integration tests can run, so a placeholder must not outlive this fixture.
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY", "unused"))
+        spec.loader.exec_module(seed)
+    return seed
 
-    check_active_versions(seed.TEMPLATE_DEFINITIONS, seed.ACTIVE_TEMPLATE_VERSIONS)
+
+def _active_definitions(seed) -> list[dict]:
+    return [
+        d
+        for d in seed.TEMPLATE_DEFINITIONS
+        if seed.ACTIVE_TEMPLATE_VERSIONS[d["template_key"]] == d["version"]
+    ]
+
+
+def test_seed_declaration_is_valid(seed_module):
+    """The definitions and the active map in scripts/seed.py agree."""
+    check_active_versions(seed_module.TEMPLATE_DEFINITIONS, seed_module.ACTIVE_TEMPLATE_VERSIONS)
+
+
+def test_seed_active_templates_state_the_cost_unit(seed_module):
+    """Every template seed activates states the cost unit."""
+    active = _active_definitions(seed_module)
+    assert len(active) == len(seed_module.ACTIVE_TEMPLATE_VERSIONS)
+    for d in active:
+        assert COST_UNIT_PHRASE in d["template_text"], d["template_key"]
+
+
+def test_seed_v1_templates_are_unchanged(seed_module):
+    """Version 1 keeps the v0.1.0 text, so the baseline stays reproducible."""
+    v1 = {d["template_key"]: d["template_text"] for d in seed_module.TEMPLATE_DEFINITIONS if d["version"] == 1}
+    for text in v1.values():
+        assert COST_UNIT_PHRASE not in text
+
+
+@pytest.mark.integration
+def test_seeded_active_templates_state_the_cost_unit():
+    """After test-db-setup, every active template in the database states the cost unit."""
+    from app.models.prompt_template import PromptTemplate
+
+    engine = create_engine(os.environ["DATABASE_URL"])
+    try:
+        with Session(engine) as s:
+            rows = s.execute(
+                select(PromptTemplate.template_key, PromptTemplate.template_text).where(
+                    PromptTemplate.is_active
+                )
+            ).all()
+    finally:
+        engine.dispose()
+    assert rows, "no active templates; run test-db-setup"
+    for key, text in rows:
+        assert COST_UNIT_PHRASE in text, key
 
 
 # ---------------------------------------------------------------------------
