@@ -56,13 +56,14 @@ def test_first_migration_enables_pgvector_extension():
 
 
 def test_migration_chain_is_contiguous():
-    """Revisions 0001-0005 must form an unbroken chain."""
+    """Revisions 0001-0006 must form an unbroken chain."""
     expected_chain = [
         ("0001", None),
         ("0002", "0001"),
         ("0003", "0002"),
         ("0004", "0003"),
         ("0005", "0004"),
+        ("0006", "0005"),
     ]
     for revision, expected_down in expected_chain:
         files = list(MIGRATIONS_DIR.glob(f"{revision}_*.py"))
@@ -227,6 +228,45 @@ def test_trace_events_db_columns(db_engine):
 
 
 @pytest.mark.integration
+def test_prompt_templates_has_single_active_index(db_engine):
+    """prompt_templates must have a unique index on template_key WHERE is_active."""
+    with db_engine.connect() as conn:
+        indexdef = conn.execute(
+            text(
+                "SELECT indexdef FROM pg_indexes "
+                "WHERE tablename = 'prompt_templates' "
+                "AND indexname = 'uq_prompt_templates_one_active'"
+            )
+        ).scalar()
+    assert indexdef is not None, "uq_prompt_templates_one_active is missing"
+    assert "UNIQUE" in indexdef and "(template_key)" in indexdef and "is_active" in indexdef
+
+
+@pytest.mark.integration
+def test_second_active_template_version_is_rejected(db_engine):
+    """Activating a second version of a seeded key fails; nothing is written."""
+    from sqlalchemy.exc import IntegrityError
+
+    with db_engine.connect() as conn:
+        trans = conn.begin()
+        try:
+            key = conn.execute(
+                text("SELECT template_key FROM prompt_templates WHERE is_active LIMIT 1")
+            ).scalar()
+            assert key is not None, "test database has no active template; run test-db-setup"
+            with pytest.raises(IntegrityError):
+                conn.execute(
+                    text(
+                        "INSERT INTO prompt_templates (template_key, version, template_text, is_active) "
+                        "VALUES (:key, 9999, 'second active row', true)"
+                    ),
+                    {"key": key},
+                )
+        finally:
+            trans.rollback()
+
+
+@pytest.mark.integration
 def test_trace_events_has_session_id_index(db_engine):
     """trace_events must have an index on session_id for query performance."""
     inspector = inspect(db_engine)
@@ -292,3 +332,48 @@ def test_upgrade_head_reapplies_cleanly(db_engine):
     expected = {"itinerary_categories", "prompt_templates", "source_documents", "trace_events"}
     missing = expected - existing
     assert not missing, f"Tables missing after re-upgrade: {missing}"
+
+
+@pytest.mark.destructive
+def test_migration_0006_keeps_only_the_highest_active_version(db_engine):
+    """Upgrading to 0006 deactivates all but the highest active version of a key."""
+    import subprocess
+    import sys
+
+    database_url = _database_url()
+    _assert_test_database(database_url)
+    project_root = str(Path(__file__).parent.parent)
+
+    def alembic(*args: str) -> None:
+        result = subprocess.run(
+            [sys.executable, "-m", "alembic", *args],
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, f"alembic {' '.join(args)} failed:\n{result.stderr}"
+
+    key = "test_migration_0006_key"
+    alembic("downgrade", "0005")
+    engine = create_engine(database_url)
+    try:
+        with engine.begin() as conn:
+            for version in (1, 2, 3):
+                conn.execute(
+                    text(
+                        "INSERT INTO prompt_templates (template_key, version, template_text, is_active) "
+                        "VALUES (:key, :version, 'text', true)"
+                    ),
+                    {"key": key, "version": version},
+                )
+        alembic("upgrade", "head")
+        with engine.connect() as conn:
+            active = conn.execute(
+                text("SELECT version FROM prompt_templates WHERE template_key = :key AND is_active"),
+                {"key": key},
+            ).scalars().all()
+        assert active == [3]
+    finally:
+        with engine.begin() as conn:
+            conn.execute(text("DELETE FROM prompt_templates WHERE template_key = :key"), {"key": key})
+        engine.dispose()

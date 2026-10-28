@@ -3,7 +3,8 @@ Seed script for the travel agent database.
 
 Inserts:
   - 3 itinerary_categories  (family, budget, adventure)
-  - 2 prompt_templates       (high_confidence_minimal_context, low_confidence_with_retrieval)
+  - prompt_templates          (every version in TEMPLATE_DEFINITIONS; the version in
+                               ACTIVE_TEMPLATE_VERSIONS is the only active one per key)
   - 13 source documents into the Agno Knowledge base (travel_docs table via PgVector)
 
 Idempotent — safe to run multiple times; existing rows are skipped, not duplicated.
@@ -34,8 +35,8 @@ from sqlalchemy import create_engine, make_url, select  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from app.models.itinerary_category import ItineraryCategory  # noqa: E402
-from app.models.prompt_template import PromptTemplate  # noqa: E402
 from app.workflow.knowledge_base import build_knowledge, knowledge_table_name  # noqa: E402
+from app.workflow.template_versions import apply_template_versions, check_active_versions  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Config
@@ -465,26 +466,33 @@ Return ONLY a corrected valid JSON object with this exact structure — no prose
 }}
 """
 
-PROMPT_TEMPLATES = [
+# Every version ever defined, append-only: a new wording is a new entry, so
+# earlier results stay reproducible with ?template_version=N.
+TEMPLATE_DEFINITIONS = [
     {
         "template_key": "high_confidence_minimal_context",
         "version": 1,
         "template_text": HIGH_CONFIDENCE_TEMPLATE,
-        "is_active": True,
     },
     {
         "template_key": "low_confidence_with_retrieval",
         "version": 1,
         "template_text": LOW_CONFIDENCE_TEMPLATE,
-        "is_active": True,
     },
     {
         "template_key": "validate_output_correction",
         "version": 1,
         "template_text": CORRECTION_TEMPLATE,
-        "is_active": True,
     },
 ]
+
+# The version of each key that requests use by default. Seed makes exactly this
+# version active; change the number to upgrade or roll back.
+ACTIVE_TEMPLATE_VERSIONS = {
+    "high_confidence_minimal_context": 1,
+    "low_confidence_with_retrieval": 1,
+    "validate_output_correction": 1,
+}
 
 # ---- Source documents -------------------------------------------------------
 # Content derived from australia.com pages (factual, no marketing language).
@@ -715,30 +723,9 @@ def seed_itinerary_categories(session: Session) -> None:
 
 def seed_prompt_templates(session: Session) -> None:
     print("Seeding prompt_templates...")
-    for data in PROMPT_TEMPLATES:
-        existing = session.scalar(
-            select(PromptTemplate).where(
-                PromptTemplate.template_key == data["template_key"],
-                PromptTemplate.version == data["version"],
-            )
-        )
-        if existing:
-            print(
-                f"  [skip] template_key={data['template_key']} "
-                f"version={data['version']} already exists"
-            )
-            continue
-
-        template = PromptTemplate(
-            template_key=data["template_key"],
-            version=data["version"],
-            template_text=data["template_text"],
-            is_active=data["is_active"],
-        )
-        session.add(template)
-        print(f"  [insert] template_key={data['template_key']} version={data['version']}")
-
-    session.commit()
+    log = apply_template_versions(session, TEMPLATE_DEFINITIONS, ACTIVE_TEMPLATE_VERSIONS)
+    for line in log or ["[skip] every defined version exists and the declared versions are active"]:
+        print(f"  {line}")
 
 
 def _travel_docs_has_embedding_column(db_url: str, table_name: str) -> bool:
@@ -802,6 +789,8 @@ def seed_source_documents() -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    # Fail on a bad declaration before connecting or writing anything.
+    check_active_versions(TEMPLATE_DEFINITIONS, ACTIVE_TEMPLATE_VERSIONS)
     print(f"Connecting to database: {make_url(DATABASE_URL).render_as_string(hide_password=True)}")
     engine = create_engine(DATABASE_URL)
 
