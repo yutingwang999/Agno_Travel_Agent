@@ -2,8 +2,9 @@
 
 Reads upstream workflow state to build a fully resolved prompt:
 
-- ``destination``, ``trip_length``, ``budget``, ``travel_style`` from intake
-  (available in ``step_input.additional_data``)
+- ``destination``, ``trip_length``, ``budget``, ``travel_style`` and the
+  optional ``max_daily_budget_aud`` from intake (available in
+  ``step_input.additional_data``); the last two give ``daily_budget_ceiling``
 - ``matched_category``, ``confidence_score``, ``tone``, ``constraints`` from
   the cag_match SSE event
 - ``retrieved_context`` from the rag_retrieve SSE event (empty string when
@@ -29,6 +30,7 @@ import time
 from agno.workflow.types import StepInput, StepOutput
 from google import genai
 
+from app.workflow.budget import ceiling_text, daily_budget_ceiling
 from app.workflow.config import RETRIEVAL_CONFIDENCE_THRESHOLD
 from app.workflow.llm_usage import LLMResult, result_from_response
 from app.workflow.sse import build_sse_event, sse_event_to_json
@@ -206,6 +208,7 @@ def generate_executor(step_input: StepInput) -> StepOutput:
     trip_length: str = str(additional_data.get("trip_length", ""))
     budget: str = additional_data.get("budget", "")
     travel_style: str = additional_data.get("travel_style", "")
+    daily_ceiling = daily_budget_ceiling(budget, additional_data.get("max_daily_budget_aud"))
 
     # Optional template version override forwarded from the API query parameter.
     # None means "use the active version" (default behaviour).
@@ -279,6 +282,7 @@ def generate_executor(step_input: StepInput) -> StepOutput:
         "tone": tone,
         "constraints": constraints,
         "retrieved_context": retrieved_context,
+        "daily_budget_ceiling": ceiling_text(daily_ceiling),
     }
     resolved_prompt: str = _format_template(template_text, variables)
 

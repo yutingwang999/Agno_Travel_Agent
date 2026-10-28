@@ -639,3 +639,68 @@ def test_llm_call_failure_emits_error_event_without_raising():
     assert trace["error_type"] == "llm_call_failed"
     assert trace["prompt_template_key"] == "high_confidence_minimal_context"
     assert trace["prompt_template_version"] == 3
+
+
+# ---------------------------------------------------------------------------
+# Daily budget ceiling (design decision 13)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("budget", "amount", "expected"),
+    [
+        ("budget", None, 70.0),         # level default
+        ("moderate", None, 200.0),      # level default
+        ("moderate", 120, 120.0),       # amount overrides the level
+        ("luxury", None, None),         # luxury without an amount: no ceiling
+        ("luxury", 1500, 1500.0),       # luxury with an amount
+        ("budget", 500, 500.0),         # amount above the level default is kept
+    ],
+)
+def test_daily_budget_ceiling(budget, amount, expected):
+    from app.workflow.budget import daily_budget_ceiling
+
+    assert daily_budget_ceiling(budget, amount) == expected
+
+
+def test_ceiling_text():
+    from app.workflow.budget import ceiling_text
+
+    assert ceiling_text(200.0) == "200 AUD per person per day, excluding accommodation"
+    assert ceiling_text(None) == "none set"
+
+
+def _resolved_prompt(additional_data: dict) -> str:
+    """Run generate with a template that is only the ceiling placeholder; return the prompt."""
+    from app.workflow.steps.generate import generate_executor
+
+    captured = {}
+
+    def fake_llm(prompt, api_key, model):
+        captured["prompt"] = prompt
+        return LLMResult('{"ok": true}')
+
+    with (
+        patch("app.workflow.steps.generate.resolve_template", return_value=("Ceiling: {daily_budget_ceiling}", 3)),
+        patch("app.workflow.steps.generate._call_llm", side_effect=fake_llm),
+        patch("app.workflow.steps.generate.write_trace"),
+        patch.dict("os.environ", _ENV),
+    ):
+        generate_executor(_make_step_input(cag_data=_HIGH_CONFIDENCE_CAG, additional_data=additional_data))
+    return captured["prompt"]
+
+
+def test_ceiling_from_the_level_in_prompt():
+    assert _resolved_prompt({"budget": "moderate"}) == (
+        "Ceiling: 200 AUD per person per day, excluding accommodation"
+    )
+
+
+def test_no_ceiling_in_prompt():
+    assert _resolved_prompt({"budget": "luxury"}) == "Ceiling: none set"
+
+
+def test_user_amount_in_prompt():
+    assert _resolved_prompt({"budget": "luxury", "max_daily_budget_aud": 1500}) == (
+        "Ceiling: 1500 AUD per person per day, excluding accommodation"
+    )

@@ -85,6 +85,16 @@ def test_seed_active_templates_state_the_cost_unit(seed_module):
         assert COST_UNIT_PHRASE in d["template_text"], d["template_key"]
 
 
+GENERATION_KEYS = ("high_confidence_minimal_context", "low_confidence_with_retrieval")
+
+
+def test_seed_active_generation_templates_state_the_ceiling(seed_module):
+    """Every active generation template carries the {daily_budget_ceiling} placeholder."""
+    for d in _active_definitions(seed_module):
+        if d["template_key"] in GENERATION_KEYS:
+            assert "{daily_budget_ceiling}" in d["template_text"], d["template_key"]
+
+
 def test_seed_v1_templates_are_unchanged(seed_module):
     """Version 1 keeps the v0.1.0 text, so the baseline stays reproducible."""
     v1 = {d["template_key"]: d["template_text"] for d in seed_module.TEMPLATE_DEFINITIONS if d["version"] == 1}
@@ -177,3 +187,23 @@ def test_undefined_declared_version_leaves_database_unchanged(session):
     with pytest.raises(ValueError):
         apply_template_versions(session, _definitions(1, 2), {KEY: 3})
     assert _rows(session) == {1: True}
+
+
+@pytest.mark.integration
+def test_seeded_active_generation_templates_state_the_ceiling():
+    """After test-db-setup, every active generation template has {daily_budget_ceiling}."""
+    from app.models.prompt_template import PromptTemplate
+
+    engine = create_engine(os.environ["DATABASE_URL"])
+    try:
+        with Session(engine) as s:
+            rows = s.execute(
+                select(PromptTemplate.template_key, PromptTemplate.template_text).where(
+                    PromptTemplate.is_active, PromptTemplate.template_key.in_(GENERATION_KEYS)
+                )
+            ).all()
+    finally:
+        engine.dispose()
+    assert len(rows) == len(GENERATION_KEYS), "run test-db-setup"
+    for key, text in rows:
+        assert "{daily_budget_ceiling}" in text, key
