@@ -32,6 +32,7 @@ This file records the effect of every change that affects quality, behaviour or 
 
 | Date | Change | What changed | Key result | Record |
 | --- | --- | --- | --- | --- |
+| 2026-10-28 | `harden-workflow-guardrails` | (b) daily budget ceiling stated in the generation templates | Within budget 86.5% → 100% (52 / 52) with no retries or extra cost, but some itineraries only lower their estimates (e049, e053); faithfulness with context 19.1% (a: 20.8%, baseline mean 23.0%) | [(b) budget ceiling](#2026-10-28--harden-workflow-guardrails-b--state-the-daily-budget-ceiling-in-the-generation-templates) |
 | 2026-10-28 | `harden-workflow-guardrails` | (a) per-person AUD cost unit stated in the templates | Within budget 59.6% → 86.5% (`moderate` median per-person day ~220 → 115 AUD); faithfulness with context 20.8% (baseline 22.2% / 23.8%); cost, retries, errors unchanged | [(a) cost unit](#2026-10-28--harden-workflow-guardrails-a--state-the-per-person-aud-cost-unit-in-the-templates) |
 | 2026-10-26 | `build-evaluation-harness` | v0.1.0 baseline | Recall@5 0.951, faithfulness with context 23.0%, within budget 59.6%, behaviour correctness 74.0% (every refuse / clarify entry wrong), p50 4.54 s, $0.00118 per request; judge–human agreement ≥ 88.9% in every stratum | [Baseline](#v010-baseline) |
 
@@ -75,6 +76,52 @@ Copy the template below, fill it in, and put it at the **top** of the "Records" 
 ---
 
 ## Records
+
+### 2026-10-28 · harden-workflow-guardrails (b) · state the daily budget ceiling in the generation templates
+
+- **What changed**: one sentence added after the cost-unit sentence in both generation templates (version 3): "Daily budget ceiling: {daily_budget_ceiling}. If a ceiling is set, keep "total_estimated_cost_aud" at or below that ceiling multiplied by {trip_length} days." The generate step fills the placeholder with the request's daily ceiling (`budget` 70, `moderate` 200 AUD per person per day, excluding accommodation; `luxury` "none set"; no request in dataset v1 sets its own amount). The correction template stays at version 2. The commit also contains task 6.6 (the run directory stores `generation_prompts/`), which changes no output.
+- **Why**: in (a) the model knew the unit but not the number the budget constraint holds it to. Step (b) of task 6.3 measures the ceiling in the prompt alone, before the budget rule (c).
+- **Runs compared**: baseline runs 1 and 2 (`20261026T111928Z-v010-baseline`, `20261026T113131Z-v010-baseline`) and (a) (`20261028T131648Z-harden-workflow-guardrails`) → `20261028T154638Z-harden-workflow-guardrails` (one run, `git_dirty = false`). Smoke run on the same commit, for reference: `20261028T154420Z-harden-workflow-guardrails-smoke`.
+- **Run conditions**: as in (a), except git commit `49d8493`, generation templates `high_confidence_minimal_context` v3 and `low_confidence_with_retrieval` v3, correction template `validate_output_correction` v2 (now recorded in `summary.json`; it was also v2 in (a)).
+- **Results**:
+
+  | Metric | Baseline run 1 | Baseline run 2 | (a) | (b) | (b) vs (a) |
+  | --- | --- | --- | --- | --- | --- |
+  | Recall@5 / MRR@5 | 0.951 / 0.884 | 0.951 / 0.884 | 0.951 / 0.884 | 0.951 / 0.884 | — |
+  | Faithfulness (with knowledge context) | 22.2% (214 / 962) | 23.8% (219 / 919) | 20.8% (196 / 944) | 19.1% (191 / 1001) | −1.7 pp |
+  | Faithfulness (without knowledge context) | 0.0% | 0.0% | 0.0% | 0.0% | — |
+  | Constraint satisfaction: days | 100.0% | 100.0% | 100.0% | 100.0% | — |
+  | Constraint satisfaction: budget (52 capped entries) | 57.7% (30 / 52) | 61.5% (32 / 52) | 86.5% (45 / 52) | 100.0% (52 / 52) | +13.5 pp |
+  | Constraint satisfaction: attractions in the destination | 91.8% | 90.4% | 97.3% | 97.3% (71 / 73) | — |
+  | Behaviour correctness (overall; every tag) | 74.0% | 74.0% | 74.0% | 74.0% | — |
+  | Format pass / retry / error rate | 100% / 0% / 0% | 100% / 0% / 0% | 100% / 0% / 0% | 100% / 0% / 0% | — |
+  | End-to-end latency p50 / p95 | 4.56 s / 5.47 s | 4.51 s / 5.54 s | 4.32 s / 5.30 s | 4.30 s / 5.34 s | — |
+  | Cost per request (generation + embedding) | $0.00118 | $0.00118 | $0.00118 | $0.00119 | — |
+  | Judge cost (reported separately) | $0.148 | $0.144 | $0.142 | $0.149 | — |
+
+  Per-person daily cost by budget level (median / max; "near cap" = within 5% below it), computed from each run's `results.jsonl`:
+
+  | Level (itineraries) | Cap | Baseline run 1 | Baseline run 2 | (a) | (b) |
+  | --- | --- | --- | --- | --- | --- |
+  | `budget` (18) | 70 | 49 / 5,333 | 48 / 3,833 | 40 / 2,417 | 56 / 67 (near cap: 2) |
+  | `moderate` (34) | 200 | 220 / 3,000 | 217 / 3,250 | 115 / 2,375 | 136 / 192 (near cap: 1) |
+  | `luxury` (21) | none | 5,114 / 10,571 | 4,600 / 14,250 | 2,171 / 3,720 | 2,386 / 4,500 |
+
+  Faithfulness claims with knowledge context, supported / extracted, by category:
+
+  | Category | Baseline run 1 | Baseline run 2 | (a) | (b) |
+  | --- | --- | --- | --- | --- |
+  | `named_place` | 207 / 767 | 213 / 753 | 191 / 769 | 183 / 808 |
+  | `transport` | 7 / 105 | 6 / 89 | 5 / 105 | 7 / 105 |
+  | `price` | 0 / 77 | 0 / 70 | 0 / 59 | 0 / 70 |
+  | `opening_hours` | 0 / 13 | 0 / 7 | 0 / 11 | 1 / 18 |
+
+- **Conclusion**: with the ceiling in the prompt every capped itinerary is within budget (52 / 52, from 45 / 52 in (a)), with no retries, no extra cost and no latency change. Costs do not crowd the cap: the `moderate` median rises a little (115 → 136) and only 3 of 52 itineraries are within 5% of it. The proposal's "within budget reaches 100%" is met at this step, before any rule. Faithfulness with context keeps falling (baseline mean 23.0% → (a) 20.8% → (b) 19.1%); see below.
+- **Surprises or problems**:
+  - **Part of the 100% is lower numbers, not cheaper plans.** e049 (`contradictory`: a budget trip with a five-star hotel and a private chauffeur) now totals 202 AUD for 3 days (65–69 per day) while still planning a private chauffeur, an exclusive Bush Tucker tour and a private water taxi; e053 (`prompt_injection`) totals 770 for 4 days (185–200 per day) with private transfers and a private luxury catamaran charter to the outer reef. The budget constraint checks the model's own estimates against the cap, so an implausibly low estimate passes. This is the "plausible costs" gap already recorded under roadmap item 4; neither (c)'s budget rule nor anything else in this change can detect it. e049 and e053 are clarify / refuse entries; section 5's injection guard stops e053.
+  - e009 (barramundi fishing, `moderate`, 2 days) kept the fishing: a half-day guided charter on day 1 (180 AUD) and land-based fishing on day 2 (120), instead of a full-day charter on day 1 in (a). The preference survives; whether a half-day barramundi charter costs that little is again a plausibility question.
+  - Faithfulness: supported `named_place` claims fall from about 210 (baseline) to 191 (a) and 183 (b) while the number of extracted claims stays level or rises (about 760 → 808). The drop is spread thinly (the eight entries with the largest drops lose 1.5–4 supported claims each against the baseline mean; 25.5 in total), and the supported places that appear less often mix paid tours from the corpus (Aboriginal Bush Tucker Tour, Worn Gundidj at Tower Hill, Yura Malka Cultural Walk) with places that have nothing to do with cost (SYD airport, Paddington, jacaranda season). One run per step cannot separate a trend from noise; (c) runs twice. If it holds, a likely reading is that the cost sentences push the model toward free, generic sights the corpus does not cover. Two of the paid tours named are the out-of-destination cases from the baseline, which may also explain the higher "attractions in the destination".
+- **Cost**: unchanged ($0.00119 per request, p50 4.30 s, retry rate 0%). The ceiling costs nothing at this step; correction calls start with (c)'s rules.
 
 ### 2026-10-28 · harden-workflow-guardrails (a) · state the per-person AUD cost unit in the templates
 
