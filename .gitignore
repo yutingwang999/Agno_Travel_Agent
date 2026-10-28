@@ -221,6 +221,11 @@ __marimo__/
 # ignore raw downloads — they are re-fetched by the pinned page revisions
 data/knowledge/raw/
 
-# Evaluation (build-evaluation-harness): run summaries and per-entry results
-# under eval/runs/ ARE committed; scratch output is not
+# Evaluation (build-evaluation-harness): run summaries, judge prompt copies and
+# calibration agreement summaries ARE committed. Per-entry results, calibration
+# samples with the human answers, and review sheets are kept locally and copied
+# by hand to a private repository; see docs/evaluation.md. Scratch output is not committed.
+eval/runs/*/results.jsonl
+eval/calibration/*.jsonl
+eval/calibration/*.review.md
 eval/scratch/

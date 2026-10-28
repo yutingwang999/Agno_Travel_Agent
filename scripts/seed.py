@@ -35,7 +35,7 @@ from sqlalchemy.orm import Session  # noqa: E402
 
 from app.models.itinerary_category import ItineraryCategory  # noqa: E402
 from app.models.prompt_template import PromptTemplate  # noqa: E402
-from app.workflow.knowledge_base import build_knowledge  # noqa: E402
+from app.workflow.knowledge_base import build_knowledge, knowledge_table_name  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Config
@@ -741,15 +741,15 @@ def seed_prompt_templates(session: Session) -> None:
     session.commit()
 
 
-def _travel_docs_has_embedding_column(db_url: str) -> bool:
-    """Return True if the ai.travel_docs table has an 'embedding' column."""
+def _travel_docs_has_embedding_column(db_url: str, table_name: str) -> bool:
+    """Return True if the ai.<table_name> table has an 'embedding' column."""
     from sqlalchemy import inspect as sa_inspect
 
     engine = create_engine(db_url)
     insp = sa_inspect(engine)
-    if not insp.has_table("travel_docs", schema="ai"):
+    if not insp.has_table(table_name, schema="ai"):
         return False
-    columns = {col["name"] for col in insp.get_columns("travel_docs", schema="ai")}
+    columns = {col["name"] for col in insp.get_columns(table_name, schema="ai")}
     return "embedding" in columns
 
 
@@ -766,16 +766,18 @@ def seed_source_documents() -> None:
     partial seed run), the table is dropped so that PgVector can recreate it with
     the correct schema including the vector column.
     """
-    print("Seeding knowledge base (travel_docs)...")
+    table_name = knowledge_table_name()
+    print(f"Seeding knowledge base ({table_name})...")
     knowledge = build_knowledge(
         db_url=DATABASE_URL,
         api_key=GEMINI_API_KEY,
         embedding_model=EMBEDDING_MODEL,
+        table_name=table_name,
     )
 
-    if not _travel_docs_has_embedding_column(DATABASE_URL):
+    if not _travel_docs_has_embedding_column(DATABASE_URL, table_name):
         print(
-            "  [warn] travel_docs table is missing the 'embedding' column — "
+            f"  [warn] {table_name} table is missing the 'embedding' column — "
             "dropping and recreating so PgVector can add it."
         )
         knowledge.vector_db.drop()

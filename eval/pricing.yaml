@@ -1,0 +1,25 @@
+# Model prices used by the evaluation harness, in USD per 1M tokens.
+# Maintained by hand; every run summary records `date`. When a price changes,
+# update it here with the new date and source, and note it in docs/experiments.md.
+date: 2026-10-25
+currency: USD
+
+# The embedding API reports no token counts, so embedding tokens are estimated
+# as characters / this value.
+embedding_chars_per_token: 4
+
+models:
+  gemini-3.1-flash-lite:
+    input: 0.25
+    output: 1.50   # includes thinking tokens
+    source: https://ai.google.dev/gemini-api/docs/pricing (standard paid tier, page updated 2026-10-22)
+  gemini-embedding-001:
+    input: 0.15
+    source: >-
+      https://developers.googleblog.com/gemini-embedding-available-gemini-api/
+      (Google Developers Blog, 2025-07-14); the current Gemini API pricing page
+      no longer lists this model
+  gpt-6-luna:
+    input: 0.10
+    output: 0.50
+    source: https://developers.openai.com/api/docs/pricing (standard, short context; cached input 0.01)

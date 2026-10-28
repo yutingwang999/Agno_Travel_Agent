@@ -18,6 +18,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from app.workflow.llm_usage import LLMResult
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -278,13 +280,13 @@ def _run_generate_executor(
 
     with (
         patch("app.workflow.steps.generate.resolve_template", return_value=(fake_template.template_text, 1)),
-        patch("app.workflow.steps.generate._call_llm", return_value=llm_output),
+        patch("app.workflow.steps.generate._call_llm", return_value=LLMResult(llm_output)),
         patch.dict(
             "os.environ",
             {
                 "DATABASE_URL": "postgresql://fake",
                 "GEMINI_API_KEY": "fake-key",
-                "LLM_MODEL": "gemini-2.0-flash",
+                "LLM_MODEL": "gemini-3.1-flash-lite",
             },
         ),
     ):
@@ -367,7 +369,7 @@ def test_high_confidence_uses_minimal_context_template():
 
     with (
         patch("app.workflow.steps.generate.resolve_template", side_effect=fake_resolve),
-        patch("app.workflow.steps.generate._call_llm", return_value="some output"),
+        patch("app.workflow.steps.generate._call_llm", return_value=LLMResult("some output")),
         patch.dict("os.environ", {"DATABASE_URL": "postgresql://fake", "GEMINI_API_KEY": "fake-key"}),
     ):
         generate_executor(step_input)
@@ -392,7 +394,7 @@ def test_low_confidence_uses_retrieval_template():
 
     with (
         patch("app.workflow.steps.generate.resolve_template", side_effect=fake_resolve),
-        patch("app.workflow.steps.generate._call_llm", return_value="some output"),
+        patch("app.workflow.steps.generate._call_llm", return_value=LLMResult("some output")),
         patch.dict("os.environ", {"DATABASE_URL": "postgresql://fake", "GEMINI_API_KEY": "fake-key"}),
     ):
         generate_executor(step_input)
@@ -414,7 +416,7 @@ def test_template_never_hardcoded_resolve_template_always_called():
 
     with (
         patch("app.workflow.steps.generate.resolve_template", side_effect=fake_resolve),
-        patch("app.workflow.steps.generate._call_llm", return_value="output"),
+        patch("app.workflow.steps.generate._call_llm", return_value=LLMResult("output")),
         patch.dict("os.environ", {"DATABASE_URL": "postgresql://fake", "GEMINI_API_KEY": "fake-key"}),
     ):
         generate_executor(step_input)
@@ -522,7 +524,7 @@ def test_generate_executor_passes_version_override_to_resolve_template():
 
     with (
         patch("app.workflow.steps.generate.resolve_template", side_effect=fake_resolve),
-        patch("app.workflow.steps.generate._call_llm", return_value='{"ok": true}'),
+        patch("app.workflow.steps.generate._call_llm", return_value=LLMResult('{"ok": true}')),
         patch("app.workflow.steps.generate.write_trace"),
         patch.dict("os.environ", {"DATABASE_URL": "postgresql://fake", "GEMINI_API_KEY": "k"}),
     ):
@@ -550,7 +552,7 @@ def test_generate_executor_no_version_override_passes_none_to_resolve_template()
 
     with (
         patch("app.workflow.steps.generate.resolve_template", side_effect=fake_resolve),
-        patch("app.workflow.steps.generate._call_llm", return_value='{"ok": true}'),
+        patch("app.workflow.steps.generate._call_llm", return_value=LLMResult('{"ok": true}')),
         patch("app.workflow.steps.generate.write_trace"),
         patch.dict("os.environ", {"DATABASE_URL": "postgresql://fake", "GEMINI_API_KEY": "k"}),
     ):
