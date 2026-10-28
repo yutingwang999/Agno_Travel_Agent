@@ -68,15 +68,23 @@ Every active generation template SHALL contain the `{daily_budget_ceiling}` plac
 - **THEN** every active generation template text contains `{daily_budget_ceiling}`
 
 ### Requirement: Seeded template set
-`scripts/seed.py` SHALL insert every `(template_key, version)` it defines that is not yet in the database, and SHALL mark the highest defined version of each key as the active one.
+`scripts/seed.py` SHALL define every template version separately from a declaration of the version in use for each key. It SHALL insert every defined `(template_key, version)` that is not yet in the database, and SHALL make the declared version of each key the only active one. If a declared version is not defined, the seed SHALL exit with an error before writing anything.
 
 #### Scenario: Fresh database
 - **WHEN** the seed script runs on empty tables
-- **THEN** every defined version is present and, for each key, only the highest version is active
+- **THEN** every defined version is present and, for each key, only the declared version is active
 
 #### Scenario: New version added
-- **WHEN** the seed defines version 2 of a key whose version 1 is already active in the database
+- **WHEN** the seed defines version 2 of a key whose version 1 is active in the database, and declares version 2
 - **THEN** after the seed runs, version 2 is active and version 1 is inactive
+
+#### Scenario: Rolling back
+- **WHEN** version 2 of a key is active and the declaration for that key is changed back to version 1
+- **THEN** after the seed runs, version 1 is active, version 2 is inactive, and both rows are still present
+
+#### Scenario: Declared version not defined
+- **WHEN** the declaration names a version that has no definition
+- **THEN** the seed exits with an error and `prompt_templates` is unchanged
 
 ### Requirement: Single active template version
 The database SHALL allow at most one row with `is_active` = true per `template_key`.
