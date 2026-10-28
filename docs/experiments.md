@@ -69,7 +69,7 @@ Copy the template below, fill it in, and put it at the **top** of the "Records" 
 - **Cost**: <changes in latency, cost, retry rate>
 ````
 
-**Metric definitions**: see `openspec/specs/evaluation-harness/spec.md` for the definition of each metric (after `build-evaluation-harness` is archived). Tables include at least the metrics relevant to the change and all of the gate's metrics.
+**Metric definitions**: see `openspec/specs/evaluation-harness/spec.md` for the definition of each metric. Tables include at least the metrics relevant to the change and all of the gate's metrics.
 
 ---
 
