@@ -1,0 +1,155 @@
+{
+  "run_id": "20261026T113131Z-v010-baseline",
+  "subset": "all",
+  "entries": 73,
+  "started_at": "2026-10-26T11:31:31.434742+00:00",
+  "finished_at": "2026-10-26T11:43:32.279636+00:00",
+  "phase_seconds": {
+    "total": 720.84,
+    "requests": 330.85,
+    "retrieval_measurement": 73.99,
+    "other_sequential": 0.16,
+    "judge_wall": 315.31,
+    "judge_calls_sum": 2308.47
+  },
+  "conditions": {
+    "dataset_version": 1,
+    "corpus_version": "v1",
+    "knowledge_table": "travel_docs_v1",
+    "config": {
+      "name": "v010-baseline",
+      "description": "v0.1.0 workflow (CAG routing at 0.85, two templates), corpus v1",
+      "generation_model": "gemini-3.1-flash-lite",
+      "embedding_model": "gemini-embedding-001",
+      "judge_model": "gpt-6-luna",
+      "corpus_version": "v1",
+      "knowledge_table": "travel_docs_v1",
+      "retrieval_k": 5,
+      "judge_concurrency": 8,
+      "request_parser": false
+    },
+    "generation_model": "gemini-3.1-flash-lite",
+    "embedding_model": "gemini-embedding-001",
+    "judge_model": "gpt-6-luna",
+    "judge_prompts": {
+      "faithfulness": 1,
+      "destination": 1
+    },
+    "price_table_date": "2026-10-25",
+    "git_commit": "54c17c6fb6a0e61e1fafe5e265853a69e26ca8e6",
+    "git_dirty": false,
+    "generation_templates": [
+      {
+        "key": "high_confidence_minimal_context",
+        "version": 1
+      },
+      {
+        "key": "low_confidence_with_retrieval",
+        "version": 1
+      }
+    ]
+  },
+  "metrics": {
+    "slot_extraction": {
+      "value": null,
+      "reason": "no request parser"
+    },
+    "retrieval": {
+      "k": 5,
+      "entries": 54,
+      "recall_at_k": 0.9506172839506173,
+      "mrr_at_k": 0.8842592592592593,
+      "errors": 0
+    },
+    "behaviour": {
+      "overall": 0.7397260273972602,
+      "entries": 73,
+      "by_expected_behavior": {
+        "clarify": 0.0,
+        "plan": 1.0,
+        "refuse": 0.0
+      },
+      "by_tag": {
+        "chinese_destination": 1.0,
+        "contradictory": 0.0,
+        "mixed_language": 1.0,
+        "out_of_scope": 0.0,
+        "prompt_injection": 0.0,
+        "underspecified": 0.0,
+        "untagged": 1.0
+      }
+    },
+    "constraints": {
+      "planned": 73,
+      "trip_length_rate": 1.0,
+      "budget_rate": 0.6153846153846154,
+      "budget_entries": 52,
+      "budget_not_applicable": 21,
+      "destination_rate": 0.9041095890410958,
+      "destination_judged": 73
+    },
+    "faithfulness": {
+      "overall": {
+        "itineraries": 73,
+        "claims": 1381,
+        "supported_share": 0.15858073859522084
+      },
+      "with_context": {
+        "itineraries": 52,
+        "claims": 919,
+        "supported_share": 0.2383025027203482
+      },
+      "without_context": {
+        "itineraries": 21,
+        "claims": 462,
+        "supported_share": 0.0
+      },
+      "judge_errors": 0
+    },
+    "system": {
+      "requests": 73,
+      "format_pass_rate": 1.0,
+      "retry_rate": 0.0,
+      "error_rate": 0.0,
+      "latency_p50_ms": 4507.002899998042,
+      "latency_p95_ms": 5542.450060001284,
+      "step_latency_ms": {
+        "intake": {
+          "runs": 73,
+          "mean_ms": 0.0
+        },
+        "cag_match": {
+          "runs": 73,
+          "mean_ms": 649.4
+        },
+        "retrieval_decision": {
+          "runs": 73,
+          "mean_ms": 0.0
+        },
+        "rag_retrieve": {
+          "runs": 52,
+          "mean_ms": 645.5
+        },
+        "generate": {
+          "runs": 73,
+          "mean_ms": 3260.3
+        },
+        "validate_output": {
+          "runs": 73,
+          "mean_ms": 0.0
+        }
+      }
+    },
+    "cost": {
+      "currency": "USD",
+      "price_table_date": "2026-10-25",
+      "requests": 73,
+      "mean_generation_usd": 0.0011714520547945206,
+      "mean_embedding_usd": 3.86095890410959e-06,
+      "mean_request_usd": 0.00117531301369863,
+      "requests_missing_usage": 0,
+      "judge_calls": 146,
+      "judge_total_usd": 0.1438033999999999
+    }
+  }
+}
