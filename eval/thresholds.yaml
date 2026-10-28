@@ -10,16 +10,16 @@ subset: smoke
 metrics:
   format_pass_rate:
     path: metrics.system.format_pass_rate
-    min: null
+    min: 0.9
   trip_length_rate:
     path: metrics.constraints.trip_length_rate
-    min: null
+    min: 0.9
   budget_rate:
     path: metrics.constraints.budget_rate
-    min: null
+    min: 0.375
   recall_at_5:
     path: metrics.retrieval.recall_at_k
-    min: null
+    min: 0.809
   error_rate:
     path: metrics.system.error_rate
-    max: null
+    max: 0.1

@@ -1,0 +1,154 @@
+{
+  "run_id": "20261026T114334Z-v010-baseline-smoke",
+  "subset": "smoke",
+  "entries": 10,
+  "started_at": "2026-10-26T11:43:34.813923+00:00",
+  "finished_at": "2026-10-26T11:45:40.848538+00:00",
+  "phase_seconds": {
+    "total": 126.03,
+    "requests": 44.45,
+    "retrieval_measurement": 9.58,
+    "other_sequential": 0.05,
+    "judge_wall": 71.47,
+    "judge_calls_sum": 286.13
+  },
+  "conditions": {
+    "dataset_version": 1,
+    "corpus_version": "v1",
+    "knowledge_table": "travel_docs_v1",
+    "config": {
+      "name": "v010-baseline",
+      "description": "v0.1.0 workflow (CAG routing at 0.85, two templates), corpus v1",
+      "generation_model": "gemini-3.1-flash-lite",
+      "embedding_model": "gemini-embedding-001",
+      "judge_model": "gpt-6-luna",
+      "corpus_version": "v1",
+      "knowledge_table": "travel_docs_v1",
+      "retrieval_k": 5,
+      "judge_concurrency": 8,
+      "request_parser": false
+    },
+    "generation_model": "gemini-3.1-flash-lite",
+    "embedding_model": "gemini-embedding-001",
+    "judge_model": "gpt-6-luna",
+    "judge_prompts": {
+      "faithfulness": 1,
+      "destination": 1
+    },
+    "price_table_date": "2026-10-25",
+    "git_commit": "54c17c6fb6a0e61e1fafe5e265853a69e26ca8e6",
+    "git_dirty": false,
+    "generation_templates": [
+      {
+        "key": "high_confidence_minimal_context",
+        "version": 1
+      },
+      {
+        "key": "low_confidence_with_retrieval",
+        "version": 1
+      }
+    ]
+  },
+  "metrics": {
+    "slot_extraction": {
+      "value": null,
+      "reason": "no request parser"
+    },
+    "retrieval": {
+      "k": 5,
+      "entries": 7,
+      "recall_at_k": 0.9523809523809523,
+      "mrr_at_k": 1.0,
+      "errors": 0
+    },
+    "behaviour": {
+      "overall": 0.7,
+      "entries": 10,
+      "by_expected_behavior": {
+        "clarify": 0.0,
+        "plan": 1.0,
+        "refuse": 0.0
+      },
+      "by_tag": {
+        "chinese_destination": 1.0,
+        "contradictory": 0.0,
+        "mixed_language": 1.0,
+        "out_of_scope": 0.0,
+        "prompt_injection": 0.0,
+        "untagged": 1.0
+      }
+    },
+    "constraints": {
+      "planned": 10,
+      "trip_length_rate": 1.0,
+      "budget_rate": 0.5,
+      "budget_entries": 8,
+      "budget_not_applicable": 2,
+      "destination_rate": 1.0,
+      "destination_judged": 10
+    },
+    "faithfulness": {
+      "overall": {
+        "itineraries": 10,
+        "claims": 204,
+        "supported_share": 0.1715686274509804
+      },
+      "with_context": {
+        "itineraries": 8,
+        "claims": 161,
+        "supported_share": 0.21739130434782608
+      },
+      "without_context": {
+        "itineraries": 2,
+        "claims": 43,
+        "supported_share": 0.0
+      },
+      "judge_errors": 0
+    },
+    "system": {
+      "requests": 10,
+      "format_pass_rate": 1.0,
+      "retry_rate": 0.0,
+      "error_rate": 0.0,
+      "latency_p50_ms": 4522.50124999955,
+      "latency_p95_ms": 5057.327680000708,
+      "step_latency_ms": {
+        "intake": {
+          "runs": 10,
+          "mean_ms": 0.0
+        },
+        "cag_match": {
+          "runs": 10,
+          "mean_ms": 645.4
+        },
+        "retrieval_decision": {
+          "runs": 10,
+          "mean_ms": 0.0
+        },
+        "rag_retrieve": {
+          "runs": 8,
+          "mean_ms": 652.3
+        },
+        "generate": {
+          "runs": 10,
+          "mean_ms": 3111.1
+        },
+        "validate_output": {
+          "runs": 10,
+          "mean_ms": 0.0
+        }
+      }
+    },
+    "cost": {
+      "currency": "USD",
+      "price_table_date": "2026-10-25",
+      "requests": 10,
+      "mean_generation_usd": 0.001120525,
+      "mean_embedding_usd": 4.391249999999999e-06,
+      "mean_request_usd": 0.00112491625,
+      "requests_missing_usage": 0,
+      "judge_calls": 20,
+      "judge_total_usd": 0.018335500000000005
+    }
+  }
+}
