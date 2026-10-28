@@ -466,6 +466,40 @@ Return ONLY a corrected valid JSON object with this exact structure — no prose
 }}
 """
 
+# ---- Version 2: cost unit (harden-workflow-guardrails) ---------------------
+# v1 plus one sentence stating the unit of every cost, so the model and the
+# budget rule mean the same thing. Nothing else changes, so the evaluation can
+# attribute differences to this sentence.
+
+COST_UNIT_SENTENCE = (
+    "All costs are AUD per person, excluding accommodation: "
+    '"estimated_cost_aud" is what one traveller spends that day, and '
+    '"total_estimated_cost_aud" is what one traveller spends over the whole trip.'
+)
+
+
+def _insert_after(template: str, marker: str, line: str) -> str:
+    """Return *template* with *line* inserted on its own line after *marker*."""
+    assert template.count(marker) == 1, marker
+    return template.replace(marker, f"{marker}\n{line}")
+
+
+def _insert_before(template: str, marker: str, line: str) -> str:
+    """Return *template* with *line* and a blank line inserted before *marker*."""
+    assert template.count(marker) == 1, marker
+    return template.replace(marker, f"{line}\n\n{marker}")
+
+
+HIGH_CONFIDENCE_TEMPLATE_V2 = _insert_after(
+    HIGH_CONFIDENCE_TEMPLATE, "Planning constraints: {constraints}", COST_UNIT_SENTENCE
+)
+LOW_CONFIDENCE_TEMPLATE_V2 = _insert_after(
+    LOW_CONFIDENCE_TEMPLATE, "Planning constraints: {constraints}", COST_UNIT_SENTENCE
+)
+CORRECTION_TEMPLATE_V2 = _insert_before(
+    CORRECTION_TEMPLATE, "Return ONLY a corrected valid JSON object", COST_UNIT_SENTENCE
+)
+
 # Every version ever defined, append-only: a new wording is a new entry, so
 # earlier results stay reproducible with ?template_version=N.
 TEMPLATE_DEFINITIONS = [
@@ -484,14 +518,29 @@ TEMPLATE_DEFINITIONS = [
         "version": 1,
         "template_text": CORRECTION_TEMPLATE,
     },
+    {
+        "template_key": "high_confidence_minimal_context",
+        "version": 2,
+        "template_text": HIGH_CONFIDENCE_TEMPLATE_V2,
+    },
+    {
+        "template_key": "low_confidence_with_retrieval",
+        "version": 2,
+        "template_text": LOW_CONFIDENCE_TEMPLATE_V2,
+    },
+    {
+        "template_key": "validate_output_correction",
+        "version": 2,
+        "template_text": CORRECTION_TEMPLATE_V2,
+    },
 ]
 
 # The version of each key that requests use by default. Seed makes exactly this
 # version active; change the number to upgrade or roll back.
 ACTIVE_TEMPLATE_VERSIONS = {
-    "high_confidence_minimal_context": 1,
-    "low_confidence_with_retrieval": 1,
-    "validate_output_correction": 1,
+    "high_confidence_minimal_context": 2,
+    "low_confidence_with_retrieval": 2,
+    "validate_output_correction": 2,
 }
 
 # ---- Source documents -------------------------------------------------------
