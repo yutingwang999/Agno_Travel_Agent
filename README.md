@@ -415,6 +415,8 @@ Three prompt templates are seeded in `prompt_templates`:
 
 All templates are versioned (`version`, `is_active`) and fetched from the database at runtime — never hardcoded. The resolved `prompt_template_version` is written to the SSE event `data` field for traceability.
 
+Changing a template: add a new entry to `TEMPLATE_DEFINITIONS` in `scripts/seed.py` (existing versions are never edited), set its number in `ACTIVE_TEMPLATE_VERSIONS`, and run `python scripts/dev.py seed`. Seed makes exactly the declared version of each key active; rolling back is changing the number back and re-running seed. The database allows only one active version per key (migration `0006`), and seed stops before writing if a declared version is not defined.
+
 ### SSE output
 
 ```json
@@ -643,11 +645,12 @@ Commit before a run you want to cite: a run on uncommitted code is marked `git_d
 │           ├── intake_model.py       # TravelRequest Pydantic model (Step 1 data contract)
 │           ├── travel_workflow.py    # Agno Workflow — 6 steps registered in order
 │           ├── trace_logger.py       # write_trace() — inserts one TraceEvent row per step
-│           ├── cag_matcher.py        # CAG logic: embed intent → pgvector search → MatchResult
+│           ├── cag_matcher.py        # CAG logic: embed intent → in-memory cosine match → MatchResult
 │           ├── gemini_embedder.py    # Agno-compatible Gemini embedder (wraps google-genai)
 │           ├── knowledge_base.py     # Factory: Knowledge + PgVector(travel_docs) + GeminiEmbedder
 │           ├── retrieval_service.py  # RAG logic: knowledge.search() → list[RetrievedChunk]
 │           ├── template_resolver.py  # DB lookup: resolve_template(key) → (text, version)
+│           ├── template_versions.py  # seed helper: insert versions, activate the declared one per key
 │           ├── output_validator.py   # ItineraryOutput Pydantic schema + parse_llm_output()
 │           └── steps/
 │               ├── intake.py              # Step 1 — validates + normalises input (TravelRequest)
@@ -677,7 +680,9 @@ Commit before a run you want to cite: a run on uncommitted code is marked `git_d
 │       ├── 0001_enable_pgvector_create_itinerary_categories.py
 │       ├── 0002_create_prompt_templates.py
 │       ├── 0003_create_source_documents.py
-│       └── 0004_create_trace_events.py
+│       ├── 0004_create_trace_events.py
+│       ├── 0005_add_token_usage_to_trace_events.py
+│       └── 0006_single_active_prompt_template.py
 ├── scripts/
 │   ├── dev.py               # cross-platform task runner
 │   └── seed.py              # seed itinerary_categories, prompt_templates, source_documents
