@@ -15,7 +15,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Template variable substitution
-The step SHALL substitute `{destination}`, `{trip_length}`, `{budget}`, `{travel_style}`, `{notes}`, `{matched_category}`, `{tone}`, `{constraints}`, and `{retrieved_context}` in the template text, using an empty string for `{notes}` when the request has no notes. Only placeholders that are valid identifiers and have a known value SHALL be replaced; unknown placeholders and other literal braces (such as the JSON schema example in the template) SHALL be left unchanged.
+The step SHALL substitute `{destination}`, `{trip_length}`, `{budget}`, `{travel_style}`, `{notes}`, `{matched_category}`, `{tone}`, `{constraints}`, `{retrieved_context}`, and `{daily_budget_ceiling}` in the template text, using an empty string for `{notes}` when the request has no notes. `{daily_budget_ceiling}` SHALL be the request's daily budget ceiling written as `"<amount> AUD per person per day, excluding accommodation"`, or `"none set"` when the request has no ceiling. Only placeholders that are valid identifiers and have a known value SHALL be replaced; unknown placeholders and other literal braces (such as the JSON schema example in the template) SHALL be left unchanged.
 
 #### Scenario: JSON example preserved
 - **WHEN** the template contains `{destination}` and a literal JSON example `{"day": integer}`

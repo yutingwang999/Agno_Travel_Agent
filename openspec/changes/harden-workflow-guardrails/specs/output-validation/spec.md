@@ -40,15 +40,30 @@ After schema validation passes, the step SHALL require the sum of `daily_itinera
 - **THEN** the cost consistency rule passes
 
 ### Requirement: Budget ceiling rule
-After schema validation passes, the step SHALL require `total_estimated_cost_aud`, interpreted as AUD per person, to be no greater than the configured per-person per-day upper bound for the requested budget level multiplied by the requested trip length; the `luxury` level SHALL have no upper bound. A violation SHALL fail validation with a message beginning `"Business rule failed: budget"`.
+After schema validation passes, the step SHALL require `total_estimated_cost_aud`, interpreted as AUD per person excluding accommodation, to be no greater than the request's daily budget ceiling multiplied by the requested trip length, reading the budget level and `max_daily_budget_aud` from the intake event; a request without a daily ceiling SHALL pass. A violation SHALL fail validation with a message beginning `"Business rule failed: budget"`.
 
 #### Scenario: Budget trip over the ceiling
-- **WHEN** a 3-day `budget` request produces a total above 3 times the `budget` per-person per-day upper bound
+- **WHEN** a 3-day `budget` request without an amount produces a total above 3 times the `budget` default
 - **THEN** validation fails with a message beginning `"Business rule failed: budget"`
 
-#### Scenario: Luxury has no ceiling
-- **WHEN** a `luxury` request produces a very high total
+#### Scenario: User amount overrides the level
+- **WHEN** a 2-day `moderate` request with `max_daily_budget_aud` = 120 produces a total of 300
+- **THEN** validation fails with a message beginning `"Business rule failed: budget"`
+
+#### Scenario: Luxury with an amount
+- **WHEN** a 2-day `luxury` request with `max_daily_budget_aud` = 1500 produces a total of 5,000
+- **THEN** validation fails with a message beginning `"Business rule failed: budget"`
+
+#### Scenario: Luxury without an amount has no ceiling
+- **WHEN** a `luxury` request without `max_daily_budget_aud` produces a very high total
 - **THEN** the budget ceiling rule passes
+
+### Requirement: Budget rule failure message
+A budget ceiling rule failure message SHALL state the itinerary's total, the ceiling for the trip, and the daily ceiling and number of days the trip ceiling comes from, so that the corrective call knows the target.
+
+#### Scenario: Message states the numbers
+- **WHEN** a 3-day request with `max_daily_budget_aud` = 200 produces a total of 1,200
+- **THEN** the failure message contains the total 1,200, the ceiling 600, and the 200-per-day and 3-day figures
 
 ### Requirement: Unsupported specifics rule
 After schema validation passes, the step SHALL find opening-hours statements (a time stated together with open, opens, opening, close, or closes) and currency amounts in the text fields `morning`, `afternoon`, `evening`, and `key_tips`, and SHALL require each one to appear, ignoring case and whitespace, in the validation knowledge context; otherwise validation SHALL fail with a message beginning `"Business rule failed: unsupported"`. Numeric cost fields SHALL be exempt.

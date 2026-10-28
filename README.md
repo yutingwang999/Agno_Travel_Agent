@@ -118,8 +118,10 @@ All variables are documented in [.env.example](.env.example).
 | `POSTGRES_PORT`     | Host port to expose (default `5432`)                                              |
 | `DATABASE_URL`      | Full SQLAlchemy / Alembic DSN                                                     |
 | `TEST_DATABASE_URL` | Test database for integration / destructive tests; name must end with `_test_db`  |
+| `EVAL_DATABASE_URL` | Evaluation database; name must end with `_eval_db` (see "How to run the evaluation") |
 | `GEMINI_API_KEY`    | Google Gemini API key                                                             |
-| `LLM_MODEL`         | Gemini model for generation (e.g. `gemini-2.0-flash`)                             |
+| `OPENAI_API_KEY`    | Judge model for the evaluation only; the app does not use it                      |
+| `LLM_MODEL`         | Gemini model for generation (e.g. `gemini-3.1-flash-lite`)                          |
 | `EMBEDDING_MODEL`   | Embedding model — must match seed and cag_match (default: `gemini-embedding-001`) |
 | `APP_HOST`          | Uvicorn bind host                                                                 |
 | `APP_PORT`          | Uvicorn bind port                                                                 |
@@ -145,6 +147,7 @@ python scripts/dev.py test-destructive  # migration tests, then re-seed the test
 python scripts/dev.py test-all          # unit → integration → destructive + re-seed
 python scripts/dev.py verify            # up → migrate → uvicorn → health + unit tests
 python scripts/dev.py verify-schema     # db-schema tests on the test database, then re-seed
+python scripts/dev.py eval-db-setup     # create + migrate + seed the evaluation database
 ```
 
 On macOS/Linux you can also use `make <target>` as a shorthand.
@@ -597,6 +600,26 @@ Don't use `pytest -m ""` to run everything at once: files run in alphabetical or
 If `TEST_DATABASE_URL` is not set, integration and destructive tests are skipped with a reason, and unit tests point `DATABASE_URL` at an unreachable placeholder rather than the development database. The migration tests also refuse to run against any database whose name does not end with `_test_db`.
 
 `tests/conftest.py` loads `.env` automatically, so environment variables do not need to be exported manually before running pytest.
+
+---
+
+## How to run the evaluation
+
+Tests check that the code works; the evaluation measures how good the itineraries are — retrieval recall, behaviour correctness, budget and day constraints, faithfulness to the knowledge context — on a fixed dataset of 73 requests (`eval/dataset.jsonl`). Full instructions are in [docs/evaluation.md](docs/evaluation.md); measured results are in [docs/experiments.md](docs/experiments.md).
+
+**Its own database.** The evaluation runs against `travel_agent_eval_db` (`EVAL_DATABASE_URL`, name must end with `_eval_db`), never the test database: tests reseed and wipe `travel_agent_test_db`, and its small fixture corpus is not the corpus being measured. Evaluation numbers come only from the evaluation database; each knowledge-base version gets its own table there (`travel_docs_v1`), so earlier results can be re-run.
+
+**Keys.** Generation and embeddings use `GEMINI_API_KEY`. Faithfulness and "attractions in the destination" are decided by a judge model from another provider, which needs `OPENAI_API_KEY`. A full run costs about $0.22 (about two thirds of it the judge) and takes about 12 minutes; the 10-entry smoke subset about $0.03 and 2 minutes.
+
+```bash
+python scripts/dev.py eval-db-setup                               # once: create + migrate + seed the evaluation database
+python scripts/eval_run.py --config v010-baseline                 # full run -> eval/runs/<run id>/
+python scripts/eval_run.py --config v010-baseline --subset smoke  # 10 entries
+python scripts/eval_compare.py <run id> <run id>                  # comparison table
+python scripts/eval_gate.py                                       # smoke run against eval/thresholds.yaml; non-zero exit on failure
+```
+
+Commit before a run you want to cite: a run on uncommitted code is marked `git_dirty` and is for reference only. Each run's `summary.json` is committed; per-entry results are kept in a private repository (see [docs/evaluation.md](docs/evaluation.md), "What is published").
 
 ---
 

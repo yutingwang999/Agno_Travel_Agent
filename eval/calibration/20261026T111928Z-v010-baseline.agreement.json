@@ -1,0 +1,29 @@
+{
+  "sample_size": 20,
+  "sample_meets_minimum": true,
+  "destination_only_itineraries": 6,
+  "faithfulness": {
+    "judge_supported": {
+      "compared": 82,
+      "agreement": 0.9878048780487805
+    },
+    "judge_unsupported": {
+      "compared": 98,
+      "agreement": 0.9693877551020408
+    }
+  },
+  "extraction_precision": 0.9782608695652174,
+  "claims_reviewed": 184,
+  "missed_claims": 10,
+  "destination": {
+    "judge_in": {
+      "compared": 80,
+      "agreement": 1.0
+    },
+    "judge_out": {
+      "compared": 9,
+      "agreement": 0.8888888888888888
+    }
+  },
+  "min_agreement": 0.8
+}

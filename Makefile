@@ -1,7 +1,7 @@
 # Thin wrappers — delegates to scripts/dev.py for cross-platform compatibility (Windows + Unix).
 # On Unix you can use `make <target>`; on Windows run `python scripts/dev.py <target>` directly.
 
-.PHONY: up down install migrate seed count-rows check-health test test-db-setup test-integration test-destructive test-all verify verify-schema
+.PHONY: up down install migrate seed count-rows check-health test test-db-setup test-integration test-destructive test-all eval-db-setup verify verify-schema
 
 up:
 	python scripts/dev.py up
@@ -38,6 +38,9 @@ test-destructive:
 
 test-all:
 	python scripts/dev.py test-all
+
+eval-db-setup:
+	python scripts/dev.py eval-db-setup
 
 verify:
 	python scripts/dev.py verify

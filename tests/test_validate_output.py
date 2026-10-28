@@ -19,6 +19,8 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
+from app.workflow.llm_usage import LLMResult
+
 
 # ---------------------------------------------------------------------------
 # Shared test fixtures
@@ -232,7 +234,7 @@ def _run_executor(
 
     step_input = _make_step_input(raw_llm_output=raw_llm_output, session_id=session_id)
 
-    mock_llm = MagicMock(return_value=retry_llm_output)
+    mock_llm = MagicMock(return_value=LLMResult(retry_llm_output))
 
     with (
         patch(
@@ -245,7 +247,7 @@ def _run_executor(
             {
                 "DATABASE_URL": "postgresql://fake",
                 "GEMINI_API_KEY": "fake-key",
-                "LLM_MODEL": "gemini-2.0-flash",
+                "LLM_MODEL": "gemini-3.1-flash-lite",
             },
         ),
     ):
@@ -341,7 +343,7 @@ def test_retry_corrective_prompt_uses_db_template():
 
     with (
         patch("app.workflow.steps.validate_output.resolve_template", side_effect=fake_resolve),
-        patch("app.workflow.steps.validate_output._call_llm", return_value=VALID_ITINERARY_JSON),
+        patch("app.workflow.steps.validate_output._call_llm", return_value=LLMResult(VALID_ITINERARY_JSON)),
         patch.dict("os.environ", {"DATABASE_URL": "postgresql://fake", "GEMINI_API_KEY": "fake-key"}),
     ):
         validate_output_executor(step_input)

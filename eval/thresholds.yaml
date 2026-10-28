@@ -1,0 +1,25 @@
+# Regression gate (design decision 21): the smoke subset must stay within these bounds.
+# Each gated metric has a `min` (fail when below) or a `max` (fail when above).
+# Values are set in task 6.3 from the v0.1.0 baseline: the worse of two baseline runs,
+# loosened by one entry (10 percentage points on the 10-entry smoke subset).
+# Every change to a value must be recorded in the "Threshold change log" of
+# docs/experiments.md, with the change that caused it and the reason.
+config: v010-baseline
+subset: smoke
+
+metrics:
+  format_pass_rate:
+    path: metrics.system.format_pass_rate
+    min: 0.9
+  trip_length_rate:
+    path: metrics.constraints.trip_length_rate
+    min: 0.9
+  budget_rate:
+    path: metrics.constraints.budget_rate
+    min: 0.375
+  recall_at_5:
+    path: metrics.retrieval.recall_at_k
+    min: 0.809
+  error_rate:
+    path: metrics.system.error_rate
+    max: 0.1
