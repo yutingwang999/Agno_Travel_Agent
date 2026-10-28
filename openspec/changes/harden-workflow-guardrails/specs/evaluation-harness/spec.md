@@ -21,7 +21,7 @@ For a request without a daily budget ceiling (a level with no configured upper b
 ## ADDED Requirements
 
 ### Requirement: Budget amount in the dataset
-An entry's `form` MAY contain `max_daily_budget_aud`, a number greater than 0. The harness SHALL send it with the request; a system without the field ignores it, and its budget constraint is still computed with the amount, as the user asked for it. The dataset SHALL include entries with an amount for each budget level, among them a `luxury` entry and an entry whose amount is above its level's default.
+An entry's `form` MAY contain `max_daily_budget_aud`, an integer of at least 1. The harness SHALL send it with the request; a system without the field ignores it, and its budget constraint is still computed with the amount, as the user asked for it. The dataset SHALL include entries with an amount for each budget level, among them a `luxury` entry and an entry whose amount is above its level's default.
 
 #### Scenario: Amount sent with the request
 - **WHEN** an entry with `form.max_daily_budget_aud` is evaluated
