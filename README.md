@@ -784,6 +784,6 @@ This branch adds a browser UI and a traces read endpoint on top of the completed
 ## Design Docs
 
 - [DESIGN.md](docs/DESIGN.md) — data model, workflow steps, SSE contract, prompt strategy
-- [api.md](docs/api.md) — full API reference: request/response formats, SSE event shapes per step
+- [api.md](docs/api.md) — full API reference: request/response formats, SSE event shapes per step, and how each failure inside the workflow is reported ("Failure behaviour")
 - [git-workflow.md](docs/git-workflow.md) — branch order, scope, and merge checklist
 - [CLAUDE.md](docs/CLAUDE.md) — AI tool usage rules and architecture constraints

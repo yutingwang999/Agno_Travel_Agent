@@ -155,6 +155,8 @@ Result of embedding-based intent classification against `itinerary_categories`.
 | `constraints` | string | Constraint hint from the matched category |
 | `is_fallback` | boolean | `true` when no match exceeded the minimum threshold and the default category was used |
 
+If the embedding call or loading the categories fails, the step still completes with `matched_category` = `"family"`, `confidence_score` = `0.0` and `is_fallback` = `true`, so the request takes the retrieval path; the trace row records `error_type` = `"embedding_failed"`.
+
 #### `retrieval_decision`
 
 Routing decision based on the confidence threshold (0.85).
@@ -250,6 +252,10 @@ On error (template not found):
 }
 ```
 
+If the selected template is missing but `low_confidence_with_retrieval` exists, that template is used and reported in `prompt_template_key` / `prompt_template_version`.
+
+On error (LLM call failed) the event has the same shape, with `"error": "LLM call failed: <exception type>"`. Only the exception type is included; details stay in the server log.
+
 #### `validate_output`
 
 Validated and structured itinerary. This is the final consumable output.
@@ -317,6 +323,14 @@ On unrecoverable error (both attempts failed):
 }
 ```
 
+Other `validate_output` errors, all with `"data": { "degraded_mode": true }`:
+
+| `error` | Cause |
+|---------|-------|
+| `"Generation failed upstream"` | The `generate` event has `status` = `"error"`; nothing is validated and no correction call is made |
+| `"Correction call failed: <exception type>"` | The first validation failed and the correction LLM call raised |
+| `"Validation failed and correction template unavailable: ..."` | The first validation failed and no `validate_output_correction` template is active |
+
 ---
 
 ### Error responses
@@ -325,6 +339,75 @@ On unrecoverable error (both attempts failed):
 |-------------|-------|
 | `422 Unprocessable Entity` | Request body failed validation (missing field, invalid `budget` value, `trip_length < 1`, empty string). |
 | `500 Internal Server Error` | `DATABASE_URL` environment variable is not set. |
+
+---
+
+### Failure behaviour
+
+Once the request body is valid, a failure inside the workflow never breaks the stream: every request ends with a `validate_output` event. To find the cause of a failed request, look for the first event with `status` = `"error"`; the trace rows (`GET /traces/{session_id}`) carry the matching `error_type`. Error messages name only the exception type; the full exception is in the server log.
+
+#### Overview and `cag_match`
+
+```mermaid
+flowchart TD
+    A[POST /generate] --> B[intake]
+    B --> C{cag_match:<br/>embed intent,<br/>load categories}
+    C -- ok --> C1[completed:<br/>best category and score]
+    C -- raises --> C2["completed: family, confidence 0.0,<br/>is_fallback true<br/>trace: embedding_failed"]
+    C1 --> D{"retrieval_decision:<br/>confidence >= 0.85?"}
+    C2 --> D
+    D -- no --> E["rag_retrieve<br/>(a failed search continues<br/>with empty context)"]
+    D -- yes --> F[generate]
+    E --> F
+    F --> G[validate_output]
+```
+
+An embedding failure is treated as "no match": confidence 0.0 sends the request down the retrieval path.
+
+#### `generate`
+
+```mermaid
+flowchart TD
+    S[select template by confidence] --> T{template found?}
+    T -- yes --> L
+    T -- no --> U{selected key is<br/>high_confidence_minimal_context?}
+    U -- yes --> V{low_confidence_with_retrieval<br/>found?}
+    V -- yes --> V1[report low_confidence_with_retrieval<br/>as the template used] --> L
+    V -- no --> X
+    U -- no --> X["error: No active template found<br/>for key '#lt;selected key#gt;'<br/>(LLM not called)"]
+    L{call Gemini} -- ok --> OK[completed:<br/>raw_llm_output, template key and version]
+    L -- raises --> Y["error: LLM call failed: #lt;exception type#gt;<br/>trace: llm_call_failed"]
+```
+
+#### `validate_output`
+
+```mermaid
+flowchart TD
+    G{generate event<br/>status = error?} -- yes --> E0["error: Generation failed upstream<br/>trace: upstream_generation_failed<br/>(no parsing, no LLM call)"]
+    G -- no --> V1{first validation<br/>passes?}
+    V1 -- yes --> OK1[completed, degraded_mode false]
+    V1 -- no --> T{correction template<br/>found?}
+    T -- no --> E1["error: Validation failed and correction<br/>template unavailable<br/>trace: correction_template_unavailable"]
+    T -- yes --> C{call Gemini<br/>with correction prompt}
+    C -- raises --> E2["error: Correction call failed: #lt;exception type#gt;<br/>trace: correction_call_failed"]
+    C -- returns text --> V2{second validation<br/>passes?}
+    V2 -- yes --> OK2["completed, degraded_mode true<br/>trace: validation_retry_succeeded"]
+    V2 -- no --> E3["error: Validation failed after retry<br/>trace: validation_failed_after_retry"]
+```
+
+Every `validate_output` error event has `"data": { "degraded_mode": true }`. A reply blocked by Gemini's safety filter arrives as empty text, not as an exception, so it ends as "Validation failed after retry".
+
+#### Event sequences
+
+| Situation | `cag_match` | `generate` | `validate_output` |
+|---|---|---|---|
+| Everything works | completed | completed | completed, `degraded_mode` false |
+| Gemini fails during embedding | completed (fallback, `embedding_failed`) | completed | completed |
+| Gemini fails during generation (429, 503, network) | completed | error: `LLM call failed: ClientError` | error: `Generation failed upstream` |
+| No active template | completed | error: `No active template found for key ...` | error: `Generation failed upstream` |
+| First output invalid, correction valid | completed | completed | completed, `degraded_mode` true |
+| First output invalid, correction call fails | completed | completed | error: `Correction call failed: ServerError` |
+| First output and correction both invalid | completed | completed | error: `Validation failed after retry: ...` |
 
 ---
 
@@ -377,7 +460,7 @@ Returns all `trace_events` rows written during a workflow run, ordered by `creat
 | `prompt_template_key` | string \| null | Set only for the `generate` step |
 | `prompt_template_version` | integer \| null | Set only for the `generate` step |
 | `degraded_mode` | boolean \| null | Set only for the `validate_output` step |
-| `error_type` | string \| null | Machine-readable error classification when status is `"error"` |
+| `error_type` | string \| null | Machine-readable classification of what went wrong, or `null`. Usually set with `status` = `"error"` (`llm_call_failed` for `generate`; `correction_call_failed`, `upstream_generation_failed`, `correction_template_unavailable`, `validation_failed_after_retry` for `validate_output`), but also on some completed steps: `embedding_failed` (`cag_match` fell back to the default category) and `validation_retry_succeeded` (`validate_output`) |
 | `created_at` | string (ISO 8601) | Row insertion timestamp |
 
 ### Error responses

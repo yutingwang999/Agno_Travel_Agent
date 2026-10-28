@@ -18,3 +18,4 @@
 - [ ] 4.1 `dev.py test-all` passes completely; within it, the golden end-to-end test in `pytest -m integration` still asserts that all 6 steps appear
 - [ ] 4.2 Manual verification: run the Low-confidence preset in the browser and watch the panels appear one by one; record a screen capture or screenshots and compare with v0.1.0's "all appear at once"
 - [ ] 4.3 Update the "How it works" diagram for POST /generate in the README
+- [ ] 4.4 Update the "Failure behaviour" diagrams in `docs/api.md`: `retrieval_decision` becomes a Step, and any failure that ends the stream early (e.g. the client disconnecting) is added; Verify: code review
