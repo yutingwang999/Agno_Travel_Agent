@@ -146,6 +146,13 @@ def main() -> int:
     from evaluation.cost import load_pricing
     from evaluation.dataset import load_dataset, load_meta
     from evaluation.runner import append_jsonl, result_record, run, summarise, write_prompt_copies
+    from evaluation.templates import (
+        CORRECTION_TEMPLATE_KEY,
+        active_version,
+        read_template_texts,
+        templates_used,
+        write_generation_prompts,
+    )
 
     check_database(db_url, config.knowledge_table)
     meta = load_meta()
@@ -155,6 +162,8 @@ def main() -> int:
     ids = load_subset(args.subset) if args.subset else (args.entries.split(",") if args.entries else None)
     entries = select_entries(load_dataset(), ids)
     pricing = load_pricing()
+    # validate_output does not report its template version; record the active one.
+    correction_version = active_version(db_url, CORRECTION_TEMPLATE_KEY)
     commit, dirty = git_state()
     started = utc_now()
     run_id = make_run_id(config.name, args.subset or ("entries" if args.entries else None), started)
@@ -196,6 +205,10 @@ def main() -> int:
         **summarise(results, config, pricing),
     }
     summary["conditions"]["generation_templates"] = summary.pop("generation_templates")
+    if correction_version is not None:
+        summary["conditions"]["correction_template"] = {"key": CORRECTION_TEMPLATE_KEY,
+                                                        "version": correction_version}
+    write_generation_prompts(run_dir, read_template_texts(db_url, templates_used(summary["conditions"])))
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n",
                                           encoding="utf-8")
 

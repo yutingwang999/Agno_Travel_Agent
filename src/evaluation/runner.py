@@ -9,6 +9,8 @@ A run directory ``eval/runs/<run id>/`` holds (design decision 27):
 - ``results.jsonl`` — one line per entry
 - ``summary.json``  — run conditions and every metric
 - ``judge_prompts/`` — a copy of each judge prompt file the run used
+- ``generation_prompts/`` — the text of each prompt template version the run used
+  (written by ``scripts/eval_run.py`` from the database; see :mod:`evaluation.templates`)
 
 Requests to the system are sent one at a time; judge calls run concurrently
 (design decision 28) and are retried with backoff, requests are not.
