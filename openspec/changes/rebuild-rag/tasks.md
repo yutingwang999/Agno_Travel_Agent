@@ -48,6 +48,7 @@
 ## 7. API
 
 - [ ] 7.1 `TravelRequest` gains a `notes` field (leading/trailing whitespace stripped, at most 500 characters, null when blank), and the frontend adds an optional input box; Verify: `test_intake.py` adds Blank notes / Notes too long; manually submit a request with notes and see it in `query_text` in the rag_retrieve panel; harden's injection guardrail applies to `notes` as well
+- [ ] 7.2 Update the "Failure behaviour" diagrams and event-sequence table in `docs/api.md` (retrieval always runs; no template selection by confidence and no fallback template, so a missing `itinerary_with_context` is an error) and `docs/main-logic-diagram.png` (no confidence branch); Verify: code review
 
 ## 8. Evaluation and regression
 
