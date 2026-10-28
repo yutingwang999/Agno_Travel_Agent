@@ -39,7 +39,19 @@
 
 1. **`retrieval_decision` always routes to `rag_retrieve`; the step itself is kept.** Confidence is still reported but no longer affects routing; `RETRIEVAL_CONFIDENCE_THRESHOLD` is deleted. The step is kept so that the new routing in roadmap item 3 has a place to plug in, and to avoid changing the step name and event structure a second time.
    Alternatives: (a) keep the status quo — retrieval improvements would not reach high-confidence requests, and the success criteria could not be met; (b) do the complete routing redesign now — too large in scope, and it still has undecided questions (see roadmap item 3).
-2. **The two generation templates merge into `itinerary_with_context`**, containing `{retrieved_context}`, `{notes}`, citation instructions, and the "AUD per person, excluding accommodation" that harden requires. The two old keys remain in the database (under harden's rules, the highest version of each is still active but no longer selected), so earlier results can be reproduced with `template_version`.
+2. **The two generation templates merge into `itinerary_with_context`**, containing `{retrieved_context}`, `{notes}`, citation instructions, and the "AUD per person, excluding accommodation" wording and the `{daily_budget_ceiling}` placeholder that harden requires. The two old keys remain in the database (under harden's rules, the highest version of each is still active but no longer selected), so earlier results can be reproduced with `template_version`.
+
+3. **How the merged template describes the request is decided by comparison, not fixed in advance.** In v0.1.0 the user's own words never reach the generator: the templates have no `{travel_style}` placeholder, so "seniors, slow pace" reaches Gemini only as the matched category `senior` plus that category's preset tone and constraints ("step-free stays, accessible transport"), which then fill the itinerary with wheelchair and lift advice nobody asked for (baseline e039). With confidence often near the old threshold (0.81–0.86), a wrong category also brings wrong constraints. Three variants of `itinerary_with_context` are compared on the evaluation dataset, differing only in this part:
+
+   | Variant | Request description in the template |
+   | --- | --- |
+   | A | Matched category with its preset tone and constraints (as in v0.1.0) |
+   | B | The user's `{travel_style}` and `{notes}` only, no preset |
+   | C | Both, stating that the user's words take precedence and the preset is a default suggestion |
+
+   The existing metrics cannot tell these apart (none asks whether the itinerary fits what the user asked for), so the comparison needs a new judge metric, preference adherence (task 2.4). The winner is the seeded version of `itinerary_with_context`; the decision and its numbers go into this section and `docs/experiments.md`. Whether the category presets survive at all after roadmap item 3 (request parsing) is decided there, starting from this result.
+
+4. **Candidate template instruction, not in the first version of `itinerary_with_context`: "do not invent exclusive or private arrangements unless the context offers them".** The v0.1.0 baseline's luxury itineraries are full of private viewings, after-hours access and charters that no corpus can confirm can be booked (e065: "a private look at the Dali exhibition" at d'Arenberg). It is tested as its own change to the template after decision 3 is settled, so that each comparison changes one thing, and measured with the `activity` kind of faithfulness v2 (task 2.3).
 
 ### The spec constrains only external behaviour
 
@@ -86,6 +98,6 @@ Alternative: the full corpus in the test database too, plus the embedding cache 
 1. New Alembic migration: drop the `source_documents` table; delete the `SourceDocument` model and remove this table from `count-rows`.
 2. Generate the new corpus and write it into `travel_docs_v2_<config>` in the evaluation database, one per chunking configuration; once the experiments choose a configuration, drop `ai.travel_docs` on the development database and rebuild it with the chosen configuration (documents now embedded with `RETRIEVAL_DOCUMENT`).
 3. Label the evaluation dataset for the new corpus and bump the corpus version to v2.
-4. Seed adds the `itinerary_with_context` template (with `{notes}`, `{retrieved_context}`, citation instructions and "AUD per person, excluding accommodation"); the two old generation templates are kept.
+4. Seed adds the `itinerary_with_context` template (with `{notes}`, `{retrieved_context}`, `{daily_budget_ceiling}`, citation instructions and "AUD per person, excluding accommodation"); the two old generation templates are kept.
 5. Deploy the code (always retrieve, single template, source citations).
 6. Rollback: the migration's downgrade recreates an empty `source_documents` table; the knowledge base is rebuilt with the old seed; restoring the previous code version returns to choosing templates by confidence (the old templates are still in the database).

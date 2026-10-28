@@ -22,6 +22,21 @@ The step SHALL send the resolved prompt to the Gemini model named by `LLM_MODEL`
 - **WHEN** the generate step calls the LLM
 - **THEN** the request specifies a JSON response type and the `ItineraryOutput` response schema
 
+### Requirement: Template variable substitution
+The step SHALL substitute `{destination}`, `{trip_length}`, `{budget}`, `{travel_style}`, `{matched_category}`, `{tone}`, `{constraints}`, `{retrieved_context}`, and `{daily_budget_ceiling}` in the template text. `{daily_budget_ceiling}` SHALL be the request's daily budget ceiling written as `"<amount> AUD per person per day, excluding accommodation"`, or `"none set"` when the request has no ceiling. Only placeholders that are valid identifiers and have a known value SHALL be replaced; unknown placeholders and other literal braces (such as the JSON schema example in the template) SHALL be left unchanged.
+
+#### Scenario: JSON example preserved
+- **WHEN** the template contains `{destination}` and a literal JSON example `{"day": integer}`
+- **THEN** `{destination}` is replaced and the JSON example is unchanged
+
+#### Scenario: Ceiling from the level
+- **WHEN** a `moderate` request without `max_daily_budget_aud` is generated with a template containing `{daily_budget_ceiling}`
+- **THEN** the resolved prompt states the `moderate` default as AUD per person per day, excluding accommodation
+
+#### Scenario: No ceiling
+- **WHEN** a `luxury` request without `max_daily_budget_aud` is generated with a template containing `{daily_budget_ceiling}`
+- **THEN** the placeholder is replaced with `"none set"`
+
 ## REMOVED Requirements
 
 ### Requirement: Seeded templates
@@ -44,6 +59,13 @@ Every active generation template and the `validate_output_correction` template S
 #### Scenario: Active templates state the unit
 - **WHEN** the seed has run
 - **THEN** every active template text contains the phrase "AUD per person, excluding accommodation"
+
+### Requirement: Budget ceiling in generation templates
+Every active generation template SHALL contain the `{daily_budget_ceiling}` placeholder and ask that the total cost stay within it.
+
+#### Scenario: Active generation templates state the ceiling
+- **WHEN** the seed has run
+- **THEN** every active generation template text contains `{daily_budget_ceiling}`
 
 ### Requirement: Seeded template set
 `scripts/seed.py` SHALL insert every `(template_key, version)` it defines that is not yet in the database, and SHALL mark the highest defined version of each key as the active one.

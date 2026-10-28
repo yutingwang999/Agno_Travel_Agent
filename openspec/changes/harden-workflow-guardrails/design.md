@@ -7,7 +7,7 @@
 - In the template fallback branch, `generate_executor` only updates `template_text` and `template_version`, not `template_key` (`generate.py:240-247`).
 - `parse_llm_output` first strips markdown code fences, then runs `json.loads`, then Pydantic validation, and finally checks whether `len(daily_itinerary)` equals the `trip_length_days` in the output.
 - The input has only Pydantic field validation; `travel_style` is free text and is spliced straight into the prompt.
-- `build-evaluation-harness` has already defined the per-budget-level daily cost caps in `config.py`.
+- `build-evaluation-harness` has already defined the per-budget-level daily cost caps in `config.py`. The v0.1.0 templates never state them: the model sees only "a moderate budget", so the baseline's "within budget" (59.6%) measures how often the model's own guess happens to fall under a number it was never given.
 - Agno's `Workflow` defaults to `telemetry=True` and sends one event per run (workflow id, session id, run id, db type) to `os-api.agno.com`. The `AGNO_TELEMETRY` environment variable, when set, overrides the constructor value, and it is read again before every send. `tests/conftest.py` already sets `AGNO_TELEMETRY=false` for tests (`isolate-test-database`); the running app still sends it.
 
 ## Goals / Non-Goals
@@ -35,7 +35,7 @@
 5. **All business rules sit in one rule list after `parse_llm_output`; any rule failing counts as a validation failure and enters the existing corrective retry flow.** The error message states which rule and the concrete values, so the correction prompt can act on it. Each rule is a pure function, easy to test on its own.
    - **Days**: `len(daily_itinerary) == trip_length_days == requested trip_length`.
    - **Cost consistency**: `|Σ estimated_cost_aud − total_estimated_cost_aud| ≤ max(1 AUD, 1% of the total cost)`.
-   - **Budget cap**: `total_estimated_cost_aud (per person) ≤ per-person daily cap[budget level] × number of days`; `luxury` has no cap.
+   - **Budget ceiling**: `total_estimated_cost_aud (per person) ≤ daily ceiling × number of days`, where the daily ceiling is the request's (decision 13); no ceiling, no check. The failure message states both numbers, e.g. `Business rule failed: budget — total 1,200 AUD per person exceeds the ceiling of 600 AUD (200 per day × 3 days)`, so the correction call knows the target.
    - **Unsupported specifics**: in the text fields (morning / afternoon / evening / key_tips), find two kinds of content — opening-hours statements (a time appearing together with open / opens / opening / close / closes) and currency amounts (`$25`, `AUD 30`, `A$40`, etc.). Each occurrence must appear in this request's knowledge context (ignoring case and whitespace), otherwise the rule fails. Numeric fields such as `estimated_cost_aud` are estimates and are not subject to this rule. Itinerary scheduling such as "depart at 9am" is not an opening-hours statement and is unaffected.
 
 6. **Input guardrails sit in the request-validation layer before intake; on failure they return 422 with a reason code.** This way blocked requests consume no LLM calls, and the evaluation harness counts them as `refuse`.
@@ -49,7 +49,7 @@
 
 8. **Where the "knowledge context" comes from**: validate_output takes each chunk's `chunk_text` from the `retrieved_context` of the `rag_retrieve` event and joins them as the comparison text for the "unsupported specifics" rule; it is empty when retrieval did not run. After `rebuild-rag`, chunks gain more fields but `chunk_text` stays the same, so this rule does not need to change with it.
 
-9. **Costs are always computed as "per person, in AUD, excluding accommodation".** Both the generation and the correction templates say so (the itinerary has no stay, so including one would make the caps meaningless); the budget cap uses the "per person per day" caps that `build-evaluation-harness` defines in `config.py`. Template text is changed by adding new versions (old versions are not edited); old versions are kept so v0.1.0 results can be reproduced with `template_version`.
+9. **Costs are always computed as "per person, in AUD, excluding accommodation".** Both the generation and the correction templates say so (the itinerary has no stay, so including one would make the caps meaningless); the budget cap uses the "per person per day" caps that `build-evaluation-harness` defines in `config.py`, as defaults when the request gives no amount (decision 13). Template text is changed by adding new versions (old versions are not edited); old versions are kept so v0.1.0 results can be reproduced with `template_version`.
 
 10. **Only one active version is allowed per template key.**
     - Database layer: a new migration creates the partial unique index `UNIQUE (template_key) WHERE is_active` on `prompt_templates`.
@@ -61,10 +61,20 @@
 12. **Agno telemetry is off by default in code, with the environment variable as the override.** `travel_workflow` is constructed with `telemetry=False`, so every environment (local, deployment, evaluation runs) is off without depending on each machine's `.env`. `.env.example` gets a commented-out `AGNO_TELEMETRY=false` explaining that, when set, it overrides the code for every Agno instance — which matters once roadmap item 4 adds an `Agent`, since each Agno instance has its own `telemetry` flag. The conftest setting stays as a safety net for tests.
     Alternative: rely on `AGNO_TELEMETRY` in `.env` only — any environment that forgets it would silently send telemetry.
 
+13. **The budget ceiling: an optional user amount for any level, the level's default otherwise.**
+    - **Request**: optional `max_daily_budget_aud`, a positive number in AUD per person per day, excluding accommodation (the same unit as decision 9). Absent or null means "use the level's default". The intake event carries it (`null` when absent).
+    - **Daily ceiling of a request** = `max_daily_budget_aud` when given, otherwise `DAILY_COST_CAP_AUD_PER_PERSON[budget]` (`budget` 70, `moderate` 200), otherwise none (`luxury`). The same function is used by the budget rule, the template variable and the evaluation harness, so the three can never disagree.
+    - **The levels stay, as style.** "luxury" also means fine dining and private experiences; an amount alone loses that. When the amount and the level seem to disagree ("budget" with 500 AUD a day), the amount sets the ceiling and the level still describes the style; the request is not rejected.
+    - **The templates state the ceiling** through a `{daily_budget_ceiling}` placeholder, filled with e.g. `"200 AUD per person per day, excluding accommodation"` or, without a ceiling, `"none set"`. The wording around it lives in the template in the database; code supplies only the value. Without this the model learns the number only after failing the rule, which costs a correction call per over-budget request.
+    - **Not checked here**: whether the amount is realistic for the destination (30 AUD a day in Sydney). That needs a reference price table (roadmap item 4), which would let the system ask back instead of planning.
+    - **Alternatives**: (a) replace the levels with the amount — loses the style signal and breaks comparison with the v0.1.0 dataset; (b) an amount only for `luxury` — an inconsistent rule, and a user cannot ask for "moderate, but at most 120 a day". The amount is chosen over a free-text budget so that the rule stays code, not a judgement.
+
 ## Risks / Trade-offs
 
 - [Embedding failures are masked by the fallback and hard to notice] → Log at error level, write `error_type="embedding_failed"` to the trace, and set `is_fallback=true` in the event.
 - [Stricter rules raise the retry rate and latency] → This is exactly the cost to quantify with the evaluation harness; the report compares retry rate, error rate and p95 latency.
+- [Several budget-related changes land at once, so a better "within budget" cannot be attributed] → Evaluate in three steps on separate commits: the cost-unit wording only, then the ceiling in the template, then the rules (task 6.3).
+- [Dataset v2 adds entries with an amount, so the v0.1.0 baseline (v1) does not cover them] → Compare with the baseline on the 73 entries both versions share; report the new entries separately.
 - [The regexes for opening hours and amounts may produce false positives or misses] → Write unit tests for every pattern; the faithfulness metric in the evaluation can reveal misses.
 - [The high-confidence path has no knowledge context, so any specific price is judged unsupported] → This is the intended behaviour: prices without support should not appear in the first place. The correction prompt asks for them to be removed.
 - [The place-name table wrongly rejects valid small places] → State this in the README; add one small-place entry to the evaluation dataset to observe it; the roadmap has alternatives.
