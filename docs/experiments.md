@@ -4,7 +4,7 @@ This file records the effect of every change that affects quality, behaviour or 
 
 **Rules**
 
-1. Every number in a table must come from a real run result under `eval/runs/`, with its run ID noted. Numbers must not be filled in or edited by hand.
+1. Every number in a table must come from a real run result under `eval/runs/`, with its run ID noted. Numbers must not be filled in or edited by hand. The run's `summary.json` is in this repository; its per-entry `results.jsonl` is in a private repository, available on request (see `docs/evaluation.md`, "What is published").
 2. Runs used for formal comparison must be run on code with **no uncommitted changes** (`git_dirty = false` in the run summary). Runs with uncommitted changes are for reference only and are marked ⚠️.
 3. When comparing two runs, apart from "the one thing changed this time", the other conditions (dataset version, corpus version, models, etc.) should be the same; any differences must be stated in the record.
 4. Conclusions state "what was seen", not "what we hoped to see". Results with no improvement, or even a regression, are recorded as usual.
@@ -32,7 +32,7 @@ This file records the effect of every change that affects quality, behaviour or 
 
 | Date | Change | What changed | Key result | Record |
 | --- | --- | --- | --- | --- |
-| — | `build-evaluation-harness` | v0.1.0 baseline | Not yet run | [Baseline](#v010-baseline) |
+| 2026-10-26 | `build-evaluation-harness` | v0.1.0 baseline | Recall@5 0.951, faithfulness with context 23.0%, within budget 59.6%, behaviour correctness 74.0% (every refuse / clarify entry wrong), p50 4.54 s, $0.00118 per request; judge–human agreement ≥ 88.9% in every stratum | [Baseline](#v010-baseline) |
 
 ---
 
@@ -77,34 +77,54 @@ Copy the template below, fill it in, and put it at the **top** of the "Records" 
 
 ### v0.1.0 baseline
 
-> To be filled in after `build-evaluation-harness` task 6.1 is done. Run on the commit where the harness implementation is complete: relative to tag `v0.1.0` this commit only adds measurement code, and the system behaviour is the same as v0.1.0 (corpus v1, confidence-based routing, two generation templates).
+> Run on the commit where the harness implementation is complete (`54c17c6`): relative to tag `v0.1.0` this commit only adds measurement code plus the default generation model change (`gemini-2.0-flash` was shut down), and the system behaviour is the same as v0.1.0 (corpus v1, confidence-based routing, two generation templates).
 
-- **Runs compared**: — (baseline, no before)
-- **Run conditions**: git commit `—` · dataset v1 · corpus v1 / `travel_docs_v1` · generation model `—` · judge model `—` · price table date `—`
-- **Note**: the v0.1.0 template says "for a traveller" without stating the cost unit; the evaluation interprets costs as "per person, in AUD".
+- **Runs**: `20261026T111928Z-v010-baseline` (run 1), `20261026T113131Z-v010-baseline` (run 2); both `git_dirty = false`
+- **Run conditions**: git commit `54c17c6` · dataset v1 (73 entries) · corpus v1 / `travel_docs_v1` · generation model `gemini-3.1-flash-lite` · embedding model `gemini-embedding-001` · judge model `gpt-6-luna` (prompts faithfulness v1, destination v1) · generation templates `high_confidence_minimal_context` v1 and `low_confidence_with_retrieval` v1 · price table date 2026-10-25
+- **Notes**:
+  - The baseline generates with `gemini-3.1-flash-lite`, not v0.1.0's default `gemini-2.0-flash`, which Google shut down on 2026-06-01 (design decision 16).
+  - The v0.1.0 template says "for a traveller" without stating the cost unit; the evaluation interprets costs as "per person, in AUD, excluding accommodation" against the caps in `app/workflow/config.py` (budget 70, moderate 200 per day; luxury has no cap). The prompt never states these caps either — it says only "a moderate budget" — so the baseline's budget constraint measures how often the model's own estimate happens to fall under a number it was not given. `harden-workflow-guardrails` puts the ceiling in the prompt and lets the user set it (design decision 13).
+  - `mixed_language` entries are not distinguished from ordinary ones in the baseline: v0.1.0 reads only the form, whose destination is English for these entries (design decision 23).
+  - 52 of the 73 requests took the retrieval path (confidence < 0.85) and 21 did not; faithfulness is reported separately for the two groups.
 
 | Stage | Metric | Run 1 | Run 2 | Mean |
 | --- | --- | --- | --- | --- |
-| Request parsing | Slot extraction accuracy | N/A (no request parser) | | |
-| Retrieval | Recall@5 | | | |
-| Retrieval | MRR@5 | | | |
-| Generation | Faithfulness (with knowledge context) | | | |
-| Generation | Faithfulness (without knowledge context) | | | |
-| Generation | Constraint satisfaction: days | | | |
-| Generation | Constraint satisfaction: budget | | | |
-| Generation | Constraint satisfaction: attractions in the destination | | | |
-| Behaviour | Behaviour correctness (overall) | | | |
-| Behaviour | Behaviour correctness (`out_of_scope`) | | | |
-| Behaviour | Behaviour correctness (`contradictory`) | | | |
-| Behaviour | Behaviour correctness (`mixed_language`) | | | |
-| Behaviour | Behaviour correctness (`prompt_injection`) | | | |
-| System | Format pass rate | | | |
-| System | Retry rate | | | |
-| System | Error rate | | | |
-| System | End-to-end latency p50 / p95 | | | |
-| System | Cost per request (generation + embedding) | | | |
-| — | Judge cost (reported separately) | | | |
-| — | Judge–human agreement rate (sample size) | | | |
+| Request parsing | Slot extraction accuracy | N/A (no request parser) | N/A | N/A |
+| Retrieval | Recall@5 (54 labelled entries) | 0.951 | 0.951 | 0.951 |
+| Retrieval | MRR@5 | 0.884 | 0.884 | 0.884 |
+| Generation | Faithfulness (with knowledge context) | 22.2% (214 / 962 claims) | 23.8% (219 / 919) | 23.0% |
+| Generation | Faithfulness (without knowledge context) | 0.0% (0 / 475) | 0.0% (0 / 462) | 0.0% |
+| Generation | Constraint satisfaction: days | 100.0% | 100.0% | 100.0% |
+| Generation | Constraint satisfaction: budget (52 capped entries) | 57.7% (30 / 52) | 61.5% (32 / 52) | 59.6% |
+| Generation | Constraint satisfaction: attractions in the destination | 91.8% (67 / 73) | 90.4% (66 / 73) | 91.1% |
+| Behaviour | Behaviour correctness (overall) | 74.0% | 74.0% | 74.0% |
+| Behaviour | Behaviour correctness (`out_of_scope`) | 0.0% | 0.0% | 0.0% |
+| Behaviour | Behaviour correctness (`contradictory`) | 0.0% | 0.0% | 0.0% |
+| Behaviour | Behaviour correctness (`underspecified`) | 0.0% | 0.0% | 0.0% |
+| Behaviour | Behaviour correctness (`prompt_injection`) | 0.0% | 0.0% | 0.0% |
+| Behaviour | Behaviour correctness (`mixed_language`) | 100.0% | 100.0% | 100.0% |
+| Behaviour | Behaviour correctness (`chinese_destination`) | 100.0% | 100.0% | 100.0% |
+| System | Format pass rate | 100.0% | 100.0% | 100.0% |
+| System | Retry rate | 0.0% | 0.0% | 0.0% |
+| System | Error rate | 0.0% | 0.0% | 0.0% |
+| System | End-to-end latency p50 / p95 | 4.56 s / 5.47 s | 4.51 s / 5.54 s | 4.54 s / 5.51 s |
+| System | Mean step latency: `generate` / `cag_match` / `rag_retrieve` | 3227 / 643 / 639 ms | 3260 / 649 / 646 ms | 3244 / 646 / 643 ms |
+| System | Cost per request (generation + embedding) | $0.00118 | $0.00118 | $0.00118 |
+| — | Judge cost (reported separately) | $0.148 | $0.144 | $0.146 |
+| — | Judge–human agreement: faithfulness, judge-supported claims | 98.8% (82) | not calibrated | — |
+| — | Judge–human agreement: faithfulness, judge-unsupported claims | 96.9% (98) | not calibrated | — |
+| — | Judge claim extraction precision (missed claims, lower bound) | 97.8% of 184 (10 missed) | not calibrated | — |
+| — | Judge–human agreement: destination, judge-in places | 100.0% (80) | not calibrated | — |
+| — | Judge–human agreement: destination, judge-out places | 88.9% (9) | not calibrated | — |
+
+- **Conclusion**: v0.1.0 produces a well-formed itinerary of the right length for every request (format pass 100%, retry 0%, error 0%), including the 19 it should refuse or clarify, so behaviour correctness is exactly the share of `plan` entries (54 / 73). On the 13-document corpus retrieval finds nearly every labelled section (Recall@5 0.951), but even with that context only about a quarter of the itineraries' specific claims are supported by it; the 21 requests on the high-confidence path get no context at all. About 40% of capped itineraries exceed the per-person budget cap.
+- **Surprises or problems**:
+  - Faithfulness v1 checks four kinds of claims (opening hours, prices, named places, transport routes and durations). Activities at a place are not among them, so an invented activity at a real place ("swim with dolphins at Bondi") counts as a supported `named_place` claim when the place is in the context. The baseline faithfulness numbers carry this limitation; Seasonal statements ("the best months for X") are not a kind either. `rebuild-rag` adds `activity` and `season` kinds in a new judge prompt version and re-judges this baseline with it from the stored results.
+  - The budget constraint checks only an upper bound on the model's own cost estimates, which nothing grounds (the corpus has no prices): an unrealistically low estimate passes, and the 21 `luxury` itineraries are not checked at all (e007: 6,500–12,000 AUD per person per day). Nor does anything check that a day's plan fits in a day (e007 day 2: helicopter Perth–Margaret River and back, vineyard tour, coastal drive and spa). Both are recorded under roadmap item 4 (plausible costs, feasible days).
+  - Over budget (run 1: 22 of 52 capped itineraries; run 2: 20). Most are `moderate` itineraries a little over the 200 AUD cap (206–400 AUD per person per day in run 1). The extreme cases are requests that should not have been planned: e049 (`contradictory`, a budget trip with a five-star hotel and a chauffeur, 5,333 AUD per day) and e053 (`prompt_injection`, 3,000 AUD per day). Of the 22 in run 1, 10 are refuse / clarify entries.
+  - Out of destination. Most cases come from the knowledge context rather than from the model: the corpus document on Indigenous walking tours lists tours in several states, it is retrieved for these requests, and the generator places them in the requested city — Tower Hill / Worn Gundidj (near Warrnambool) in Melbourne trips (e002, e015, e022, e055) and the Yura Malka Cultural Walk in the Ikara-Flinders Ranges in Adelaide trips (e027, e065). These itineraries are faithful to their context and still leave the destination; `rebuild-rag`'s destination filtering targets this. e046 (London, `out_of_scope`) is outside entirely. e017's only "outside" place is Adelaide, which appears only in a tip about buying supplies before the ferry: a judge error (the one judge-out disagreement in the calibration). Destination prompt v1 does not tell scheduled visits from optional suggestions in tips or from background places, which can lower `destination_rate`.
+  - Judge calibration (run 1; 20 itineraries plus 6 checked for destination only, every stratum above the 0.8 minimum). The judge's mistakes were mostly name matches the context does not back: "Freycinet Peninsula" supported because the context mentions "Freycinet oysters" (e062), and stricter readings than a human's on durations and seasons the context does state (e050 "1 hour north to Yanchep", e009 barramundi season). The review rules agreed while scoring are in `docs/evaluation.md` ("Review questions"). Missed claims (10) are a lower bound: only claims a reviewer noticed are recorded.
+- **Cost**: 4.5 s per request end to end, 3.2 s of it in the Gemini generation call; $0.00118 per request. A full run takes about 12 minutes with judge concurrency 8.
 
 ### rebuild-rag: step-by-step retrieval comparison
 
@@ -134,7 +154,11 @@ Every modification of `eval/thresholds.yaml` must be recorded here.
 
 | Date | Change | Metric | Old threshold | New threshold | Reason |
 | --- | --- | --- | --- | --- | --- |
-| — | `build-evaluation-harness` | (initial setting) | — | — | Set from the v0.1.0 baseline, with a margin |
+| 2026-10-26 | `build-evaluation-harness` | `format_pass_rate` (min) | — | 0.9 | Initial setting. Both clean v0.1.0 smoke runs (`20261026T105704Z-v010-baseline-smoke`, `20261026T114334Z-v010-baseline-smoke`) scored 1.0; loosened by one of 10 entries |
+| 2026-10-26 | `build-evaluation-harness` | `trip_length_rate` (min) | — | 0.9 | Initial setting. Both smoke runs 1.0; loosened by one of 10 planned itineraries |
+| 2026-10-26 | `build-evaluation-harness` | `budget_rate` (min) | — | 0.375 | Initial setting. Both smoke runs 0.5; loosened by one of 8 capped itineraries (0.125) |
+| 2026-10-26 | `build-evaluation-harness` | `recall_at_5` (min) | — | 0.809 | Initial setting. Both smoke runs 0.952; loosened by one of 7 labelled entries (1/7 ≈ 0.143) |
+| 2026-10-26 | `build-evaluation-harness` | `error_rate` (max) | — | 0.1 | Initial setting. Both smoke runs 0.0; loosened by one of 10 requests |
 
 ---
 
