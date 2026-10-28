@@ -1,4 +1,71 @@
+## MODIFIED Requirements
+
+### Requirement: Generate endpoint
+The system SHALL expose `POST /generate`, accepting a JSON body with the required fields `destination`, `trip_length`, `budget`, and `travel_style`, an optional numeric field `max_daily_budget_aud`, and an optional integer query parameter `template_version`. The system SHALL respond with `Content-Type: text/event-stream`.
+
+#### Scenario: Valid request
+- **WHEN** a client posts `{"destination": "Sydney", "trip_length": 5, "budget": "moderate", "travel_style": "family"}`
+- **THEN** the response status is 200
+- **AND** the body is an SSE stream whose `data` lines are JSON step events
+
+#### Scenario: Invalid request body
+- **WHEN** a required field is missing, `trip_length` is less than 1, `budget` is not one of `budget`, `moderate`, `luxury`, `destination` / `travel_style` is blank, or `max_daily_budget_aud` is present and not a number greater than 0
+- **THEN** the response status is 422
+- **AND** the workflow is not executed
+
+#### Scenario: Template version override is forwarded
+- **WHEN** a client posts to `/generate?template_version=2`
+- **THEN** the value `2` is passed to the workflow as `template_version` and used by the generate step
+
+#### Scenario: Request with a budget amount
+- **WHEN** a client posts a valid body that also contains `"max_daily_budget_aud": 150`
+- **THEN** the response status is 200 and the amount is available to the generate and validate_output steps
+
+### Requirement: Intake normalisation
+The intake step SHALL validate the request with the `TravelRequest` model and SHALL emit the normalised fields: `destination` stripped of surrounding whitespace and lowercased, `trip_length` as an integer of at least 1, `budget` as one of `budget` / `moderate` / `luxury`, `travel_style` stripped of surrounding whitespace but otherwise kept as free text, and `max_daily_budget_aud` as a number greater than 0, or `null` when absent. Unknown extra fields SHALL be ignored.
+
+#### Scenario: Destination is normalised
+- **WHEN** the request has `destination` = `"  Sydney "`
+- **THEN** the intake event `data.destination` is `"sydney"`
+
+#### Scenario: Extra fields are ignored
+- **WHEN** the request body contains an unrecognised field
+- **THEN** the field is dropped and validation still succeeds
+
+#### Scenario: No budget amount
+- **WHEN** the request has no `max_daily_budget_aud`
+- **THEN** the intake event `data.max_daily_budget_aud` is `null`
+
 ## ADDED Requirements
+
+### Requirement: Daily budget ceiling
+A request's daily budget ceiling, in AUD per person per day excluding accommodation, SHALL be its `max_daily_budget_aud` when present, otherwise the configured default for its budget level, and SHALL be absent for a level without a configured default (`luxury`). The generate step, the budget ceiling rule and the evaluation harness SHALL all use this definition.
+
+#### Scenario: Level default
+- **WHEN** a `moderate` request has no `max_daily_budget_aud`
+- **THEN** its daily ceiling is the configured `moderate` default
+
+#### Scenario: Amount for a luxury trip
+- **WHEN** a `luxury` request has `max_daily_budget_aud` = 1500
+- **THEN** its daily ceiling is 1500
+
+#### Scenario: Luxury without an amount
+- **WHEN** a `luxury` request has no `max_daily_budget_aud`
+- **THEN** it has no daily ceiling
+
+### Requirement: Budget amount and level together
+A budget amount that seems to disagree with the budget level SHALL NOT cause a rejection: the amount sets the ceiling and the level still describes the travel style.
+
+#### Scenario: Amount above the level default
+- **WHEN** a `budget` request has `max_daily_budget_aud` = 500
+- **THEN** the request is accepted and its daily ceiling is 500
+
+### Requirement: Budget amount in the form
+The frontend SHALL offer an optional input for the daily budget per person (AUD, excluding accommodation) and SHALL send it as `max_daily_budget_aud` only when the user fills it in.
+
+#### Scenario: Amount left blank
+- **WHEN** the user leaves the budget amount empty
+- **THEN** the request body has no `max_daily_budget_aud`
 
 ### Requirement: Out-of-scope destination guard
 Before the workflow starts, `POST /generate` SHALL look up the normalised destination in the Australian place list `data/places/australia.tsv`, which maps each accepted name (English names and common Chinese names) to a canonical lowercase English name. A match SHALL replace the destination with its canonical name; no match SHALL be rejected with 422 and the reason code `destination_out_of_scope`, without calling any external API.
