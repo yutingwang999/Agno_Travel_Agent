@@ -483,3 +483,69 @@ def test_build_correction_prompt_leaves_json_braces_intact():
     )
 
     assert '{\n  "destination": string\n}' in result
+
+
+# ---------------------------------------------------------------------------
+# Upstream generation failure and correction call failure
+# ---------------------------------------------------------------------------
+
+_ENV = {"DATABASE_URL": "postgresql://fake", "GEMINI_API_KEY": "k"}
+
+
+def test_upstream_generation_failure_skips_parsing_and_llm():
+    """Generate event is an error: emit "Generation failed upstream", no correction call."""
+    from agno.workflow.types import StepInput, StepOutput
+
+    from app.workflow.steps.validate_output import validate_output_executor
+
+    generate_error = json.dumps(
+        {
+            "session_id": "s",
+            "step": "generate",
+            "status": "error",
+            "timestamp": "2024-01-01T00:00:00+00:00",
+            "data": {},
+            "error": "LLM call failed: ServerError",
+        }
+    )
+    step_input = StepInput(
+        additional_data={"session_id": "s"},
+        previous_step_outputs={"generate": StepOutput(step_name="generate", content=generate_error)},
+    )
+
+    with (
+        patch("app.workflow.steps.validate_output._call_llm") as mock_llm,
+        patch("app.workflow.steps.validate_output.resolve_template") as mock_resolve,
+        patch("app.workflow.steps.validate_output.write_trace") as mock_trace,
+        patch.dict("os.environ", _ENV),
+    ):
+        event = json.loads(validate_output_executor(step_input).content)
+
+    assert event["status"] == "error"
+    assert event["error"] == "Generation failed upstream"
+    assert event["data"] == {"degraded_mode": True}
+    mock_llm.assert_not_called()
+    mock_resolve.assert_not_called()
+    assert mock_trace.call_args.kwargs["error_type"] == "upstream_generation_failed"
+
+
+def test_correction_call_failure_returns_structured_error():
+    """First validation fails and the correction call raises: no exception escapes."""
+    from app.workflow.steps.validate_output import validate_output_executor
+
+    class ServerError(Exception):
+        pass
+
+    with (
+        patch("app.workflow.steps.validate_output.resolve_template", return_value=("Fix: {validation_errors}", 1)),
+        patch("app.workflow.steps.validate_output._call_llm", side_effect=ServerError("quota detail")),
+        patch("app.workflow.steps.validate_output.write_trace") as mock_trace,
+        patch.dict("os.environ", _ENV),
+    ):
+        event = json.loads(validate_output_executor(_make_step_input("not json")).content)
+
+    assert event["status"] == "error"
+    assert event["error"] == "Correction call failed: ServerError"
+    assert event["data"] == {"degraded_mode": True}
+    assert mock_trace.call_args.kwargs["error_type"] == "correction_call_failed"
+    assert mock_trace.call_args.kwargs["degraded_mode"] is True

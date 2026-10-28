@@ -1,11 +1,11 @@
 ## 1. Error handling
 
-- [ ] 1.1 Catch exceptions from `match_category` in `cag_match_executor`, return the empty-data fallback result, and write `error_type="embedding_failed"` to the trace; Verify: a new unit test mocks the embedding call to raise and asserts the event has `status="completed"` and `is_fallback=true`
-- [ ] 1.2 When the template fallback succeeds, update `template_key` so the event and trace record the template actually used; Verify: a unit test mocks the high-confidence template as missing and asserts both the event and the trace show `low_confidence_with_retrieval`
-- [ ] 1.3 Catch exceptions from `_call_llm` in generate, emit a `"LLM call failed: <type>"` error event, and write `error_type="llm_call_failed"` to the trace; Verify: a unit test mocks the LLM to raise and asserts no exception escapes
-- [ ] 1.4 When the generate event is an error, validate_output emits `"Generation failed upstream"` directly; catch exceptions from the correction call and write `error_type="correction_call_failed"` to the trace; Verify: unit tests assert no exception escapes in either case, and in the first case `_call_llm` is not called
-- [ ] 1.5 Fix the docstring of `steps/cag_match.py` (in-memory cosine computation, not a pgvector query) and the comments in `steps/rag_retrieve.py` that mention `source_documents`; Verify: code review
-- [ ] 1.6 Construct `travel_workflow` with `telemetry=False`; add a commented-out `AGNO_TELEMETRY=false` to `.env.example` explaining that it overrides the code for all Agno instances; Verify: a unit test asserts `travel_workflow.telemetry is False`; with the app running and `AGNO_TELEMETRY` unset, a `POST /generate` makes no request to `os-api.agno.com`
+- [x] 1.1 Catch exceptions from `match_category` in `cag_match_executor`, return the empty-data fallback result, and write `error_type="embedding_failed"` to the trace; Verify: a new unit test mocks the embedding call to raise and asserts the event has `status="completed"` and `is_fallback=true`
+- [x] 1.2 When the template fallback succeeds, update `template_key` so the event and trace record the template actually used; Verify: a unit test mocks the high-confidence template as missing and asserts both the event and the trace show `low_confidence_with_retrieval`
+- [x] 1.3 Catch exceptions from `_call_llm` in generate, emit a `"LLM call failed: <type>"` error event, and write `error_type="llm_call_failed"` to the trace; Verify: a unit test mocks the LLM to raise and asserts no exception escapes
+- [x] 1.4 When the generate event is an error, validate_output emits `"Generation failed upstream"` directly; catch exceptions from the correction call and write `error_type="correction_call_failed"` to the trace; Verify: unit tests assert no exception escapes in either case, and in the first case `_call_llm` is not called
+- [x] 1.5 Fix the docstring of `steps/cag_match.py` (in-memory cosine computation, not a pgvector query) and the comments in `steps/rag_retrieve.py` that mention `source_documents`; Verify: code review
+- [x] 1.6 Construct `travel_workflow` with `telemetry=False`; add a commented-out `AGNO_TELEMETRY=false` to `.env.example` explaining that it overrides the code for all Agno instances; Verify: a unit test asserts `travel_workflow.telemetry is False`; with the app running and `AGNO_TELEMETRY` unset, a `POST /generate` makes no request to `os-api.agno.com`
 
 ## 2. Template versions and cost unit
 

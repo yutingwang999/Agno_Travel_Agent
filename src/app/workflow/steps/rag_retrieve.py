@@ -4,13 +4,14 @@ Executed only when ``retrieval_decision`` routes to the retrieval path
 (confidence_score < 0.85).
 
 Embeds the user's travel query using the same Gemini model as the seed
-script and performs a cosine similarity search against
-``source_documents.embedding_vector`` via pgvector.
+script and searches the knowledge base that Agno ``Knowledge`` + ``PgVector``
+manage in the ``ai`` schema (``travel_docs`` by default, see
+:mod:`app.workflow.retrieval_service`).
 
 Writes ``retrieved_context`` (a list of chunk dicts) to the SSE event
 ``data`` field so the ``generate`` step can inject it into the prompt.
 
-Graceful degradation: if the pgvector query or embedding call raises an
+Graceful degradation: if the knowledge-base search or embedding call raises an
 exception, the error is logged and the step continues with an empty
 ``retrieved_context`` list — the workflow never crashes here.
 """
@@ -43,7 +44,7 @@ def _build_query_text(step_input: StepInput) -> str:
         step_input: Agno step input carrying previous step outputs.
 
     Returns:
-        A free-text query string for the pgvector similarity search.
+        A free-text query string for the knowledge-base search.
     """
     destination = _extract_field_from_step(step_input, "intake", "destination")
     travel_style = _extract_field_from_step(step_input, "intake", "travel_style")
@@ -85,7 +86,7 @@ def rag_retrieve_executor(step_input: StepInput) -> StepOutput:
 
     Reads normalised input fields from the ``intake`` step and the matched
     category from the ``cag_match`` step to build a targeted retrieval query.
-    Performs a pgvector cosine similarity search against ``source_documents``
+    Searches the Agno-managed knowledge base (``ai.travel_docs`` by default)
     and writes the results to the SSE event ``data`` field as
     ``retrieved_context``.
 
