@@ -371,7 +371,7 @@ ITINERARY_CATEGORIES = [
 # ---- Prompt templates -------------------------------------------------------
 # Variables available in both templates:
 #   {destination}, {trip_length}, {budget}, {matched_category},
-#   {tone}, {constraints}, {retrieved_context}
+#   {tone}, {constraints}, {retrieved_context}, {daily_budget_ceiling} (from version 3)
 # ---------------------------------------------------------------------------
 
 HIGH_CONFIDENCE_TEMPLATE = """\
@@ -500,6 +500,24 @@ CORRECTION_TEMPLATE_V2 = _insert_before(
     CORRECTION_TEMPLATE, "Return ONLY a corrected valid JSON object", COST_UNIT_SENTENCE
 )
 
+# ---- Version 3: daily budget ceiling (harden-workflow-guardrails) ------------
+# v2 plus one sentence giving the request's daily ceiling, filled by the generate
+# step ("<amount> AUD per person per day, excluding accommodation" or "none set").
+# Generation templates only: a budget rule failure states the numbers to the
+# correction call.
+
+BUDGET_CEILING_SENTENCE = (
+    "Daily budget ceiling: {daily_budget_ceiling}. If a ceiling is set, keep "
+    '"total_estimated_cost_aud" at or below that ceiling multiplied by {trip_length} days.'
+)
+
+HIGH_CONFIDENCE_TEMPLATE_V3 = _insert_after(
+    HIGH_CONFIDENCE_TEMPLATE_V2, COST_UNIT_SENTENCE, BUDGET_CEILING_SENTENCE
+)
+LOW_CONFIDENCE_TEMPLATE_V3 = _insert_after(
+    LOW_CONFIDENCE_TEMPLATE_V2, COST_UNIT_SENTENCE, BUDGET_CEILING_SENTENCE
+)
+
 # Every version ever defined, append-only: a new wording is a new entry, so
 # earlier results stay reproducible with ?template_version=N.
 TEMPLATE_DEFINITIONS = [
@@ -533,13 +551,23 @@ TEMPLATE_DEFINITIONS = [
         "version": 2,
         "template_text": CORRECTION_TEMPLATE_V2,
     },
+    {
+        "template_key": "high_confidence_minimal_context",
+        "version": 3,
+        "template_text": HIGH_CONFIDENCE_TEMPLATE_V3,
+    },
+    {
+        "template_key": "low_confidence_with_retrieval",
+        "version": 3,
+        "template_text": LOW_CONFIDENCE_TEMPLATE_V3,
+    },
 ]
 
 # The version of each key that requests use by default. Seed makes exactly this
 # version active; change the number to upgrade or roll back.
 ACTIVE_TEMPLATE_VERSIONS = {
-    "high_confidence_minimal_context": 2,
-    "low_confidence_with_retrieval": 2,
+    "high_confidence_minimal_context": 3,
+    "low_confidence_with_retrieval": 3,
     "validate_output_correction": 2,
 }
 

@@ -370,7 +370,7 @@ rag_retrieve_executor
 
 ### Seeding the knowledge base
 
-`scripts/seed.py` inserts itinerary categories, every version of the 3 prompt templates (including the correction template for validate_output; version 2 states that all costs are AUD per person, excluding accommodation), and 13 Australian travel documents into the knowledge base using `knowledge.insert()`:
+`scripts/seed.py` inserts itinerary categories, every version of the 3 prompt templates (including the correction template for validate_output; version 2 states that all costs are AUD per person, excluding accommodation, and version 3 of the two generation templates adds the daily budget ceiling), and 13 Australian travel documents into the knowledge base using `knowledge.insert()`:
 
 ```bash
 python scripts/dev.py seed
