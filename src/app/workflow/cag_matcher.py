@@ -37,6 +37,21 @@ class MatchResult:
     is_fallback: bool
 
 
+def empty_fallback() -> MatchResult:
+    """Return the default category with zero confidence.
+
+    Used when there is nothing to match against (no rows, or no row has an
+    embedding) and by the cag_match step when embedding or loading fails.
+    """
+    return MatchResult(
+        category_key=DEFAULT_CATEGORY_KEY,
+        confidence_score=0.0,
+        tone="friendly and helpful",
+        constraints="",
+        is_fallback=True,
+    )
+
+
 def _compute_embedding(text: str, api_key: str, model: str) -> list[float]:
     """Return a 768-dimensional embedding for *text* via the Gemini API."""
     client = genai.Client(api_key=api_key)
@@ -94,13 +109,7 @@ def match_category(
         categories = list(session.scalars(select(ItineraryCategory)).all())
 
     if not categories:
-        return MatchResult(
-            category_key=DEFAULT_CATEGORY_KEY,
-            confidence_score=0.0,
-            tone="friendly and helpful",
-            constraints="",
-            is_fallback=True,
-        )
+        return empty_fallback()
 
     # Compute cosine similarity in-process against every loaded category.
     best_category: ItineraryCategory | None = None
@@ -116,13 +125,7 @@ def match_category(
 
     if best_category is None:
         # All rows had null embeddings — return a generic fallback.
-        return MatchResult(
-            category_key=DEFAULT_CATEGORY_KEY,
-            confidence_score=0.0,
-            tone="friendly and helpful",
-            constraints="",
-            is_fallback=True,
-        )
+        return empty_fallback()
 
     if best_similarity < MINIMUM_SIMILARITY:
         # Best match is below the minimum acceptable threshold.

@@ -246,6 +246,8 @@ def generate_executor(step_input: StepInput) -> StepOutput:
                     db_url=db_url,
                     version=template_version_override,
                 )
+                # Report the template actually used, in the event and the trace.
+                template_key = fallback_key
             else:
                 raise TemplateNotFoundError(
                     f"No active template found for template_key={template_key!r}"
@@ -280,12 +282,34 @@ def generate_executor(step_input: StepInput) -> StepOutput:
     }
     resolved_prompt: str = _format_template(template_text, variables)
 
-    # Call the LLM with the fully resolved prompt
-    llm_result = _call_llm(
-        prompt=resolved_prompt,
-        api_key=api_key,
-        model=llm_model,
-    )
+    # Call the LLM with the fully resolved prompt.  Only the exception type goes
+    # into the event; the full message stays in the log.
+    try:
+        llm_result = _call_llm(
+            prompt=resolved_prompt,
+            api_key=api_key,
+            model=llm_model,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("generate: LLM call failed")
+        latency_ms = (time.monotonic() - start) * 1000
+        write_trace(
+            db_url=db_url,
+            session_id=session_id,
+            step_name="generate",
+            status="error",
+            latency_ms=latency_ms,
+            prompt_template_key=template_key,
+            prompt_template_version=template_version,
+            error_type="llm_call_failed",
+        )
+        error_event = build_sse_event(
+            session_id=session_id,
+            step="generate",
+            status="error",
+            error=f"LLM call failed: {type(exc).__name__}",
+        )
+        return StepOutput(content=sse_event_to_json(error_event))
     raw_llm_output: str = llm_result.text
 
     sse_event = build_sse_event(

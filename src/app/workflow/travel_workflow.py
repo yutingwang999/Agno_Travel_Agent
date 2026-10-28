@@ -29,6 +29,9 @@ from app.workflow.steps import (
 travel_workflow = Workflow(
     name="travel-itinerary-planner",
     description="AI-powered travel itinerary planning using CAG + RAG",
+    # Agno sends a run event to os-api.agno.com unless this is off; the
+    # AGNO_TELEMETRY environment variable, when set, overrides it.
+    telemetry=False,
     steps=[
         # Step 1: validate and normalise input
         Step(name="intake", executor=intake_executor),

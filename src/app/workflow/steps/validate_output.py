@@ -14,6 +14,10 @@ On second failure (retry also fails):
     - Does NOT raise an unhandled exception.
 
 Valid output is passed through unchanged with ``degraded_mode=False``.
+
+If the generate step already failed, or the correction call itself raises, the
+step emits a structured error (``degraded_mode=True``) without validating or
+retrying.
 """
 
 import json
@@ -54,6 +58,17 @@ def _extract_raw_llm_output(step_input: StepInput) -> str:
         return str(event.get("data", {}).get("raw_llm_output", ""))
     except (json.JSONDecodeError, TypeError):
         return ""
+
+
+def _generate_failed(step_input: StepInput) -> bool:
+    """Return True when the generate step emitted an event with ``status="error"``."""
+    content = step_input.get_step_content("generate")
+    if content is None:
+        return False
+    try:
+        return json.loads(content).get("status") == "error"
+    except (json.JSONDecodeError, TypeError, AttributeError):
+        return False
 
 
 def _build_correction_prompt(
@@ -132,6 +147,28 @@ def validate_output_executor(step_input: StepInput) -> StepOutput:
     start = time.monotonic()
 
     # ------------------------------------------------------------------ #
+    # Generation already failed — nothing to validate or correct           #
+    # ------------------------------------------------------------------ #
+    if _generate_failed(step_input):
+        sse_event = build_sse_event(
+            session_id=session_id,
+            step="validate_output",
+            status="error",
+            data={"degraded_mode": True},
+            error="Generation failed upstream",
+        )
+        write_trace(
+            db_url=os.environ.get("DATABASE_URL", ""),
+            session_id=session_id,
+            step_name="validate_output",
+            status="error",
+            latency_ms=(time.monotonic() - start) * 1000,
+            degraded_mode=True,
+            error_type="upstream_generation_failed",
+        )
+        return StepOutput(content=sse_event_to_json(sse_event))
+
+    # ------------------------------------------------------------------ #
     # First validation attempt                                             #
     # ------------------------------------------------------------------ #
     validated_output, first_errors = parse_llm_output(raw_llm_output)
@@ -206,11 +243,31 @@ def validate_output_executor(step_input: StepInput) -> StepOutput:
         validation_errors=first_errors,
     )
 
-    retry_result = _call_llm(
-        prompt=correction_prompt,
-        api_key=api_key,
-        model=llm_model,
-    )
+    try:
+        retry_result = _call_llm(
+            prompt=correction_prompt,
+            api_key=api_key,
+            model=llm_model,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("validate_output: correction call failed (session_id=%r)", session_id)
+        sse_event = build_sse_event(
+            session_id=session_id,
+            step="validate_output",
+            status="error",
+            data={"degraded_mode": True},
+            error=f"Correction call failed: {type(exc).__name__}",
+        )
+        write_trace(
+            db_url=db_url,
+            session_id=session_id,
+            step_name="validate_output",
+            status="error",
+            latency_ms=(time.monotonic() - start) * 1000,
+            degraded_mode=True,
+            error_type="correction_call_failed",
+        )
+        return StepOutput(content=sse_event_to_json(sse_event))
     retry_raw_output: str = retry_result.text
 
     retry_output, retry_errors = parse_llm_output(retry_raw_output)

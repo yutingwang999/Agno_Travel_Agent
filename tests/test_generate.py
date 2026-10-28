@@ -562,3 +562,80 @@ def test_generate_executor_no_version_override_passes_none_to_resolve_template()
     assert resolve_calls[0] is None, (
         f"Expected version=None when no override, got {resolve_calls[0]!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Template fallback and LLM failure (harden-workflow-guardrails)
+# ---------------------------------------------------------------------------
+
+_ENV = {"DATABASE_URL": "postgresql://fake", "GEMINI_API_KEY": "k"}
+_HIGH_CONFIDENCE_CAG = {"matched_category": "family", "confidence_score": 0.90, "tone": "friendly", "constraints": ""}
+
+
+def test_fallback_template_recorded_in_event_and_trace():
+    """High-confidence template missing: the low-confidence template is reported as used."""
+    from app.workflow.steps.generate import generate_executor
+    from app.workflow.template_resolver import TemplateNotFoundError
+
+    def fake_resolve(template_key, db_url, version=None):
+        if template_key == "high_confidence_minimal_context":
+            raise TemplateNotFoundError(template_key)
+        return ("Plan a trip to {destination}.", 1)
+
+    with (
+        patch("app.workflow.steps.generate.resolve_template", side_effect=fake_resolve),
+        patch("app.workflow.steps.generate._call_llm", return_value=LLMResult('{"ok": true}')),
+        patch("app.workflow.steps.generate.write_trace") as mock_trace,
+        patch.dict("os.environ", _ENV),
+    ):
+        event = json.loads(generate_executor(_make_step_input(cag_data=_HIGH_CONFIDENCE_CAG)).content)
+
+    assert event["status"] == "completed"
+    assert event["data"]["prompt_template_key"] == "low_confidence_with_retrieval"
+    assert event["data"]["prompt_template_version"] == 1
+    assert mock_trace.call_args.kwargs["prompt_template_key"] == "low_confidence_with_retrieval"
+    assert mock_trace.call_args.kwargs["prompt_template_version"] == 1
+
+
+def test_template_table_empty_names_selected_key_and_skips_llm():
+    """No template at all: error event naming the selected key, LLM not called."""
+    from app.workflow.steps.generate import generate_executor
+    from app.workflow.template_resolver import TemplateNotFoundError
+
+    with (
+        patch("app.workflow.steps.generate.resolve_template", side_effect=TemplateNotFoundError("x")),
+        patch("app.workflow.steps.generate._call_llm") as mock_llm,
+        patch("app.workflow.steps.generate.write_trace") as mock_trace,
+        patch.dict("os.environ", _ENV),
+    ):
+        event = json.loads(generate_executor(_make_step_input(cag_data=_HIGH_CONFIDENCE_CAG)).content)
+
+    assert event["status"] == "error"
+    assert event["error"] == "No active template found for key 'high_confidence_minimal_context'"
+    mock_llm.assert_not_called()
+    assert mock_trace.call_args.kwargs["status"] == "error"
+
+
+def test_llm_call_failure_emits_error_event_without_raising():
+    """Gemini raises: error event with the exception type only, trace llm_call_failed."""
+    from app.workflow.steps.generate import generate_executor
+
+    class ServerError(Exception):
+        pass
+
+    with (
+        patch("app.workflow.steps.generate.resolve_template", return_value=("Plan a trip to {destination}.", 3)),
+        patch("app.workflow.steps.generate._call_llm", side_effect=ServerError("500 secret upstream detail")),
+        patch("app.workflow.steps.generate.write_trace") as mock_trace,
+        patch.dict("os.environ", _ENV),
+    ):
+        event = json.loads(generate_executor(_make_step_input(cag_data=_HIGH_CONFIDENCE_CAG)).content)
+
+    assert event["status"] == "error"
+    assert event["error"] == "LLM call failed: ServerError"
+    assert "secret upstream detail" not in json.dumps(event)
+    trace = mock_trace.call_args.kwargs
+    assert trace["status"] == "error"
+    assert trace["error_type"] == "llm_call_failed"
+    assert trace["prompt_template_key"] == "high_confidence_minimal_context"
+    assert trace["prompt_template_version"] == 3

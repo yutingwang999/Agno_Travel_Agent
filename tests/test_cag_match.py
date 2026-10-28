@@ -231,6 +231,47 @@ def test_cag_match_executor_no_exception_on_zero_confidence(monkeypatch):
     assert json.loads(output.content)["status"] == "completed"
 
 
+def test_cag_match_executor_falls_back_when_embedding_fails(monkeypatch):
+    """Gemini embedding call fails: default category, completed event, trace error_type."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql://test:test@localhost/test")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    with patch(
+        "app.workflow.cag_matcher._compute_embedding",
+        side_effect=RuntimeError("503 UNAVAILABLE"),
+    ), patch("app.workflow.steps.cag_match.write_trace") as mock_trace:
+        from app.workflow.steps.cag_match import cag_match_executor
+
+        output = cag_match_executor(_make_step_input())
+
+    event = json.loads(output.content)
+    assert event["status"] == "completed"
+    assert event["data"] == {
+        "matched_category": "family",
+        "confidence_score": 0.0,
+        "tone": "friendly and helpful",
+        "constraints": "",
+        "is_fallback": True,
+    }
+    assert mock_trace.call_args.kwargs["status"] == "completed"
+    assert mock_trace.call_args.kwargs["error_type"] == "embedding_failed"
+
+
+def test_cag_match_executor_trace_has_no_error_type_on_success(monkeypatch):
+    """A normal match writes no error_type."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql://test:test@localhost/test")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    with patch(
+        "app.workflow.steps.cag_match.match_category", return_value=_make_match_result()
+    ), patch("app.workflow.steps.cag_match.write_trace") as mock_trace:
+        from app.workflow.steps.cag_match import cag_match_executor
+
+        cag_match_executor(_make_step_input())
+
+    assert mock_trace.call_args.kwargs["error_type"] is None
+
+
 # ---------------------------------------------------------------------------
 # Embedding model consistency — checklist requirement
 # ---------------------------------------------------------------------------
