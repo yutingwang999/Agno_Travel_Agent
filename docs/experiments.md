@@ -32,6 +32,7 @@ This file records the effect of every change that affects quality, behaviour or 
 
 | Date | Change | What changed | Key result | Record |
 | --- | --- | --- | --- | --- |
+| 2026-10-28 | `harden-workflow-guardrails` | (a) per-person AUD cost unit stated in the templates | Within budget 59.6% → 86.5% (`moderate` median per-person day ~220 → 115 AUD); faithfulness with context 20.8% (baseline 22.2% / 23.8%); cost, retries, errors unchanged | [(a) cost unit](#2026-10-28--harden-workflow-guardrails-a--state-the-per-person-aud-cost-unit-in-the-templates) |
 | 2026-10-26 | `build-evaluation-harness` | v0.1.0 baseline | Recall@5 0.951, faithfulness with context 23.0%, within budget 59.6%, behaviour correctness 74.0% (every refuse / clarify entry wrong), p50 4.54 s, $0.00118 per request; judge–human agreement ≥ 88.9% in every stratum | [Baseline](#v010-baseline) |
 
 ---
@@ -74,6 +75,55 @@ Copy the template below, fill it in, and put it at the **top** of the "Records" 
 ---
 
 ## Records
+
+### 2026-10-28 · harden-workflow-guardrails (a) · state the per-person AUD cost unit in the templates
+
+- **What changed**: one sentence added to all three templates (version 2): "All costs are AUD per person, excluding accommodation: "estimated_cost_aud" is what one traveller spends that day, and "total_estimated_cost_aud" is what one traveller spends over the whole trip." Nothing else in the prompts changed. The commit also contains the error handling of task section 1, which changes no output when no call fails (error rate 0% in every run), and the single-active-template migration.
+- **Why**: the v0.1.0 templates never say what a cost covers, while the budget constraint reads costs as per person, excluding accommodation. Step (a) of task 6.3 measures the unit alone, before the ceiling goes into the prompt (b) and before the rules (c).
+- **Runs compared**: `20261026T111928Z-v010-baseline`, `20261026T113131Z-v010-baseline` (baseline runs 1 and 2) → `20261028T131648Z-harden-workflow-guardrails` (one run, `git_dirty = false`). Smoke run on the same commit, for reference: `20261028T131430Z-harden-workflow-guardrails-smoke`.
+- **Run conditions**:
+
+  | Item | Before | After |
+  | --- | --- | --- |
+  | git commit | `54c17c6` | `4c53305` |
+  | Dataset version | v1 (73 entries) | v1 (73 entries) |
+  | Corpus version / knowledge-base table | v1 / `travel_docs_v1` | v1 / `travel_docs_v1` |
+  | Retrieval configuration | v0.1.0 (k = 5) | v0.1.0 (k = 5) |
+  | Generation model / judge model | `gemini-3.1-flash-lite` / `gpt-6-luna` (faithfulness v1, destination v1) | same |
+  | Generation template (key / version) | `high_confidence_minimal_context` v1, `low_confidence_with_retrieval` v1 | `high_confidence_minimal_context` v2, `low_confidence_with_retrieval` v2 |
+  | Price table date | 2026-10-25 | 2026-10-25 |
+
+- **Results**:
+
+  | Metric | Baseline run 1 | Baseline run 2 | (a) | Change vs baseline mean |
+  | --- | --- | --- | --- | --- |
+  | Recall@5 / MRR@5 | 0.951 / 0.884 | 0.951 / 0.884 | 0.951 / 0.884 | — |
+  | Faithfulness (with knowledge context) | 22.2% (214 / 962) | 23.8% (219 / 919) | 20.8% (196 / 944) | −2.2 pp |
+  | Faithfulness (without knowledge context) | 0.0% (0 / 475) | 0.0% (0 / 462) | 0.0% (0 / 445) | — |
+  | Constraint satisfaction: days | 100.0% | 100.0% | 100.0% | — |
+  | Constraint satisfaction: budget (52 capped entries) | 57.7% (30 / 52) | 61.5% (32 / 52) | 86.5% (45 / 52) | +26.9 pp |
+  | Constraint satisfaction: attractions in the destination | 91.8% (67 / 73) | 90.4% (66 / 73) | 97.3% (71 / 73) | +6.2 pp |
+  | Behaviour correctness (overall; every tag) | 74.0% | 74.0% | 74.0% | — |
+  | Format pass / retry / error rate | 100% / 0% / 0% | 100% / 0% / 0% | 100% / 0% / 0% | — |
+  | End-to-end latency p50 / p95 | 4.56 s / 5.47 s | 4.51 s / 5.54 s | 4.32 s / 5.30 s | −0.22 s / −0.21 s |
+  | Mean step latency: `generate` | 3227 ms | 3260 ms | 3097 ms | −147 ms |
+  | Cost per request (generation + embedding) | $0.00118 | $0.00118 | $0.00118 | — |
+  | Judge cost (reported separately) | $0.148 | $0.144 | $0.142 | — |
+
+  Per-person daily cost (`total_estimated_cost_aud` / trip length) by budget level, computed from each run's `results.jsonl`:
+
+  | Level (itineraries) | Cap | Baseline run 1: median / max / over cap | Baseline run 2 | (a) |
+  | --- | --- | --- | --- | --- |
+  | `budget` (18) | 70 | 49 / 5,333 / 3 | 48 / 3,833 / 2 | 40 / 2,417 / 2 |
+  | `moderate` (34) | 200 | 220 / 3,000 / 19 | 217 / 3,250 / 18 | 115 / 2,375 / 5 |
+  | `luxury` (21) | none | 5,114 / 10,571 / — | 4,600 / 14,250 / — | 2,171 / 3,720 / — |
+
+- **Conclusion**: stating the unit alone moves "within budget" from 59.6% (baseline mean) to 86.5%, with no change in cost, retries or errors. The gain is almost all `moderate`: the median per-person day halves (about 220 → 115 AUD) and itineraries over the cap drop from 18–19 to 5. That fits the model having estimated for the whole party before; `luxury` medians also halve (about 4,900 → 2,171). Days stay at 100%. This is one run against two baseline runs; the budget gain (+25 pp over the better baseline run) is far outside the baseline's run-to-run spread (3.8 pp).
+- **Surprises or problems**:
+  - Still over the cap (7): e006, e009, e016, e047 (`moderate`, 215–350 AUD per day), e015 (`budget`, 107), and the two extreme cases from the baseline, e049 (`contradictory`, a budget trip with a five-star hotel and a chauffeur, 2,417 per day) and e053 (`prompt_injection`, 2,375 per day). e015, e047, e049 and e053 are refuse / clarify entries that the input guardrails (section 5) or later changes should stop before planning. The model has not been told the cap yet; step (b) adds it.
+  - Faithfulness with context is 20.8%, 1.4 pp below the lower baseline run (spread between the two baseline runs: 1.6 pp). With one run this is not distinguishable from noise; whether it holds is checked again in (b) and in (c), which runs twice.
+  - Attractions in the destination rose to 97.3% (71 / 73) from 91.8% / 90.4%. Nothing in this change targets it; the out-of-destination cases in the baseline came from the Indigenous walking tours document. Treated as noise until another run repeats it.
+- **Cost**: unchanged at $0.00118 per request; p50 latency 4.32 s, slightly lower, consistent with the `generate` step (−147 ms). Retry rate stays 0%, so the sentence adds no correction calls.
 
 ### v0.1.0 baseline
 
