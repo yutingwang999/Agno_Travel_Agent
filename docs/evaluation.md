@@ -9,6 +9,8 @@ python scripts/dev.py eval-db-setup                                  # once, and
 python scripts/eval_dataset_check.py                                 # dataset format and coverage, no API calls
 python scripts/eval_run.py --config v010-baseline                    # full run (73 entries)
 python scripts/eval_run.py --config v010-baseline --subset smoke     # smoke subset (10 entries)
+python scripts/eval_run.py --config <name> --subset dataset-v1      # the 73 dataset-v1 entries, to compare with the v0.1.0 baseline
+python scripts/eval_run.py --config <name> --subset budget-amount   # the dataset-v2 entries with a budget amount (e074-e079)
 python scripts/eval_compare.py <run id> <run id>                     # Markdown comparison table
 python scripts/eval_gate.py                                          # smoke run + thresholds; non-zero exit on failure
 ```
@@ -55,7 +57,7 @@ Rates are fractions between 0 and 1; `null` means there was nothing to measure (
 | Field | Meaning |
 | --- | --- |
 | `run_id` | `<UTC start time>-<config name>[-<subset>]`; also the directory name |
-| `subset` | `smoke`, `all`, or `entries` (a debugging run with `--entries`) |
+| `subset` | A subset name from `eval/subsets/` (`smoke`, `dataset-v1`, `budget-amount`), `all`, or `entries` (a debugging run with `--entries`) |
 | `entries` | Number of dataset entries sent |
 | `started_at`, `finished_at` | UTC timestamps of the run |
 | `phase_seconds` | Where the run's time went (see below) |

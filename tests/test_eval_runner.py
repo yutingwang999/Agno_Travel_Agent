@@ -241,3 +241,14 @@ def test_run_id_format():
     now = datetime(2026, 10, 26, 9, 5, 0, tzinfo=timezone.utc)
     assert make_run_id("v010-baseline", "smoke", now) == "20261026T090500Z-v010-baseline-smoke"
     assert make_run_id("v010-baseline", None, now) == "20261026T090500Z-v010-baseline"
+
+
+def test_budget_amount_is_sent_with_the_request():
+    """Spec scenario "Amount sent with the request"; absent amounts are not sent."""
+    with_amount = _entry("e1").model_copy(deep=True)
+    with_amount.form.max_daily_budget_aud = 150
+    services, sent = _services([(200, _sse("s1", 2, with_rag=True)), (200, _sse("s2", 2, with_rag=True))])
+    run([with_amount, _entry("e2")], CONFIG, services, PRICING)
+
+    assert sent[0]["max_daily_budget_aud"] == 150
+    assert "max_daily_budget_aud" not in sent[1]
