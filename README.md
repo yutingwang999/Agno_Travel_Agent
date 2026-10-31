@@ -793,6 +793,15 @@ This branch adds a browser UI and a traces read endpoint on top of the completed
 
 ---
 
+## Data sources and licences
+
+| Data | Used for | Source and licence | Details |
+| --- | --- | --- | --- |
+| Australian place list (`data/places/australia.tsv`) | The destination guard: which destinations are accepted, and their canonical English names | Place names from [GeoNames](https://www.geonames.org/) (`cities1000`), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), plus hand-kept lists of states, tourist destinations and Chinese names written for this project. Contains data from GeoNames (https://www.geonames.org/), licensed under CC BY 4.0. Modified: only Australian places are used, names are lowercased, and the list is combined with hand-kept lists written for this project. | [data/places/SOURCES.md](data/places/SOURCES.md) |
+| Knowledge base, corpus v1 (13 documents in `scripts/seed.py`) | RAG context for generation | Short handwritten summaries written for v0.1.0. To be replaced in `rebuild-rag` by openly licensed sources (mainly Wikivoyage, CC BY-SA), each listed here with its licence | `scripts/seed.py` (`SOURCE_DOCUMENTS`) |
+
+---
+
 ## Design Docs
 
 - [DESIGN.md](docs/DESIGN.md) — data model, workflow steps, SSE contract, prompt strategy

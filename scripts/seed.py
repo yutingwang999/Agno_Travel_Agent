@@ -572,6 +572,7 @@ ACTIVE_TEMPLATE_VERSIONS = {
 }
 
 # ---- Source documents -------------------------------------------------------
+# Handwritten for v0.1.0; corpus v1 is replaced in rebuild-rag.
 # ---------------------------------------------------------------------------
 
 SOURCE_DOCUMENTS = []  # corpus kept private
