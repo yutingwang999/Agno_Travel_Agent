@@ -16,8 +16,8 @@
 
 ## 3. Structured output
 
-- [ ] 3.1 Experiment: call Gemini with a `response_schema` generated from the current `ItineraryOutput` and confirm what is supported; Verify: record the conclusion under decision 4 in design.md
-- [ ] 3.2 Both generate and the correction call request JSON + schema; keep the code-fence stripping logic as a fallback; Verify: unit tests assert the request parameters include the schema
+- [x] 3.1 Experiment: call Gemini with a `response_schema` generated from the current `ItineraryOutput` and confirm what is supported; Verify: record the conclusion under decision 4 in design.md
+- [x] 3.2 Both generate and the correction call request JSON + schema; keep the code-fence stripping logic as a fallback; Verify: unit tests assert the request parameters include the schema
 
 ## 4. Business rules
 

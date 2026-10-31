@@ -30,7 +30,7 @@ from agno.workflow.types import StepInput, StepOutput
 from google import genai
 
 from app.workflow.llm_usage import LLMResult, result_from_response
-from app.workflow.output_validator import parse_llm_output
+from app.workflow.output_validator import STRUCTURED_OUTPUT_CONFIG, parse_llm_output
 from app.workflow.sse import build_sse_event, sse_event_to_json
 from app.workflow.template_resolver import TemplateNotFoundError, resolve_template
 from app.workflow.trace_logger import write_trace
@@ -117,6 +117,7 @@ def _call_llm(prompt: str, api_key: str, model: str) -> LLMResult:
     response = client.models.generate_content(
         model=model,
         contents=prompt,
+        config=STRUCTURED_OUTPUT_CONFIG,
     )
     return result_from_response(response)
 
