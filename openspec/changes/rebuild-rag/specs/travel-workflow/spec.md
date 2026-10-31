@@ -31,6 +31,16 @@ The system SHALL expose `POST /generate`, accepting a JSON body with the require
 - **WHEN** a client posts a valid body that also contains `"notes": "kids love animals"`
 - **THEN** the response status is 200 and the notes are available to the retrieval and generate steps
 
+#### Scenario: Trip too long
+- **WHEN** a client posts a valid body except that `trip_length` is `15`
+- **THEN** the response status is 422 with a field validation error and no `reason`
+- **AND** the workflow is not executed
+
+#### Scenario: Fractional budget amount
+- **WHEN** a client posts a valid body that also contains `"max_daily_budget_aud": 85.5`
+- **THEN** the response status is 422
+- **AND** the workflow is not executed
+
 ### Requirement: Intake normalisation
 The intake step SHALL validate the request with the `TravelRequest` model and SHALL emit the normalised fields: `destination` stripped of surrounding whitespace and lowercased, `trip_length` as an integer from 1 to 14, `budget` as one of `budget` / `moderate` / `luxury`, `travel_style` stripped of surrounding whitespace but otherwise kept as free text, `max_daily_budget_aud` as an integer of at least 1, or `null` when absent, and `notes` stripped of surrounding whitespace, at most 500 characters, and `null` when absent or blank. Unknown extra fields SHALL be ignored.
 
