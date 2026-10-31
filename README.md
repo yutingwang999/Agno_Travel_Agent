@@ -444,11 +444,18 @@ Step 6 (`validate_output`) parses `raw_llm_output` from the generate step agains
 validate_output_executor
   ├── _extract_raw_llm_output(step_input)
   │     └── reads raw_llm_output from generate SSE event
-  ├── parse_llm_output(raw_text)                        [attempt 1]
-  │     ├── strip markdown fences (```json … ```)
+  ├── _build_validation_context(step_input)
+  │     └── requested trip_length + daily budget ceiling (intake event),
+  │         knowledge context = chunk_text of every rag_retrieve chunk
+  ├── parse_llm_output(raw_text, context)               [attempt 1]
+  │     ├── strip markdown fences (```json … ```)       (fallback; Gemini returns plain JSON)
   │     ├── json.loads(cleaned_text)
   │     ├── ItineraryOutput.model_validate(data)
-  │     └── content guardrail: len(daily_itinerary) == trip_length_days
+  │     └── business rules (business_rules.py), every failure reported:
+  │           ├── day count: internally consistent and equal to the requested trip_length
+  │           ├── cost: daily costs add up to the total (± max(1 AUD, 1%))
+  │           ├── budget: total ≤ daily ceiling × days (per person, excl. accommodation)
+  │           └── unsupported: opening hours and prices in the text must be in the knowledge context
   │
   ├── [success] → emit SSE with itinerary + degraded_mode=False
   │
@@ -456,7 +463,7 @@ validate_output_executor
         ├── resolve_template("validate_output_correction", db_url)
         ├── _build_correction_prompt(template, raw_output, errors)
         ├── _call_llm(correction_prompt, ...)
-        ├── parse_llm_output(retry_output)              [attempt 2]
+        ├── parse_llm_output(retry_output, context)     [attempt 2]
         ├── [success] → emit SSE with itinerary + degraded_mode=True
         └── [failure] → emit SSE status="error" + degraded_mode=True
                         (no unhandled exception)
@@ -752,7 +759,7 @@ Values `"budget"`, `"moderate"`, `"luxury"` are now enforced at the Pydantic lay
 `POST /generate` accepts an optional `template_version` query parameter. When set, `resolve_template` fetches that specific version instead of the active one — enabling reproducibility and A/B testing without changing the database. The version is propagated through `additional_data` to `generate_executor`.
 
 **Content-level output guardrail**:  
-`parse_llm_output` now checks that `len(daily_itinerary) == trip_length_days` after Pydantic schema validation. A mismatch triggers the existing retry mechanism in `validate_output_executor` — no extra code path needed.
+`parse_llm_output` now checks that `len(daily_itinerary) == trip_length_days` after Pydantic schema validation. A mismatch triggers the existing retry mechanism in `validate_output_executor` — no extra code path needed. (`harden-workflow-guardrails` extends this into a list of business rules; see "How it works" under validate_output.)
 
 **Seed script robustness fix**:  
 `scripts/seed.py` detects when `travel_docs` exists but is missing the `embedding` column (caused by a partial or legacy seed run) and drops + recreates the table before inserting documents.

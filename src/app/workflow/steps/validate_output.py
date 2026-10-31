@@ -29,6 +29,8 @@ import time
 from agno.workflow.types import StepInput, StepOutput
 from google import genai
 
+from app.workflow.budget import daily_budget_ceiling
+from app.workflow.business_rules import ValidationContext
 from app.workflow.llm_usage import LLMResult, result_from_response
 from app.workflow.output_validator import STRUCTURED_OUTPUT_CONFIG, parse_llm_output
 from app.workflow.sse import build_sse_event, sse_event_to_json
@@ -69,6 +71,46 @@ def _generate_failed(step_input: StepInput) -> bool:
         return json.loads(content).get("status") == "error"
     except (json.JSONDecodeError, TypeError, AttributeError):
         return False
+
+
+def _step_data(step_input: StepInput, step_name: str) -> dict | None:
+    """Return the ``data`` of a completed upstream event, or None if unavailable."""
+    content = step_input.get_step_content(step_name)
+    if content is None:
+        return None
+    try:
+        event = json.loads(content)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(event, dict) or event.get("status") != "completed":
+        return None
+    data = event.get("data")
+    return data if isinstance(data, dict) else None
+
+
+def _build_validation_context(step_input: StepInput) -> ValidationContext:
+    """Collect what the business rules need from the intake and rag_retrieve events.
+
+    The requested trip length and the daily budget ceiling come from the intake
+    event (unknown if it cannot be read).  The knowledge context is the
+    ``chunk_text`` of every retrieved chunk, or "" when retrieval did not run.
+    """
+    intake = _step_data(step_input, "intake") or {}
+    trip_length = intake.get("trip_length")
+    requested = trip_length if isinstance(trip_length, int) and trip_length >= 1 else None
+    budget = intake.get("budget")
+    ceiling = (
+        daily_budget_ceiling(budget, intake.get("max_daily_budget_aud"))
+        if isinstance(budget, str)
+        else None
+    )
+    chunks = (_step_data(step_input, "rag_retrieve") or {}).get("retrieved_context") or []
+    knowledge = "\n\n".join(
+        str(chunk.get("chunk_text", "")) for chunk in chunks if isinstance(chunk, dict)
+    )
+    return ValidationContext(
+        requested_trip_length=requested, daily_ceiling=ceiling, knowledge_context=knowledge
+    )
 
 
 def _build_correction_prompt(
@@ -172,7 +214,8 @@ def validate_output_executor(step_input: StepInput) -> StepOutput:
     # ------------------------------------------------------------------ #
     # First validation attempt                                             #
     # ------------------------------------------------------------------ #
-    validated_output, first_errors = parse_llm_output(raw_llm_output)
+    validation_context = _build_validation_context(step_input)
+    validated_output, first_errors = parse_llm_output(raw_llm_output, validation_context)
 
     if validated_output is not None:
         sse_event = build_sse_event(
@@ -271,7 +314,7 @@ def validate_output_executor(step_input: StepInput) -> StepOutput:
         return StepOutput(content=sse_event_to_json(sse_event))
     retry_raw_output: str = retry_result.text
 
-    retry_output, retry_errors = parse_llm_output(retry_raw_output)
+    retry_output, retry_errors = parse_llm_output(retry_raw_output, validation_context)
 
     if retry_output is not None:
         # Retry succeeded — mark degraded because a retry was needed

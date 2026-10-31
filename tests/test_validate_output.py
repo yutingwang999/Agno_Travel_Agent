@@ -40,7 +40,7 @@ VALID_ITINERARY = {
             "estimated_cost_aud": 150.0,
         }
     ],
-    "total_estimated_cost_aud": 450.0,
+    "total_estimated_cost_aud": 150.0,  # equals the daily costs (cost consistency rule)
     "key_tips": ["Book ahead", "Use Opal card"],
 }
 
@@ -565,3 +565,69 @@ def test_correction_call_requests_json_with_itinerary_schema():
     config = mock_client.return_value.models.generate_content.call_args.kwargs["config"]
     assert config.response_mime_type == "application/json"
     assert config.response_schema is ItineraryOutput
+
+
+# ---------------------------------------------------------------------------
+# Business rules read the intake and rag_retrieve events (section 4)
+# ---------------------------------------------------------------------------
+
+
+def _event(step: str, data: dict) -> str:
+    return json.dumps({"session_id": "s", "step": step, "status": "completed",
+                       "timestamp": "2024-01-01T00:00:00+00:00", "data": data, "error": None})
+
+
+def _step_input_with(raw: str, intake: dict | None = None, rag_chunks: list | None = None):
+    from agno.workflow.types import StepInput, StepOutput
+
+    outputs = {"generate": StepOutput(step_name="generate", content=_make_generate_sse(raw, "s"))}
+    if intake is not None:
+        outputs["intake"] = StepOutput(step_name="intake", content=_event("intake", intake))
+    if rag_chunks is not None:
+        outputs["rag_retrieve"] = StepOutput(
+            step_name="rag_retrieve", content=_event("rag_retrieve", {"retrieved_context": rag_chunks})
+        )
+    return StepInput(additional_data={"session_id": "s"}, previous_step_outputs=outputs)
+
+
+def test_validation_context_from_events():
+    from app.workflow.steps.validate_output import _build_validation_context
+
+    context = _build_validation_context(_step_input_with(
+        "{}",
+        intake={"destination": "sydney", "trip_length": 3, "budget": "moderate", "travel_style": "x"},
+        rag_chunks=[{"chunk_text": "Entry $25."}, {"chunk_text": "Open 9am."}],
+    ))
+    assert context.requested_trip_length == 3
+    assert context.daily_ceiling == 200.0
+    assert context.knowledge_context == "Entry $25.\n\nOpen 9am."
+
+
+def test_validation_context_without_upstream_events():
+    from app.workflow.steps.validate_output import _build_validation_context
+
+    context = _build_validation_context(_step_input_with("{}"))
+    assert context.requested_trip_length is None
+    assert context.daily_ceiling is None
+    assert context.knowledge_context == ""
+
+
+def test_requested_length_violation_triggers_the_correction_call():
+    """5 days requested, the model returns a consistent 1-day itinerary: one correction call."""
+    from app.workflow.steps.validate_output import validate_output_executor
+
+    step_input = _step_input_with(
+        VALID_ITINERARY_JSON,
+        intake={"destination": "sydney", "trip_length": 5, "budget": "luxury", "travel_style": "family"},
+    )
+    with (
+        patch("app.workflow.steps.validate_output.resolve_template", return_value=("Fix: {validation_errors}", 2)),
+        patch("app.workflow.steps.validate_output._call_llm", return_value=LLMResult("not json")) as mock_llm,
+        patch("app.workflow.steps.validate_output.write_trace"),
+        patch.dict("os.environ", _ENV),
+    ):
+        event = json.loads(validate_output_executor(step_input).content)
+
+    assert mock_llm.call_count == 1
+    assert "Content guardrail failed: the request asks for 5 day(s)" in mock_llm.call_args.kwargs["prompt"]
+    assert event["status"] == "error"

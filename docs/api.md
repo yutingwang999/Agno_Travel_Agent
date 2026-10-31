@@ -384,7 +384,7 @@ flowchart TD
 ```mermaid
 flowchart TD
     G{generate event<br/>status = error?} -- yes --> E0["error: Generation failed upstream<br/>trace: upstream_generation_failed<br/>(no parsing, no LLM call)"]
-    G -- no --> V1{first validation<br/>passes?}
+    G -- no --> V1{first validation passes?<br/>JSON, schema, business rules}
     V1 -- yes --> OK1[completed, degraded_mode false]
     V1 -- no --> T{correction template<br/>found?}
     T -- no --> E1["error: Validation failed and correction<br/>template unavailable<br/>trace: correction_template_unavailable"]
@@ -394,6 +394,8 @@ flowchart TD
     V2 -- yes --> OK2["completed, degraded_mode true<br/>trace: validation_retry_succeeded"]
     V2 -- no --> E3["error: Validation failed after retry<br/>trace: validation_failed_after_retry"]
 ```
+
+"Validation" means JSON parsing, the `ItineraryOutput` schema, and the business rules: the day count (internally and against the requested `trip_length`), daily costs adding up to the total, the total within the request's daily budget ceiling times the days, and no opening hours or prices in the text that the retrieved chunks do not state. A failed rule is reported in the correction prompt and, if the correction also fails, in `error` (messages begin `Content guardrail failed:` or `Business rule failed: cost` / `budget` / `unsupported`).
 
 Every `validate_output` error event has `"data": { "degraded_mode": true }`. A reply blocked by Gemini's safety filter arrives as empty text, not as an exception, so it ends as "Validation failed after retry".
 
@@ -405,7 +407,7 @@ Every `validate_output` error event has `"data": { "degraded_mode": true }`. A r
 | Gemini fails during embedding | completed (fallback, `embedding_failed`) | completed | completed |
 | Gemini fails during generation (429, 503, network) | completed | error: `LLM call failed: ClientError` | error: `Generation failed upstream` |
 | No active template | completed | error: `No active template found for key ...` | error: `Generation failed upstream` |
-| First output invalid, correction valid | completed | completed | completed, `degraded_mode` true |
+| First output invalid (schema or a business rule), correction valid | completed | completed | completed, `degraded_mode` true |
 | First output invalid, correction call fails | completed | completed | error: `Correction call failed: ServerError` |
 | First output and correction both invalid | completed | completed | error: `Validation failed after retry: ...` |
 

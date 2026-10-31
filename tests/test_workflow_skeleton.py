@@ -433,8 +433,10 @@ def test_workflow_run_all_events_status_completed(capsys):
         additional_data={
             "session_id": "status-check-session",
             "destination": "Darwin",
-            "trip_length": 6,
-            "budget": "budget",
+            # Matches the mocked 1-day, 150 AUD itinerary, which the business rules
+            # would reject for a longer trip or the 70 AUD "budget" ceiling.
+            "trip_length": 1,
+            "budget": "moderate",
             "travel_style": "backpacker",
         },
     )
