@@ -278,7 +278,10 @@ def test_golden_low_confidence_rag_path_taken():
     session_id = f"golden-lowconf-{uuid.uuid4()}"
     events = _run_workflow_and_collect_events(
         session_id=session_id,
-        destination="abcdefg hi",
+        # A real Australian place, so the destination guard accepts it through the API;
+        # with this unusual style the real CAG match is 0.836 (measured 2026-10-31,
+        # gemini-embedding-001), below the 0.85 threshold. The test mocks the score.
+        destination="alice springs",
         trip_length=4,
         budget="moderate",
         travel_style="spontaneous_urban_nomad",  # unusual style → low-confidence match

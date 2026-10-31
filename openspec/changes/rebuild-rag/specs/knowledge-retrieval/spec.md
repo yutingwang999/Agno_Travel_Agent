@@ -68,7 +68,7 @@ The `rag_retrieve` step SHALL run for every request that reaches the workflow.
 
 #### Scenario: Licence recorded
 - **WHEN** a new source is added to the corpus
-- **THEN** its licence and attribution are listed in `data/knowledge/LICENSE.md`
+- **THEN** its licence and attribution are listed in `data/knowledge/SOURCES.md`
 
 ### Requirement: Destination filtering
 Before ranking, the step SHALL restrict candidates to chunks whose `destination` equals the request destination or `"australia"`. If the knowledge base has no chunks for the request destination, the step SHALL search only `"australia"` chunks. The event `data` SHALL include `destination_matched`, true when chunks exist for the request destination.

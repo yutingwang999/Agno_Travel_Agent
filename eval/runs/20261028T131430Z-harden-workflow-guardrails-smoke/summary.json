@@ -1,0 +1,154 @@
+{
+  "run_id": "20261028T131430Z-harden-workflow-guardrails-smoke",
+  "subset": "smoke",
+  "entries": 10,
+  "started_at": "2026-10-28T13:14:30.623780+00:00",
+  "finished_at": "2026-10-28T13:16:35.368684+00:00",
+  "phase_seconds": {
+    "total": 124.74,
+    "requests": 43.9,
+    "retrieval_measurement": 9.51,
+    "other_sequential": 0.05,
+    "judge_wall": 70.77,
+    "judge_calls_sum": 453.4
+  },
+  "conditions": {
+    "dataset_version": 1,
+    "corpus_version": "v1",
+    "knowledge_table": "travel_docs_v1",
+    "config": {
+      "name": "harden-workflow-guardrails",
+      "description": "v0.1.0 workflow with harden-workflow-guardrails changes up to the run's commit, corpus v1",
+      "generation_model": "gemini-3.1-flash-lite",
+      "embedding_model": "gemini-embedding-001",
+      "judge_model": "gpt-6-luna",
+      "corpus_version": "v1",
+      "knowledge_table": "travel_docs_v1",
+      "retrieval_k": 5,
+      "judge_concurrency": 8,
+      "request_parser": false
+    },
+    "generation_model": "gemini-3.1-flash-lite",
+    "embedding_model": "gemini-embedding-001",
+    "judge_model": "gpt-6-luna",
+    "judge_prompts": {
+      "faithfulness": 1,
+      "destination": 1
+    },
+    "price_table_date": "2026-10-25",
+    "git_commit": "4c5330588a6a1ccbf07d6c73a62f8a4f355df0e0",
+    "git_dirty": false,
+    "generation_templates": [
+      {
+        "key": "high_confidence_minimal_context",
+        "version": 2
+      },
+      {
+        "key": "low_confidence_with_retrieval",
+        "version": 2
+      }
+    ]
+  },
+  "metrics": {
+    "slot_extraction": {
+      "value": null,
+      "reason": "no request parser"
+    },
+    "retrieval": {
+      "k": 5,
+      "entries": 7,
+      "recall_at_k": 0.9523809523809523,
+      "mrr_at_k": 1.0,
+      "errors": 0
+    },
+    "behaviour": {
+      "overall": 0.7,
+      "entries": 10,
+      "by_expected_behavior": {
+        "clarify": 0.0,
+        "plan": 1.0,
+        "refuse": 0.0
+      },
+      "by_tag": {
+        "chinese_destination": 1.0,
+        "contradictory": 0.0,
+        "mixed_language": 1.0,
+        "out_of_scope": 0.0,
+        "prompt_injection": 0.0,
+        "untagged": 1.0
+      }
+    },
+    "constraints": {
+      "planned": 10,
+      "trip_length_rate": 1.0,
+      "budget_rate": 0.875,
+      "budget_entries": 8,
+      "budget_not_applicable": 2,
+      "destination_rate": 1.0,
+      "destination_judged": 10
+    },
+    "faithfulness": {
+      "overall": {
+        "itineraries": 10,
+        "claims": 190,
+        "supported_share": 0.1736842105263158
+      },
+      "with_context": {
+        "itineraries": 8,
+        "claims": 144,
+        "supported_share": 0.22916666666666666
+      },
+      "without_context": {
+        "itineraries": 2,
+        "claims": 46,
+        "supported_share": 0.0
+      },
+      "judge_errors": 0
+    },
+    "system": {
+      "requests": 10,
+      "format_pass_rate": 1.0,
+      "retry_rate": 0.0,
+      "error_rate": 0.0,
+      "latency_p50_ms": 4482.283350000216,
+      "latency_p95_ms": 5051.970590000201,
+      "step_latency_ms": {
+        "intake": {
+          "runs": 10,
+          "mean_ms": 0.0
+        },
+        "cag_match": {
+          "runs": 10,
+          "mean_ms": 664.4
+        },
+        "retrieval_decision": {
+          "runs": 10,
+          "mean_ms": 0.0
+        },
+        "rag_retrieve": {
+          "runs": 8,
+          "mean_ms": 648.2
+        },
+        "generate": {
+          "runs": 10,
+          "mean_ms": 3056.3
+        },
+        "validate_output": {
+          "runs": 10,
+          "mean_ms": 1.6
+        }
+      }
+    },
+    "cost": {
+      "currency": "USD",
+      "price_table_date": "2026-10-25",
+      "requests": 10,
+      "mean_generation_usd": 0.001120475,
+      "mean_embedding_usd": 4.391249999999999e-06,
+      "mean_request_usd": 0.0011248662499999998,
+      "requests_missing_usage": 0,
+      "judge_calls": 20,
+      "judge_total_usd": 0.019297799999999997
+    }
+  }
+}

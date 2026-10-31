@@ -1,8 +1,8 @@
 """Pydantic output schema and validation helpers for the validate_output step.
 
-The expected LLM output structure mirrors the JSON schema embedded in both
-prompt templates (``high_confidence_minimal_context`` and
-``low_confidence_with_retrieval``):
+The expected LLM output structure mirrors the JSON example in the generation
+templates; the generate and correction calls also pass ``ItineraryOutput`` to
+Gemini as a response schema (``STRUCTURED_OUTPUT_CONFIG``):
 
 {
     "destination": string,
@@ -26,7 +26,10 @@ prompt templates (``high_confidence_minimal_context`` and
 import json
 from typing import List
 
+from google.genai import types
 from pydantic import BaseModel, ValidationError
+
+from app.workflow.business_rules import ValidationContext, check_rules
 
 
 class DailyItineraryItem(BaseModel):
@@ -45,6 +48,16 @@ class ItineraryOutput(BaseModel):
     daily_itinerary: List[DailyItineraryItem]
     total_estimated_cost_aud: float
     key_tips: List[str]
+
+
+# Gemini request config for every call that should return an itinerary (generate
+# and the correction retry): JSON constrained by the ItineraryOutput schema.  The
+# reply text is still validated by parse_llm_output, whose fence stripping stays
+# as the fallback for a provider that ignores the schema (design decision 4).
+STRUCTURED_OUTPUT_CONFIG = types.GenerateContentConfig(
+    response_mime_type="application/json",
+    response_schema=ItineraryOutput,
+)
 
 
 def _strip_markdown_fences(text: str) -> str:
@@ -68,20 +81,29 @@ def _strip_markdown_fences(text: str) -> str:
     return "\n".join(lines[start:end]).strip()
 
 
-def parse_llm_output(raw_text: str) -> tuple[ItineraryOutput | None, str | None]:
-    """Parse and validate raw LLM text against the ItineraryOutput schema.
+def parse_llm_output(
+    raw_text: str, context: ValidationContext | None = None
+) -> tuple[ItineraryOutput | None, str | None]:
+    """Parse raw LLM text, validate it against ItineraryOutput, then apply the business rules.
 
-    Strips markdown code fences before attempting JSON parsing, then validates
-    the parsed object against :class:`ItineraryOutput`.
+    Strips markdown code fences before attempting JSON parsing (a fallback for
+    providers that ignore the response schema), validates the parsed object
+    against :class:`ItineraryOutput`, and runs every rule in
+    :data:`app.workflow.business_rules.RULES` with *context*.
 
     Args:
         raw_text: The raw string output from the LLM.
+        context:  What the rules know about the request (requested days, daily
+                  ceiling, knowledge context).  None means none of it is known:
+                  the day count is checked for internal consistency only, no
+                  ceiling applies, and the knowledge context is empty.
 
     Returns:
         A tuple of ``(output, errors)`` where:
 
         - On success: ``(ItineraryOutput, None)``
-        - On failure: ``(None, error_string)``
+        - On failure: ``(None, error_string)``; when several rules fail, their
+          messages are joined with newlines in rule order.
     """
     cleaned = _strip_markdown_fences(raw_text)
 
@@ -95,15 +117,7 @@ def parse_llm_output(raw_text: str) -> tuple[ItineraryOutput | None, str | None]
     except ValidationError as exc:
         return None, str(exc)
 
-    # Content-level guardrail: daily_itinerary length must match trip_length_days.
-    # The LLM is asked to produce exactly one entry per day; a mismatch means the
-    # output is structurally plausible but content-incorrect and should be retried.
-    actual_days = len(output.daily_itinerary)
-    if actual_days != output.trip_length_days:
-        return None, (
-            f"Content guardrail failed: daily_itinerary has {actual_days} "
-            f"day(s) but trip_length_days={output.trip_length_days}. "
-            f"Expected exactly {output.trip_length_days} daily entry/entries."
-        )
-
+    failures = check_rules(output, context or ValidationContext())
+    if failures:
+        return None, "\n".join(failures)
     return output, None

@@ -46,7 +46,7 @@ VALID_ITINERARY = {
             "estimated_cost_aud": 150.0,
         }
     ],
-    "total_estimated_cost_aud": 450.0,
+    "total_estimated_cost_aud": 150.0,  # equals the daily costs (cost consistency rule)
     "key_tips": ["Book ahead"],
 }
 VALID_ITINERARY_JSON = json.dumps(VALID_ITINERARY)

@@ -52,8 +52,14 @@ def _entry(i: int, **overrides) -> dict:
     return entry
 
 
+# Daily budget amounts on the first three plans: one per level, budget's above its default.
+_AMOUNTS = {0: 120, 1: 150, 2: 1500}
+
+
 def _valid_raw() -> list[dict]:
     raw = [_entry(i) for i in range(len(_PLANS))]
+    for i, amount in _AMOUNTS.items():
+        raw[i]["form"]["max_daily_budget_aud"] = amount
     raw.append(_entry(5, tags=["contradictory"], expected_behavior="clarify", relevant_sections=[]))
     raw.append(
         _entry(
@@ -260,3 +266,22 @@ def test_unknown_corpus_version_fails():
     problems = check_dataset(entries, DatasetMeta(dataset_version=1, corpus_version="v9"),
                              min_entries=1)
     assert "unknown corpus version 'v9'" in problems
+
+
+def test_budget_amount_must_cover_every_level():
+    raw = _valid_raw()
+    del raw[2]["form"]["max_daily_budget_aud"]  # the luxury one
+    assert "no entry with budget 'luxury' and max_daily_budget_aud" in _check(raw)
+
+
+def test_some_budget_amount_must_be_above_its_level_default():
+    raw = _valid_raw()
+    raw[0]["form"]["max_daily_budget_aud"] = 50  # budget level, below its 70 default
+    assert "no entry whose max_daily_budget_aud is above its level's default" in _check(raw)
+
+
+def test_budget_amount_must_be_a_whole_number_of_at_least_one():
+    raw = _valid_raw()
+    raw[0]["form"]["max_daily_budget_aud"] = 0
+    with pytest.raises(Exception):
+        _check(raw)

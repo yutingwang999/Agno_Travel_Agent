@@ -4,8 +4,11 @@ Constraints are checked on planned itineraries only:
 
 - trip length — ``len(daily_itinerary)`` equals the requested ``trip_length``
 - budget      — ``total_estimated_cost_aud``, read as AUD per person excluding
-                accommodation, is at most the per-person daily cap for the requested
-                level times the trip length; levels without a cap are N/A
+                accommodation, is at most the request's daily budget ceiling times
+                the trip length; the ceiling is ``form.max_daily_budget_aud`` when the
+                entry has one, otherwise the level's default
+                (:func:`app.workflow.budget.daily_budget_ceiling`, the function the
+                runtime budget rule uses); a request without a ceiling is N/A
 
 System metrics:
 
@@ -24,7 +27,7 @@ Public API::
     system_metrics([outcome, ...])
 """
 
-from app.workflow.config import DAILY_COST_CAP_AUD_PER_PERSON
+from app.workflow.budget import daily_budget_ceiling
 from evaluation.behaviour import Outcome
 from evaluation.dataset import DatasetEntry
 
@@ -33,13 +36,9 @@ def trip_length_ok(entry: DatasetEntry, itinerary: dict) -> bool:
     return len(itinerary.get("daily_itinerary", [])) == entry.form.trip_length
 
 
-def budget_ok(
-    entry: DatasetEntry,
-    itinerary: dict,
-    caps: dict[str, float] = DAILY_COST_CAP_AUD_PER_PERSON,
-) -> bool | None:
-    """Whether the per-person total is within the cap; None when the level has no cap."""
-    daily_cap = caps.get(entry.form.budget)
+def budget_ok(entry: DatasetEntry, itinerary: dict) -> bool | None:
+    """Whether the per-person total is within the request's ceiling; None when it has none."""
+    daily_cap = daily_budget_ceiling(entry.form.budget, entry.form.max_daily_budget_aud)
     if daily_cap is None:
         return None
     total = itinerary.get("total_estimated_cost_aud")
@@ -48,10 +47,7 @@ def budget_ok(
     return total <= daily_cap * entry.form.trip_length
 
 
-def constraint_rates(
-    results: list[tuple[DatasetEntry, Outcome]],
-    caps: dict[str, float] = DAILY_COST_CAP_AUD_PER_PERSON,
-) -> dict:
+def constraint_rates(results: list[tuple[DatasetEntry, Outcome]]) -> dict:
     """Share of planned itineraries satisfying each code-checked constraint."""
     trip, budget = [], []
     budget_not_applicable = 0
@@ -60,7 +56,7 @@ def constraint_rates(
         if outcome.behaviour != "plan" or itinerary is None:
             continue
         trip.append(trip_length_ok(entry, itinerary))
-        ok = budget_ok(entry, itinerary, caps)
+        ok = budget_ok(entry, itinerary)
         if ok is None:
             budget_not_applicable += 1
         else:

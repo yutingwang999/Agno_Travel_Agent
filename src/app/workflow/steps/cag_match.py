@@ -1,9 +1,9 @@
 """Step 2: cag_match — maps free-text intent to an itinerary category.
 
 Embeds the user's travel intent using the same Gemini embedding model as the
-seed script (gemini-embedding-001, 768 dimensions), then performs a cosine
-similarity search against ``itinerary_categories.embedding_vector`` via
-pgvector.
+seed script (gemini-embedding-001, 768 dimensions), loads every row of
+``itinerary_categories`` into memory and computes the cosine similarity to each
+``embedding_vector`` in-process (no pgvector query is issued).
 
 Output written to SSE event ``data`` field:
     matched_category   — category_key of the best-matching category
@@ -13,17 +13,23 @@ Output written to SSE event ``data`` field:
     is_fallback        — True when confidence was below the minimum threshold
 
 Falls back to the default category when no match exceeds the minimum
-similarity threshold defined in :mod:`app.workflow.cag_matcher`.
+similarity threshold defined in :mod:`app.workflow.cag_matcher`.  If embedding
+the intent or loading the categories raises, the step reports the same result
+as an empty reference table (default category, confidence 0.0) and records
+``error_type="embedding_failed"`` in its trace row.
 """
 
+import logging
 import os
 import time
 
 from agno.workflow.types import StepInput, StepOutput
 
-from app.workflow.cag_matcher import match_category
+from app.workflow.cag_matcher import empty_fallback, match_category
 from app.workflow.sse import build_sse_event, sse_event_to_json
 from app.workflow.trace_logger import write_trace
+
+logger = logging.getLogger(__name__)
 
 
 def _build_intent_text(additional_data: dict) -> str:
@@ -39,8 +45,8 @@ def cag_match_executor(step_input: StepInput) -> StepOutput:
 
     Reads the normalised travel planning fields from
     ``step_input.additional_data``, builds a free-text intent string, embeds
-    it with the Gemini API (gemini-embedding-001), and performs a cosine
-    similarity search against ``itinerary_categories``.
+    it with the Gemini API (gemini-embedding-001), and compares it in memory
+    with every row of ``itinerary_categories``.
 
     Writes ``matched_category`` and ``confidence_score`` (plus ``tone`` and
     ``constraints``) to the SSE event ``data`` field for downstream steps.
@@ -56,12 +62,20 @@ def cag_match_executor(step_input: StepInput) -> StepOutput:
 
     intent_text = _build_intent_text(additional_data)
 
-    result = match_category(
-        intent_text=intent_text,
-        db_url=db_url,
-        api_key=api_key,
-        embedding_model=embedding_model,
-    )
+    error_type: str | None = None
+    try:
+        result = match_category(
+            intent_text=intent_text,
+            db_url=db_url,
+            api_key=api_key,
+            embedding_model=embedding_model,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "cag_match: embedding or category lookup failed — using the default category"
+        )
+        result = empty_fallback()
+        error_type = "embedding_failed"
 
     sse_event = build_sse_event(
         session_id=session_id,
@@ -83,6 +97,7 @@ def cag_match_executor(step_input: StepInput) -> StepOutput:
         step_name="cag_match",
         status="completed",
         latency_ms=latency_ms,
+        error_type=error_type,
     )
 
     return StepOutput(content=sse_event_to_json(sse_event))

@@ -14,6 +14,10 @@ On second failure (retry also fails):
     - Does NOT raise an unhandled exception.
 
 Valid output is passed through unchanged with ``degraded_mode=False``.
+
+If the generate step already failed, or the correction call itself raises, the
+step emits a structured error (``degraded_mode=True``) without validating or
+retrying.
 """
 
 import json
@@ -25,8 +29,10 @@ import time
 from agno.workflow.types import StepInput, StepOutput
 from google import genai
 
+from app.workflow.budget import daily_budget_ceiling
+from app.workflow.business_rules import ValidationContext
 from app.workflow.llm_usage import LLMResult, result_from_response
-from app.workflow.output_validator import parse_llm_output
+from app.workflow.output_validator import STRUCTURED_OUTPUT_CONFIG, parse_llm_output
 from app.workflow.sse import build_sse_event, sse_event_to_json
 from app.workflow.template_resolver import TemplateNotFoundError, resolve_template
 from app.workflow.trace_logger import write_trace
@@ -54,6 +60,57 @@ def _extract_raw_llm_output(step_input: StepInput) -> str:
         return str(event.get("data", {}).get("raw_llm_output", ""))
     except (json.JSONDecodeError, TypeError):
         return ""
+
+
+def _generate_failed(step_input: StepInput) -> bool:
+    """Return True when the generate step emitted an event with ``status="error"``."""
+    content = step_input.get_step_content("generate")
+    if content is None:
+        return False
+    try:
+        return json.loads(content).get("status") == "error"
+    except (json.JSONDecodeError, TypeError, AttributeError):
+        return False
+
+
+def _step_data(step_input: StepInput, step_name: str) -> dict | None:
+    """Return the ``data`` of a completed upstream event, or None if unavailable."""
+    content = step_input.get_step_content(step_name)
+    if content is None:
+        return None
+    try:
+        event = json.loads(content)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(event, dict) or event.get("status") != "completed":
+        return None
+    data = event.get("data")
+    return data if isinstance(data, dict) else None
+
+
+def _build_validation_context(step_input: StepInput) -> ValidationContext:
+    """Collect what the business rules need from the intake and rag_retrieve events.
+
+    The requested trip length and the daily budget ceiling come from the intake
+    event (unknown if it cannot be read).  The knowledge context is the
+    ``chunk_text`` of every retrieved chunk, or "" when retrieval did not run.
+    """
+    intake = _step_data(step_input, "intake") or {}
+    trip_length = intake.get("trip_length")
+    requested = trip_length if isinstance(trip_length, int) and trip_length >= 1 else None
+    budget = intake.get("budget")
+    ceiling = (
+        daily_budget_ceiling(budget, intake.get("max_daily_budget_aud"))
+        if isinstance(budget, str)
+        else None
+    )
+    chunks = (_step_data(step_input, "rag_retrieve") or {}).get("retrieved_context") or []
+    knowledge = "\n\n".join(
+        str(chunk.get("chunk_text", "")) for chunk in chunks if isinstance(chunk, dict)
+    )
+    return ValidationContext(
+        requested_trip_length=requested, daily_ceiling=ceiling, knowledge_context=knowledge
+    )
 
 
 def _build_correction_prompt(
@@ -102,6 +159,7 @@ def _call_llm(prompt: str, api_key: str, model: str) -> LLMResult:
     response = client.models.generate_content(
         model=model,
         contents=prompt,
+        config=STRUCTURED_OUTPUT_CONFIG,
     )
     return result_from_response(response)
 
@@ -132,9 +190,32 @@ def validate_output_executor(step_input: StepInput) -> StepOutput:
     start = time.monotonic()
 
     # ------------------------------------------------------------------ #
+    # Generation already failed — nothing to validate or correct           #
+    # ------------------------------------------------------------------ #
+    if _generate_failed(step_input):
+        sse_event = build_sse_event(
+            session_id=session_id,
+            step="validate_output",
+            status="error",
+            data={"degraded_mode": True},
+            error="Generation failed upstream",
+        )
+        write_trace(
+            db_url=os.environ.get("DATABASE_URL", ""),
+            session_id=session_id,
+            step_name="validate_output",
+            status="error",
+            latency_ms=(time.monotonic() - start) * 1000,
+            degraded_mode=True,
+            error_type="upstream_generation_failed",
+        )
+        return StepOutput(content=sse_event_to_json(sse_event))
+
+    # ------------------------------------------------------------------ #
     # First validation attempt                                             #
     # ------------------------------------------------------------------ #
-    validated_output, first_errors = parse_llm_output(raw_llm_output)
+    validation_context = _build_validation_context(step_input)
+    validated_output, first_errors = parse_llm_output(raw_llm_output, validation_context)
 
     if validated_output is not None:
         sse_event = build_sse_event(
@@ -206,14 +287,34 @@ def validate_output_executor(step_input: StepInput) -> StepOutput:
         validation_errors=first_errors,
     )
 
-    retry_result = _call_llm(
-        prompt=correction_prompt,
-        api_key=api_key,
-        model=llm_model,
-    )
+    try:
+        retry_result = _call_llm(
+            prompt=correction_prompt,
+            api_key=api_key,
+            model=llm_model,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("validate_output: correction call failed (session_id=%r)", session_id)
+        sse_event = build_sse_event(
+            session_id=session_id,
+            step="validate_output",
+            status="error",
+            data={"degraded_mode": True},
+            error=f"Correction call failed: {type(exc).__name__}",
+        )
+        write_trace(
+            db_url=db_url,
+            session_id=session_id,
+            step_name="validate_output",
+            status="error",
+            latency_ms=(time.monotonic() - start) * 1000,
+            degraded_mode=True,
+            error_type="correction_call_failed",
+        )
+        return StepOutput(content=sse_event_to_json(sse_event))
     retry_raw_output: str = retry_result.text
 
-    retry_output, retry_errors = parse_llm_output(retry_raw_output)
+    retry_output, retry_errors = parse_llm_output(retry_raw_output, validation_context)
 
     if retry_output is not None:
         # Retry succeeded — mark degraded because a retry was needed

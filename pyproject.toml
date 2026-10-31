@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agno-travel-agent"
-version = "0.1.0"
+version = "0.2.0"
 description = "Travel Itinerary Planner using CAG + RAG with Agno workflow orchestration"
 requires-python = ">=3.11"
 dependencies = [

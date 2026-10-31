@@ -78,3 +78,11 @@ def test_load_summary(tmp_path):
     assert load_summary("r1", tmp_path)["run_id"] == "r1"
     with pytest.raises(FileNotFoundError, match="no summary"):
         load_summary("nope", tmp_path)
+
+
+def test_correction_template_row():
+    """Runs that record their correction template show it; older runs show a dash."""
+    recorded = _summary("run-new", False, 0.9, {})
+    recorded["conditions"]["correction_template"] = {"key": "validate_output_correction", "version": 2}
+    table = comparison_table([_summary("run-old", False, 0.9, {}), recorded])
+    assert "| Correction template | — | validate_output_correction v2 |" in table.splitlines()

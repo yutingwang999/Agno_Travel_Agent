@@ -53,8 +53,11 @@ def write_trace(
         prompt_template_version: ``generate`` step only — the active version number.
         degraded_mode:           ``validate_output`` step only — True when a retry
                                  was attempted.
-        error_type:              ``validate_output`` step only — short description
-                                 of the failure when the step ended in error.
+        error_type:              Short code for what went wrong, or None — e.g.
+                                 ``embedding_failed`` (cag_match, which still
+                                 completes with the fallback), ``llm_call_failed``
+                                 (generate), ``correction_call_failed`` and
+                                 ``upstream_generation_failed`` (validate_output).
         input_tokens:            Steps that call the LLM — prompt tokens reported
                                  by the provider, or None.
         output_tokens:           Steps that call the LLM — output tokens (including

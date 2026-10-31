@@ -29,6 +29,14 @@ The step SHALL substitute `{destination}`, `{trip_length}`, `{budget}`, `{travel
 - **WHEN** the request has no notes and the template contains `{notes}`
 - **THEN** `{notes}` is replaced with an empty string
 
+#### Scenario: Ceiling from the level
+- **WHEN** a `moderate` request without `max_daily_budget_aud` is generated with a template containing `{daily_budget_ceiling}`
+- **THEN** the resolved prompt states the `moderate` default as AUD per person per day, excluding accommodation
+
+#### Scenario: No ceiling
+- **WHEN** a `luxury` request without `max_daily_budget_aud` is generated with a template containing `{daily_budget_ceiling}`
+- **THEN** the placeholder is replaced with `"none set"`
+
 ### Requirement: Generate event and trace
 On success the generate event `data` SHALL contain `raw_llm_output`, `prompt_template_key`, and `prompt_template_version`, and the trace row SHALL record the same `prompt_template_key` and `prompt_template_version`.
 

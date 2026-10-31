@@ -7,7 +7,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Generate endpoint
-The system SHALL expose `POST /generate`, accepting a JSON body with the required fields `destination`, `trip_length`, `budget`, and `travel_style`, an optional numeric field `max_daily_budget_aud`, an optional free-text field `notes`, and an optional integer query parameter `template_version`. The system SHALL respond with `Content-Type: text/event-stream`.
+The system SHALL expose `POST /generate`, accepting a JSON body with the required fields `destination`, `trip_length`, `budget`, and `travel_style`, an optional integer field `max_daily_budget_aud`, an optional free-text field `notes`, and an optional integer query parameter `template_version`. The system SHALL respond with `Content-Type: text/event-stream`.
 
 #### Scenario: Valid request
 - **WHEN** a client posts `{"destination": "Sydney", "trip_length": 5, "budget": "moderate", "travel_style": "family"}`
@@ -15,7 +15,7 @@ The system SHALL expose `POST /generate`, accepting a JSON body with the require
 - **AND** the body is an SSE stream whose `data` lines are JSON step events
 
 #### Scenario: Invalid request body
-- **WHEN** a required field is missing, `trip_length` is less than 1, `budget` is not one of `budget`, `moderate`, `luxury`, or `destination` / `travel_style` is blank, or `max_daily_budget_aud` is present and not a number greater than 0
+- **WHEN** a required field is missing, `trip_length` is less than 1 or greater than 14, `budget` is not one of `budget`, `moderate`, `luxury`, or `destination` / `travel_style` is blank, or `max_daily_budget_aud` is present and not an integer of at least 1
 - **THEN** the response status is 422
 - **AND** the workflow is not executed
 
@@ -31,8 +31,18 @@ The system SHALL expose `POST /generate`, accepting a JSON body with the require
 - **WHEN** a client posts a valid body that also contains `"notes": "kids love animals"`
 - **THEN** the response status is 200 and the notes are available to the retrieval and generate steps
 
+#### Scenario: Trip too long
+- **WHEN** a client posts a valid body except that `trip_length` is `15`
+- **THEN** the response status is 422 with a field validation error and no `reason`
+- **AND** the workflow is not executed
+
+#### Scenario: Fractional budget amount
+- **WHEN** a client posts a valid body that also contains `"max_daily_budget_aud": 85.5`
+- **THEN** the response status is 422
+- **AND** the workflow is not executed
+
 ### Requirement: Intake normalisation
-The intake step SHALL validate the request with the `TravelRequest` model and SHALL emit the normalised fields: `destination` stripped of surrounding whitespace and lowercased, `trip_length` as an integer of at least 1, `budget` as one of `budget` / `moderate` / `luxury`, `travel_style` stripped of surrounding whitespace but otherwise kept as free text, `max_daily_budget_aud` as a number greater than 0, or `null` when absent, and `notes` stripped of surrounding whitespace, at most 500 characters, and `null` when absent or blank. Unknown extra fields SHALL be ignored.
+The intake step SHALL validate the request with the `TravelRequest` model and SHALL emit the normalised fields: `destination` stripped of surrounding whitespace and lowercased, `trip_length` as an integer from 1 to 14, `budget` as one of `budget` / `moderate` / `luxury`, `travel_style` stripped of surrounding whitespace but otherwise kept as free text, `max_daily_budget_aud` as an integer of at least 1, or `null` when absent, and `notes` stripped of surrounding whitespace, at most 500 characters, and `null` when absent or blank. Unknown extra fields SHALL be ignored.
 
 #### Scenario: Destination is normalised
 - **WHEN** the request has `destination` = `"  Sydney "`

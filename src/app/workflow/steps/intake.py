@@ -48,6 +48,7 @@ def intake_executor(step_input: StepInput) -> StepOutput:
         "trip_length": travel_request.trip_length,
         "budget": travel_request.budget,
         "travel_style": travel_request.travel_style,
+        "max_daily_budget_aud": travel_request.max_daily_budget_aud,
     }
 
     sse_event = build_sse_event(
