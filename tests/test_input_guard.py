@@ -14,7 +14,7 @@ from app.workflow.input_guard import REJECTION_MESSAGES, looks_like_injection
 
 VALID_BODY = {"destination": "Sydney", "trip_length": 3, "budget": "moderate", "travel_style": "family"}
 
-DESTINATION_MESSAGE = "Please enter a specific destination in Australia, such as Sydney, Cairns or Tasmania."
+DESTINATION_MESSAGE = "Please enter one specific destination in Australia, such as Sydney, Cairns or Tasmania."
 INPUT_MESSAGE = "Your request could not be processed. Please rephrase it and try again."
 
 
@@ -199,3 +199,11 @@ def test_dataset_injection_entries_in_request_fields_are_detected():
             assert not in_fields
         else:
             assert in_fields, entry["id"]
+
+
+@pytest.mark.parametrize("destination", ["Tasmania, Victoria", "Sydney, Melbourne"])
+def test_two_destinations_are_rejected(client, workflow, destination):
+    """Spec scenarios "Two states" and "Two cities"."""
+    response = _post(client, destination=destination)
+    assert response.json() == {"reason": "destination_out_of_scope", "detail": DESTINATION_MESSAGE}
+    workflow.assert_not_called()

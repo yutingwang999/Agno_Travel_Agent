@@ -25,7 +25,15 @@ _REGIONS = (
     "western australia|wa|tasmania|tas|northern territory|nt|"
     "australian capital territory|act|australia"
 )
-_TRAILING_REGION = re.compile(rf"^(?P<place>.+?)(?:\s*,\s*|\s+)(?:{_REGIONS})$")
+_TRAILING_REGION = re.compile(rf"^(?P<place>.+?)(?:\s*,\s*|\s+)(?P<region>{_REGIONS})$")
+
+# Canonical names of the states and territories.  A state followed by another
+# state ("Tasmania, Victoria") names two destinations, not one place qualified by
+# its state, so it is not accepted.
+STATE_NAMES = frozenset({
+    "new south wales", "victoria", "queensland", "south australia",
+    "western australia", "tasmania", "northern territory", "australian capital territory",
+})
 
 
 def normalize_name(text: str) -> str:
@@ -49,15 +57,23 @@ def canonical_destination(destination: str, places: dict[str, str] | None = None
 
     The full normalised name is looked up first; failing that, trailing state,
     territory or country qualifiers are removed one at a time and the rest is
-    looked up again ("Perth, WA, Australia" -> "perth").
+    looked up again ("Perth, WA, Australia" -> "perth").  A state followed by
+    another state ("Tasmania, Victoria") is rejected: it names two destinations.
+    Whether a qualifying state is the place's own state is not checked
+    ("Sydney, Tasmania" -> "sydney").
     """
     places = default_place_list() if places is None else places
     name = normalize_name(destination)
+    stripped_state = False
     while name:
         if name in places:
-            return places[name]
+            canonical = places[name]
+            if stripped_state and canonical in STATE_NAMES:
+                return None
+            return canonical
         match = _TRAILING_REGION.match(name)
         if match is None:
             return None
+        stripped_state = stripped_state or match.group("region") != "australia"
         name = match.group("place").rstrip(" ,")
     return None

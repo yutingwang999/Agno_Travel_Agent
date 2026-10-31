@@ -111,6 +111,13 @@
         border-color: transparent;
       }
 
+      .field .hint {
+        display: block;
+        margin-top: 0.2rem;
+        font-size: 0.75rem;
+        color: #888;
+      }
+
       .field.optional label::after {
         content: " (optional)";
         color: #aaa;
@@ -311,12 +318,13 @@
               />
             </div>
             <div class="field">
-              <label for="trip_length">Trip length (days)</label>
+              <label for="trip_length">Trip length (days, 1–14)</label>
               <input
                 id="trip_length"
                 name="trip_length"
                 type="number"
                 min="1"
+                max="14"
                 placeholder="e.g. 5"
                 required
               />
@@ -339,6 +347,19 @@
                 placeholder="e.g. family, adventure, solo"
                 required
               />
+            </div>
+            <div class="field optional">
+              <label for="max_daily_budget_aud">Daily budget per person (AUD, excl. accommodation)</label>
+              <input
+                id="max_daily_budget_aud"
+                name="max_daily_budget_aud"
+                type="number"
+                min="1"
+                step="1"
+                placeholder="e.g. 150"
+                aria-describedby="max_daily_budget_hint"
+              />
+              <span class="hint" id="max_daily_budget_hint">Whole AUD, e.g. 150. Leave blank to use the budget level's default.</span>
             </div>
             <div class="field optional">
               <label for="template_version">Template version</label>
@@ -405,12 +426,46 @@
         },
       };
 
+      // The browser's own message for a fractional amount ("Please enter a valid
+      // value. The two nearest valid values are…") does not say what is wrong;
+      // replace it with one that asks for a whole number.
+      const budgetAmountInput = document.getElementById("max_daily_budget_aud");
+      function checkBudgetAmount() {
+        const v = budgetAmountInput.validity;
+        let message = "";
+        if (v.badInput || v.stepMismatch) {
+          message = "Please enter a whole number of AUD (no cents), e.g. 150.";
+        } else if (v.rangeUnderflow) {
+          message = "Please enter at least 1 AUD.";
+        }
+        budgetAmountInput.setCustomValidity(message);
+      }
+      budgetAmountInput.addEventListener("input", checkBudgetAmount);
+
+      // Same for the trip length: say what the allowed range is (the API's
+      // limit is MAX_TRIP_LENGTH_DAYS in app/workflow/config.py).
+      const tripLengthInput = document.getElementById("trip_length");
+      function checkTripLength() {
+        const v = tripLengthInput.validity;
+        let message = "";
+        if (v.badInput || v.stepMismatch) {
+          message = "Please enter a whole number of days.";
+        } else if (v.rangeUnderflow || v.rangeOverflow) {
+          message = "Please enter a trip length between 1 and 14 days.";
+        }
+        tripLengthInput.setCustomValidity(message);
+      }
+      tripLengthInput.addEventListener("input", checkTripLength);
+
       function fillPreset(key) {
         const p = PRESETS[key];
         document.getElementById("destination").value = p.destination;
         document.getElementById("trip_length").value = p.trip_length;
         document.getElementById("budget").value = p.budget;
         document.getElementById("travel_style").value = p.travel_style;
+        budgetAmountInput.value = "";
+        checkBudgetAmount();
+        checkTripLength();
         document.getElementById("template_version").value = "";
       }
 
@@ -473,8 +528,13 @@
         const tv = document.getElementById("template_version").value.trim();
         const template_version = tv ? parseInt(tv, 10) : null;
 
-        // Build request body
+        const amount = document
+          .getElementById("max_daily_budget_aud")
+          .value.trim();
+
+        // Build request body; the budget amount is sent only when filled in
         const body = { destination, trip_length, budget, travel_style };
+        if (amount) body.max_daily_budget_aud = parseInt(amount, 10);
 
         // Build URL (template_version as query param if provided)
         let url = "/generate";

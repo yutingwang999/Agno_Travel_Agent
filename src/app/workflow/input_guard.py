@@ -29,7 +29,7 @@ DESTINATION_OUT_OF_SCOPE = "destination_out_of_scope"
 INPUT_REJECTED = "input_rejected"
 
 REJECTION_MESSAGES: dict[str, str] = {
-    DESTINATION_OUT_OF_SCOPE: "Please enter a specific destination in Australia, such as Sydney, Cairns or Tasmania.",
+    DESTINATION_OUT_OF_SCOPE: "Please enter one specific destination in Australia, such as Sydney, Cairns or Tasmania.",
     INPUT_REJECTED: "Your request could not be processed. Please rephrase it and try again.",
 }
 

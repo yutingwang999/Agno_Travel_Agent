@@ -62,6 +62,12 @@ def test_foreign_cities_and_the_country_are_not_listed(places, name):
         ("the east coast", None),
         ("somewhere warm", None),
         ("part", None),                          # GeoNames alternate name of Perth, not used
+        ("Tasmania, Victoria", None),            # two states: two destinations
+        ("Victoria Tasmania", None),
+        ("Tasmania, Australia", "tasmania"),     # a country qualifier is fine
+        ("NSW, Australia", "new south wales"),
+        ("Sydney, Melbourne", None),             # two cities
+        ("Sydney, Tasmania", "sydney"),          # known limit: the state is not checked
     ],
 )
 def test_lookup(places, destination, expected):

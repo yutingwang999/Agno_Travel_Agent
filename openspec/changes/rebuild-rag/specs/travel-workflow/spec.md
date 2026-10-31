@@ -15,7 +15,7 @@ The system SHALL expose `POST /generate`, accepting a JSON body with the require
 - **AND** the body is an SSE stream whose `data` lines are JSON step events
 
 #### Scenario: Invalid request body
-- **WHEN** a required field is missing, `trip_length` is less than 1, `budget` is not one of `budget`, `moderate`, `luxury`, or `destination` / `travel_style` is blank, or `max_daily_budget_aud` is present and not an integer of at least 1
+- **WHEN** a required field is missing, `trip_length` is less than 1 or greater than 14, `budget` is not one of `budget`, `moderate`, `luxury`, or `destination` / `travel_style` is blank, or `max_daily_budget_aud` is present and not an integer of at least 1
 - **THEN** the response status is 422
 - **AND** the workflow is not executed
 
@@ -32,7 +32,7 @@ The system SHALL expose `POST /generate`, accepting a JSON body with the require
 - **THEN** the response status is 200 and the notes are available to the retrieval and generate steps
 
 ### Requirement: Intake normalisation
-The intake step SHALL validate the request with the `TravelRequest` model and SHALL emit the normalised fields: `destination` stripped of surrounding whitespace and lowercased, `trip_length` as an integer of at least 1, `budget` as one of `budget` / `moderate` / `luxury`, `travel_style` stripped of surrounding whitespace but otherwise kept as free text, `max_daily_budget_aud` as an integer of at least 1, or `null` when absent, and `notes` stripped of surrounding whitespace, at most 500 characters, and `null` when absent or blank. Unknown extra fields SHALL be ignored.
+The intake step SHALL validate the request with the `TravelRequest` model and SHALL emit the normalised fields: `destination` stripped of surrounding whitespace and lowercased, `trip_length` as an integer from 1 to 14, `budget` as one of `budget` / `moderate` / `luxury`, `travel_style` stripped of surrounding whitespace but otherwise kept as free text, `max_daily_budget_aud` as an integer of at least 1, or `null` when absent, and `notes` stripped of surrounding whitespace, at most 500 characters, and `null` when absent or blank. Unknown extra fields SHALL be ignored.
 
 #### Scenario: Destination is normalised
 - **WHEN** the request has `destination` = `"  Sydney "`

@@ -510,3 +510,44 @@ def test_post_generate_low_confidence_includes_rag_retrieve_event(client):
     events = _parse_sse_data_lines(response.text)
     step_names = [ev["step"] for ev in events]
     assert "rag_retrieve" in step_names
+
+
+# ---------------------------------------------------------------------------
+# max_daily_budget_aud (harden-workflow-guardrails task 5.7)
+# ---------------------------------------------------------------------------
+
+
+def test_request_with_a_budget_amount_reaches_the_workflow(client):
+    """Spec scenario "Request with a budget amount"."""
+    from app.main import build_additional_data
+
+    captured = {}
+
+    def _capture(session_id, travel_request, template_version=None):
+        captured.update(build_additional_data(session_id, travel_request, template_version))
+        return []
+
+    with patch("app.main._run_workflow", side_effect=_capture):
+        response = client.post("/generate", json={**VALID_BODY, "max_daily_budget_aud": 150})
+    assert response.status_code == 200
+    assert captured["max_daily_budget_aud"] == 150
+
+
+@pytest.mark.parametrize("amount", [0, 85.5, "abc"])
+def test_post_generate_invalid_budget_amount_returns_422(client, amount):
+    """Spec scenario "Invalid request body" / "Fractional budget amount"."""
+    with patch("app.main._run_workflow") as mock:
+        response = client.post("/generate", json={**VALID_BODY, "max_daily_budget_aud": amount})
+    assert response.status_code == 422
+    assert "reason" not in response.json()
+    mock.assert_not_called()
+
+
+def test_post_generate_trip_length_over_fourteen_returns_422(client):
+    """Spec scenario "Trip too long": a field validation error, workflow not run."""
+    with patch("app.main._run_workflow") as mock:
+        response = client.post("/generate", json={**VALID_BODY, "trip_length": 15})
+    assert response.status_code == 422
+    assert "reason" not in response.json()
+    assert "at most 14" in response.json()["detail"][0]["msg"]
+    mock.assert_not_called()

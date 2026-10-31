@@ -9,7 +9,7 @@ The system SHALL expose `POST /generate`, accepting a JSON body with the require
 - **AND** the body is an SSE stream whose `data` lines are JSON step events
 
 #### Scenario: Invalid request body
-- **WHEN** a required field is missing, `trip_length` is less than 1, `budget` is not one of `budget`, `moderate`, `luxury`, `destination` / `travel_style` is blank, or `max_daily_budget_aud` is present and not an integer of at least 1
+- **WHEN** a required field is missing, `trip_length` is less than 1 or greater than 14, `budget` is not one of `budget`, `moderate`, `luxury`, `destination` / `travel_style` is blank, or `max_daily_budget_aud` is present and not an integer of at least 1
 - **THEN** the response status is 422
 - **AND** the workflow is not executed
 
@@ -21,13 +21,18 @@ The system SHALL expose `POST /generate`, accepting a JSON body with the require
 - **WHEN** a client posts a valid body that also contains `"max_daily_budget_aud": 150`
 - **THEN** the response status is 200 and the amount is available to the generate and validate_output steps
 
+#### Scenario: Trip too long
+- **WHEN** a client posts a valid body except that `trip_length` is `15`
+- **THEN** the response status is 422 with a field validation error and no `reason`
+- **AND** the workflow is not executed
+
 #### Scenario: Fractional budget amount
 - **WHEN** a client posts a valid body that also contains `"max_daily_budget_aud": 85.5`
 - **THEN** the response status is 422
 - **AND** the workflow is not executed
 
 ### Requirement: Intake normalisation
-The intake step SHALL validate the request with the `TravelRequest` model and SHALL emit the normalised fields: `destination` stripped of surrounding whitespace and lowercased, `trip_length` as an integer of at least 1, `budget` as one of `budget` / `moderate` / `luxury`, `travel_style` stripped of surrounding whitespace but otherwise kept as free text, and `max_daily_budget_aud` as an integer of at least 1, or `null` when absent. Unknown extra fields SHALL be ignored.
+The intake step SHALL validate the request with the `TravelRequest` model and SHALL emit the normalised fields: `destination` stripped of surrounding whitespace and lowercased, `trip_length` as an integer from 1 to 14, `budget` as one of `budget` / `moderate` / `luxury`, `travel_style` stripped of surrounding whitespace but otherwise kept as free text, and `max_daily_budget_aud` as an integer of at least 1, or `null` when absent. Unknown extra fields SHALL be ignored.
 
 #### Scenario: Destination is normalised
 - **WHEN** the request has `destination` = `"  Sydney "`
@@ -77,7 +82,7 @@ The frontend SHALL offer an optional input for the daily budget per person (AUD,
 - **THEN** the form asks for a whole number and no request is sent
 
 ### Requirement: Out-of-scope destination guard
-Before the workflow starts, `POST /generate` SHALL look up the normalised destination in the Australian place list. Normalisation SHALL lowercase the destination, strip it, collapse inner whitespace and, when the full name is not listed, drop trailing Australian state, territory or country qualifiers. A match SHALL replace the destination with its canonical name; no match SHALL be rejected with 422 and the reason code `destination_out_of_scope`, without calling any external API.
+Before the workflow starts, `POST /generate` SHALL look up the normalised destination in the Australian place list. (see "Destination normalisation"). A match SHALL replace the destination with its canonical name; no match SHALL be rejected with 422 and the reason code `destination_out_of_scope`, without calling any external API.
 
 #### Scenario: Foreign city
 - **WHEN** a client posts a valid body with `destination` = `"Paris"`
@@ -104,9 +109,24 @@ Before the workflow starts, `POST /generate` SHALL look up the normalised destin
 - **WHEN** a client posts a valid body with `destination` = `"Tasmania"`
 - **THEN** the guard lets the request through
 
+#### Scenario: Two states
+- **WHEN** a client posts a valid body with `destination` = `"Tasmania, Victoria"`
+- **THEN** the response status is 422 with reason code `destination_out_of_scope`
+
+#### Scenario: Two cities
+- **WHEN** a client posts a valid body with `destination` = `"Sydney, Melbourne"`
+- **THEN** the response status is 422 with reason code `destination_out_of_scope`
+
 #### Scenario: Country name alone
 - **WHEN** a client posts a valid body with `destination` = `"Australia"`
 - **THEN** the response status is 422 with reason code `destination_out_of_scope`
+
+### Requirement: Destination normalisation
+Before the place list lookup, the destination SHALL be lowercased, stripped and have inner whitespace collapsed. When the full name is not listed, trailing Australian state, territory or country qualifiers SHALL be dropped one at a time and the rest looked up again; a state that remains after a state qualifier was dropped SHALL NOT be accepted.
+
+#### Scenario: Several qualifiers
+- **WHEN** the destination is `"Perth, WA, Australia"`
+- **THEN** it is looked up as `"perth"`
 
 ### Requirement: Australian place list
 The place list `data/places/australia.tsv` SHALL map each accepted name — English names, and common Chinese names in Simplified and Traditional script — to a canonical lowercase English name. It SHALL contain the state and territory names and every destination in the knowledge base and the evaluation dataset, and SHALL NOT contain the country name.
@@ -146,11 +166,11 @@ A guard rejection SHALL return a JSON body `{"reason": <code>, "detail": <messag
 - **THEN** the response status is 422 and the body has no `reason` field
 
 ### Requirement: Guard rejection messages
-The `detail` of a `destination_out_of_scope` rejection SHALL be `"Please enter a specific destination in Australia, such as Sydney, Cairns or Tasmania."`, and the `detail` of an `input_rejected` rejection SHALL be `"Your request could not be processed. Please rephrase it and try again."`
+The `detail` of a `destination_out_of_scope` rejection SHALL be `"Please enter one specific destination in Australia, such as Sydney, Cairns or Tasmania."`, and the `detail` of an `input_rejected` rejection SHALL be `"Your request could not be processed. Please rephrase it and try again."`
 
 #### Scenario: Body of a destination rejection
 - **WHEN** a client posts a valid body with `destination` = `"Paris"`
-- **THEN** the body is `{"reason": "destination_out_of_scope", "detail": "Please enter a specific destination in Australia, such as Sydney, Cairns or Tasmania."}`
+- **THEN** the body is `{"reason": "destination_out_of_scope", "detail": "Please enter one specific destination in Australia, such as Sydney, Cairns or Tasmania."}`
 
 ### Requirement: Readable validation errors in the UI
 When `POST /generate` returns a field validation error, the frontend SHALL show the `msg` of each error rather than an unreadable object.
