@@ -1,8 +1,8 @@
 """Pydantic output schema and validation helpers for the validate_output step.
 
-The expected LLM output structure mirrors the JSON schema embedded in both
-prompt templates (``high_confidence_minimal_context`` and
-``low_confidence_with_retrieval``):
+The expected LLM output structure mirrors the JSON example in the generation
+templates; the generate and correction calls also pass ``ItineraryOutput`` to
+Gemini as a response schema (``STRUCTURED_OUTPUT_CONFIG``):
 
 {
     "destination": string,
@@ -26,6 +26,7 @@ prompt templates (``high_confidence_minimal_context`` and
 import json
 from typing import List
 
+from google.genai import types
 from pydantic import BaseModel, ValidationError
 
 
@@ -45,6 +46,16 @@ class ItineraryOutput(BaseModel):
     daily_itinerary: List[DailyItineraryItem]
     total_estimated_cost_aud: float
     key_tips: List[str]
+
+
+# Gemini request config for every call that should return an itinerary (generate
+# and the correction retry): JSON constrained by the ItineraryOutput schema.  The
+# reply text is still validated by parse_llm_output, whose fence stripping stays
+# as the fallback for a provider that ignores the schema (design decision 4).
+STRUCTURED_OUTPUT_CONFIG = types.GenerateContentConfig(
+    response_mime_type="application/json",
+    response_schema=ItineraryOutput,
+)
 
 
 def _strip_markdown_fences(text: str) -> str:

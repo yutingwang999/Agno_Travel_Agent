@@ -549,3 +549,19 @@ def test_correction_call_failure_returns_structured_error():
     assert event["data"] == {"degraded_mode": True}
     assert mock_trace.call_args.kwargs["error_type"] == "correction_call_failed"
     assert mock_trace.call_args.kwargs["degraded_mode"] is True
+
+
+def test_correction_call_requests_json_with_itinerary_schema():
+    """Spec scenario "Corrective call uses the schema"."""
+    from app.workflow.output_validator import ItineraryOutput
+    from app.workflow.steps.validate_output import _call_llm
+
+    with (
+        patch("app.workflow.steps.validate_output.genai.Client") as mock_client,
+        patch("app.workflow.steps.validate_output.result_from_response", return_value=LLMResult("{}")),
+    ):
+        _call_llm(prompt="p", api_key="k", model="m")
+
+    config = mock_client.return_value.models.generate_content.call_args.kwargs["config"]
+    assert config.response_mime_type == "application/json"
+    assert config.response_schema is ItineraryOutput

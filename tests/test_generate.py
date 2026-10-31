@@ -704,3 +704,24 @@ def test_user_amount_in_prompt():
     assert _resolved_prompt({"budget": "luxury", "max_daily_budget_aud": 1500}) == (
         "Ceiling: 1500 AUD per person per day, excluding accommodation"
     )
+
+
+# ---------------------------------------------------------------------------
+# Structured output (design decision 4)
+# ---------------------------------------------------------------------------
+
+
+def test_generate_requests_json_with_itinerary_schema():
+    """Spec scenario "Structured output requested"."""
+    from app.workflow.output_validator import ItineraryOutput
+    from app.workflow.steps.generate import _call_llm
+
+    with (
+        patch("app.workflow.steps.generate.genai.Client") as mock_client,
+        patch("app.workflow.steps.generate.result_from_response", return_value=LLMResult("{}")),
+    ):
+        _call_llm(prompt="p", api_key="k", model="m")
+
+    config = mock_client.return_value.models.generate_content.call_args.kwargs["config"]
+    assert config.response_mime_type == "application/json"
+    assert config.response_schema is ItineraryOutput
