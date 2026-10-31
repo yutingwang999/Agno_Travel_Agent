@@ -21,11 +21,11 @@
 
 ## 4. Business rules
 
-- [ ] 4.1 Restructure validation as "schema validation + rule list", each rule a pure function, with failure messages carrying the rule name and values; Verify: the existing `test_validate_output.py` passes completely
-- [ ] 4.2 The day-count rule compares against the user's requested `trip_length`; Verify: unit tests cover "5 days requested, output consistently 3 days"
-- [ ] 4.3 Cost consistency rule; Verify: unit tests cover Totals disagree and Rounding tolerated
-- [ ] 4.4 Budget ceiling rule, using the request's daily ceiling (2.4) read from the intake event; the failure message states the total, the trip ceiling, the daily ceiling and the number of days; Verify: unit tests cover the spec scenarios (level default exceeded, message states the numbers, user amount overrides the level, luxury with an amount, luxury without an amount)
-- [ ] 4.5 Unsupported specifics rule (opening-hours statements, currency amounts; comparison text taken from `chunk_text` in the `rag_retrieve` event); Verify: unit tests cover the three scenarios Invented opening hours / Schedule time / Price taken from the context, plus several ways of writing amounts
+- [x] 4.1 Restructure validation as "schema validation + rule list", each rule a pure function, with failure messages carrying the rule name and values; Verify: the existing `test_validate_output.py` passes completely
+- [x] 4.2 The day-count rule compares against the user's requested `trip_length`; Verify: unit tests cover "5 days requested, output consistently 3 days"
+- [x] 4.3 Cost consistency rule; Verify: unit tests cover Totals disagree and Rounding tolerated
+- [x] 4.4 Budget ceiling rule, using the request's daily ceiling (2.4) read from the intake event; the failure message states the total, the trip ceiling, the daily ceiling and the number of days; Verify: unit tests cover the spec scenarios (level default exceeded, message states the numbers, user amount overrides the level, luxury with an amount, luxury without an amount)
+- [x] 4.5 Unsupported specifics rule (opening-hours statements, currency amounts; comparison text taken from `chunk_text` in the `rag_retrieve` event); Verify: unit tests cover the three scenarios Invented opening hours / Schedule time / Price taken from the context, plus several ways of writing amounts
 
 ## 5. Input guardrails
 
