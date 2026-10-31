@@ -37,6 +37,7 @@
 - [ ] 5.3 Update `test_golden.py`: the two former high-confidence cases now assert that `rag_retrieve` appears, `retrieved_context` is non-empty and citations are valid; Verify: on the test database (small fixed corpus), `pytest -m integration tests/test_golden.py` passes completely
 - [ ] 5.4 Compare the three request-description variants A / B / C of `itinerary_with_context` (design decision 3) on the evaluation dataset, with retrieval fixed to the final configuration; report preference adherence, added requirements, faithfulness, budget and cost per variant, choose one, and seed it as the template version that 5.2 uses; Verify: the `docs/experiments.md` entry shows all three variants and the reason for the choice; design decision 3 records the result
 - [ ] 5.5 After 5.4, test the candidate instruction of design decision 4 (no invented exclusive or private arrangements) as one more template version against the 5.4 winner; keep it only if faithfulness v2 `activity` support improves without lowering preference adherence; Verify: the `docs/experiments.md` entry shows both versions and the decision
+- [ ] 5.6 Diagnose the faithfulness drop `harden-workflow-guardrails` left (23.0% → 19.6% on corpus v1): on the final retrieval configuration and template, compare the template with and without harden's cost-unit and budget-ceiling sentences, judged with faithfulness v2; report faithfulness, the share of claims about places the context covers, and within-budget for both. Keep the sentences unless removing them raises faithfulness without lowering within-budget; Verify: the `docs/experiments.md` entry shows both variants and the decision
 
 ## 6. Source citations
 
@@ -52,5 +53,5 @@
 
 ## 8. Evaluation and regression
 
-- [ ] 8.1 Run a full evaluation of the final configuration with the evaluation harness (including citation accuracy), compare against the v0.1.0 baseline, list the changes in faithfulness, latency and cost separately for the former high-confidence requests, and write it into `docs/experiments.md`; update gate thresholds as needed and record the reason; Verify: the success criteria in the proposal are met
+- [ ] 8.1 Run a full evaluation of the final configuration with the evaluation harness (including citation accuracy), compare against the v0.1.0 baseline and the final `harden-workflow-guardrails` runs (re-judged with faithfulness v2), list the changes in faithfulness, latency and cost separately for the former high-confidence requests, and write it into `docs/experiments.md`; update gate thresholds as needed and record the reason; Verify: the success criteria in the proposal are met
 - [ ] 8.2 `dev.py test-all` passes completely; the gate passes; `openspec validate rebuild-rag --strict` passes

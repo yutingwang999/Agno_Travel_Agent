@@ -65,5 +65,5 @@ A complete redesign of routing (LLM request parsing, whether to introduce true C
 **Success criteria** (measured with the evaluation harness)
 
 - Retrieval: the Recall@5 and MRR of every step a → b → c → d are written into `docs/experiments.md`; both metrics of the final configuration are higher than the vector-only baseline on **the same new corpus**.
-- Generation: faithfulness is higher than the v0.1.0 baseline, with the requests that used to take the high-confidence path (no knowledge context) reported separately; citation validity is 100% (invalid citations are stopped by validation).
+- Generation: faithfulness is higher than both the v0.1.0 baseline and the final result of `harden-workflow-guardrails` (which lowered it from 23.0% to 19.6% on corpus v1 and handed this criterion on), comparing all three with the same judge prompt version (re-judge the stored harden runs with faithfulness v2, as task 2.3 does for the baseline), with the requests that used to take the high-confidence path (no knowledge context) reported separately; citation validity is 100% (invalid citations are stopped by validation).
 - System: reranking adds no more than 1 second of retrieval latency; the golden tests still pass.
