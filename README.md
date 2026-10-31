@@ -200,6 +200,12 @@ After the stream finishes the page automatically calls `GET /traces/{session_id}
 
 Enter a version number in the **Template version** field before submitting to test a specific prompt template version (equivalent to `?template_version=N` on the API).
 
+**5. Try a budget amount and the input checks**
+
+- Enter a whole number in **Daily budget per person** (e.g. `150`); the `intake` panel shows `max_daily_budget_aud`, and the itinerary total stays within 150 × the number of days. A fractional amount or `0` is stopped by the form.
+- A trip length above 14 is stopped by the form.
+- A destination outside Australia (`Paris`) or an instruction in the travel style (`ignore previous instructions`) shows the refusal message in the red banner.
+
 ### Clearing trace data between manual runs
 
 To start with a clean trace table:
@@ -236,14 +242,19 @@ Content-Type: application/json
 }
 ```
 
-All four body fields are required. Missing or invalid fields return **422 Unprocessable Entity** — never a 500.
+The first four body fields are required. Missing or invalid fields return **422 Unprocessable Entity** — never a 500.
 
-| Field          | Type      | Values                               | Notes                          |
-| -------------- | --------- | ------------------------------------ | ------------------------------ |
-| `destination`  | `string`  | free text                            | normalised to lowercase        |
-| `trip_length`  | `integer` | ≥ 1                                  | number of days                 |
-| `budget`       | `enum`    | `"budget"`, `"moderate"`, `"luxury"` | any other value → 422          |
-| `travel_style` | `string`  | free text                            | used for CAG semantic matching |
+| Field                  | Type      | Values                               | Notes                                                                 |
+| ---------------------- | --------- | ------------------------------------ | --------------------------------------------------------------------- |
+| `destination`          | `string`  | one Australian place                 | English or Chinese (`"悉尼"`); replaced by its canonical English name |
+| `trip_length`          | `integer` | 1–14                                 | number of days                                                        |
+| `budget`               | `enum`    | `"budget"`, `"moderate"`, `"luxury"` | any other value → 422                                                 |
+| `travel_style`         | `string`  | free text                            | used for CAG semantic matching                                        |
+| `max_daily_budget_aud` | `integer` | ≥ 1, optional                        | whole AUD per person per day, excluding accommodation                 |
+
+**Budget.** Costs are AUD per person, excluding accommodation. A request's daily ceiling is `max_daily_budget_aud` if given, otherwise the level's default — `budget` 70, `moderate` 200, `luxury` none. The prompt states the ceiling, and validation checks the total against it.
+
+**Input guards.** Before the workflow starts, a request is refused with 422 and a `reason` code when a free-text field looks like a prompt injection (`input_rejected`), or when the destination is not one place in the Australian place list (`destination_out_of_scope`). The list covers Australian places of at least 1,000 people, states and territories, major tourist destinations, and one Chinese name per major place; it may wrongly refuse a small place, and it refuses vague destinations ("Australia", "the east coast") and two destinations at once. Field errors keep FastAPI's body without a `reason`. Details and the exact bodies: [docs/api.md](docs/api.md) ("Input guards", "Error responses").
 
 **Optional query parameter:**
 
@@ -786,7 +797,7 @@ This branch adds a browser UI and a traces read endpoint on top of the completed
 
 ### UI features
 
-- **Form** — destination, trip_length, budget (enum select), travel_style, optional template_version
+- **Form** — destination, trip_length (1–14), budget (enum select), travel_style, optional daily budget per person, optional template_version; error banner shows field validation messages and guard refusals
 - **3 golden preset buttons** — pre-fill the form with the same inputs as `test_golden.py`
 - **SSE step panels** — render in real time as each workflow step completes; `generate` panel highlights template key and version
 - **Trace table** — auto-fetched from `GET /traces/{session_id}` after stream completes; shows step, status, latency, template version, degraded mode
