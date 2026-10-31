@@ -1,0 +1,9 @@
+# Entries added in dataset v2 (harden-workflow-guardrails task 6.5): each is a copy of a
+# v1 entry plus max_daily_budget_aud - e074/e004, e075/e024, e076/e022, e077/e001,
+# e078/e003, e079/e029 - so a pair differs only in the amount.
+e074
+e075
+e076
+e077
+e078
+e079

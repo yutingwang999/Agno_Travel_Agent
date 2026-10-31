@@ -221,6 +221,10 @@ __marimo__/
 # ignore raw downloads — they are re-fetched by the pinned page revisions
 data/knowledge/raw/
 
+# Australian place list (harden-workflow-guardrails): commit data/places/australia.tsv
+# and the hand-kept lists; ignore the GeoNames download it is built from
+data/places/raw/
+
 # Evaluation (build-evaluation-harness): run summaries, judge prompt copies and
 # calibration agreement summaries ARE committed. Per-entry results, calibration
 # samples with the human answers, and review sheets are kept locally and copied

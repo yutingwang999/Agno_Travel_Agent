@@ -43,10 +43,24 @@ Executes the 6-step CAG + RAG travel itinerary workflow and streams one Server-S
 
 | Field | Type | Required | Constraints |
 |-------|------|----------|-------------|
-| `destination` | string | Yes | Non-empty. Normalised to lowercase + stripped. |
-| `trip_length` | integer | Yes | >= 1 |
+| `destination` | string | Yes | One Australian place, in English or Chinese (see "Input guards"). Replaced by its canonical lowercase English name (`"悉尼"` → `"sydney"`). |
+| `trip_length` | integer | Yes | 1 to 14 |
 | `budget` | string | Yes | One of `"budget"`, `"moderate"`, `"luxury"` |
 | `travel_style` | string | Yes | Non-empty free text (e.g. `"family"`, `"adventure"`) |
+| `max_daily_budget_aud` | integer | No | Daily budget per person in whole AUD, excluding accommodation; at least 1, no upper bound. Sets the request's daily budget ceiling (see below). A fractional value is a 422 |
+
+**Daily budget ceiling.** All costs in the itinerary are AUD per person, excluding accommodation. The ceiling is `max_daily_budget_aud` when given, otherwise the budget level's default: `budget` 70, `moderate` 200, `luxury` none. The amount wins over the level when they seem to disagree (`budget` with 500 a day is accepted, with a ceiling of 500); the level still describes the travel style. The generation prompt states the ceiling, and an itinerary whose total exceeds the ceiling times the number of days fails validation and gets one correction call. Whether an amount is realistic for the destination is not checked.
+
+**Input guards.** After field validation and before the workflow starts, two checks run; neither calls an external API, and a refused request runs no workflow step:
+
+1. **Prompt injection.** `destination` and `travel_style` are matched against a configurable list of patterns (English and Chinese, e.g. "ignore previous instructions", "system prompt", `<|im_start|>`, "忽略之前的指令"). A match is refused with reason `input_rejected`.
+2. **Destination.** The destination must be in the Australian place list (`data/places/australia.tsv`: Australian places from GeoNames with at least 1,000 people, states and territories, major tourist destinations, and one Chinese name per major place in Simplified and Traditional script). Trailing state, territory or country qualifiers are ignored (`"Sydney, NSW"`, `"Perth, WA, Australia"`). Anything else is refused with reason `destination_out_of_scope`, including:
+   - places outside Australia (`"Paris"`);
+   - destinations too vague to look up (`"Australia"`, `"the east coast"`);
+   - two destinations (`"Sydney, Melbourne"`, `"Tasmania, Victoria"`) — a request plans one destination;
+   - small places not in the list (fewer than 1,000 people and not a listed tourist destination), and Chinese names other than the one listed.
+
+   A trailing state is not checked against the place's own state: `"Sydney, Tasmania"` is accepted as `sydney`.
 
 **Example**
 
@@ -108,7 +122,7 @@ Every event shares the same outer shape:
 
 #### `intake`
 
-Input fields after normalisation and validation.
+Input fields after normalisation, validation and the input guards: `destination` is the canonical name from the place list, and `max_daily_budget_aud` is `null` when the request has none.
 
 ```json
 {
@@ -117,10 +131,11 @@ Input fields after normalisation and validation.
   "status":     "completed",
   "timestamp":  "2026-04-08T04:12:01.123456+00:00",
   "data": {
-    "destination":   "sydney",
-    "trip_length":   3,
-    "budget":        "moderate",
-    "travel_style":  "cultural"
+    "destination":          "sydney",
+    "trip_length":          3,
+    "budget":               "moderate",
+    "travel_style":         "cultural",
+    "max_daily_budget_aud": null
   },
   "error": null
 }
@@ -154,6 +169,8 @@ Result of embedding-based intent classification against `itinerary_categories`.
 | `tone` | string | Tone hint from the matched category |
 | `constraints` | string | Constraint hint from the matched category |
 | `is_fallback` | boolean | `true` when no match exceeded the minimum threshold and the default category was used |
+
+If the embedding call or loading the categories fails, the step still completes with `matched_category` = `"family"`, `confidence_score` = `0.0` and `is_fallback` = `true`, so the request takes the retrieval path; the trace row records `error_type` = `"embedding_failed"`.
 
 #### `retrieval_decision`
 
@@ -250,6 +267,10 @@ On error (template not found):
 }
 ```
 
+If the selected template is missing but `low_confidence_with_retrieval` exists, that template is used and reported in `prompt_template_key` / `prompt_template_version`.
+
+On error (LLM call failed) the event has the same shape, with `"error": "LLM call failed: <exception type>"`. Only the exception type is included; details stay in the server log.
+
 #### `validate_output`
 
 Validated and structured itinerary. This is the final consumable output.
@@ -317,14 +338,116 @@ On unrecoverable error (both attempts failed):
 }
 ```
 
+Other `validate_output` errors, all with `"data": { "degraded_mode": true }`:
+
+| `error` | Cause |
+|---------|-------|
+| `"Generation failed upstream"` | The `generate` event has `status` = `"error"`; nothing is validated and no correction call is made |
+| `"Correction call failed: <exception type>"` | The first validation failed and the correction LLM call raised |
+| `"Validation failed and correction template unavailable: ..."` | The first validation failed and no `validate_output_correction` template is active |
+
 ---
 
 ### Error responses
 
 | HTTP status | Cause |
 |-------------|-------|
-| `422 Unprocessable Entity` | Request body failed validation (missing field, invalid `budget` value, `trip_length < 1`, empty string). |
+| `422 Unprocessable Entity` | The request was refused before the workflow started. Two kinds, told apart by the body (below). |
 | `500 Internal Server Error` | `DATABASE_URL` environment variable is not set. |
+
+**Field validation error** — a missing field, an invalid `budget`, `trip_length` outside 1–14, a blank `destination` or `travel_style`, a `max_daily_budget_aud` that is not a whole number of at least 1. FastAPI's default body, a list of errors with no `reason`:
+
+```json
+{
+  "detail": [
+    {"type": "value_error", "loc": ["body", "trip_length"], "msg": "Value error, trip_length must be at most 14", "input": 15, "ctx": {"error": {}}}
+  ]
+}
+```
+
+**Guard refusal** — an input guard refused the request. The body has a `reason` code and a fixed, human-readable `detail`:
+
+```json
+{"reason": "destination_out_of_scope", "detail": "Please enter one specific destination in Australia, such as Sydney, Cairns or Tasmania."}
+```
+
+| `reason` | `detail` |
+|----------|----------|
+| `destination_out_of_scope` | `Please enter one specific destination in Australia, such as Sydney, Cairns or Tasmania.` |
+| `input_rejected` | `Your request could not be processed. Please rephrase it and try again.` |
+
+The `detail` is fixed per code: it never repeats the submitted input or says which pattern or field matched. Check for `reason` to tell a refusal from a field error.
+
+---
+
+### Failure behaviour
+
+Once the request body is valid, a failure inside the workflow never breaks the stream: every request ends with a `validate_output` event. To find the cause of a failed request, look for the first event with `status` = `"error"`; the trace rows (`GET /traces/{session_id}`) carry the matching `error_type`. Error messages name only the exception type; the full exception is in the server log.
+
+#### Overview and `cag_match`
+
+```mermaid
+flowchart TD
+    A[POST /generate] --> B[intake]
+    B --> C{cag_match:<br/>embed intent,<br/>load categories}
+    C -- ok --> C1[completed:<br/>best category and score]
+    C -- raises --> C2["completed: family, confidence 0.0,<br/>is_fallback true<br/>trace: embedding_failed"]
+    C1 --> D{"retrieval_decision:<br/>confidence >= 0.85?"}
+    C2 --> D
+    D -- no --> E["rag_retrieve<br/>(a failed search continues<br/>with empty context)"]
+    D -- yes --> F[generate]
+    E --> F
+    F --> G[validate_output]
+```
+
+An embedding failure is treated as "no match": confidence 0.0 sends the request down the retrieval path.
+
+#### `generate`
+
+```mermaid
+flowchart TD
+    S[select template by confidence] --> T{template found?}
+    T -- yes --> L
+    T -- no --> U{selected key is<br/>high_confidence_minimal_context?}
+    U -- yes --> V{low_confidence_with_retrieval<br/>found?}
+    V -- yes --> V1[report low_confidence_with_retrieval<br/>as the template used] --> L
+    V -- no --> X
+    U -- no --> X["error: No active template found<br/>for key '#lt;selected key#gt;'<br/>(LLM not called)"]
+    L{call Gemini} -- ok --> OK[completed:<br/>raw_llm_output, template key and version]
+    L -- raises --> Y["error: LLM call failed: #lt;exception type#gt;<br/>trace: llm_call_failed"]
+```
+
+#### `validate_output`
+
+```mermaid
+flowchart TD
+    G{generate event<br/>status = error?} -- yes --> E0["error: Generation failed upstream<br/>trace: upstream_generation_failed<br/>(no parsing, no LLM call)"]
+    G -- no --> V1{first validation passes?<br/>JSON, schema, business rules}
+    V1 -- yes --> OK1[completed, degraded_mode false]
+    V1 -- no --> T{correction template<br/>found?}
+    T -- no --> E1["error: Validation failed and correction<br/>template unavailable<br/>trace: correction_template_unavailable"]
+    T -- yes --> C{call Gemini<br/>with correction prompt}
+    C -- raises --> E2["error: Correction call failed: #lt;exception type#gt;<br/>trace: correction_call_failed"]
+    C -- returns text --> V2{second validation<br/>passes?}
+    V2 -- yes --> OK2["completed, degraded_mode true<br/>trace: validation_retry_succeeded"]
+    V2 -- no --> E3["error: Validation failed after retry<br/>trace: validation_failed_after_retry"]
+```
+
+"Validation" means JSON parsing, the `ItineraryOutput` schema, and the business rules: the day count (internally and against the requested `trip_length`), daily costs adding up to the total, the total within the request's daily budget ceiling times the days, and no opening hours or prices in the text that the retrieved chunks do not state. A failed rule is reported in the correction prompt and, if the correction also fails, in `error` (messages begin `Content guardrail failed:` or `Business rule failed: cost` / `budget` / `unsupported`).
+
+Every `validate_output` error event has `"data": { "degraded_mode": true }`. A reply blocked by Gemini's safety filter arrives as empty text, not as an exception, so it ends as "Validation failed after retry".
+
+#### Event sequences
+
+| Situation | `cag_match` | `generate` | `validate_output` |
+|---|---|---|---|
+| Everything works | completed | completed | completed, `degraded_mode` false |
+| Gemini fails during embedding | completed (fallback, `embedding_failed`) | completed | completed |
+| Gemini fails during generation (429, 503, network) | completed | error: `LLM call failed: ClientError` | error: `Generation failed upstream` |
+| No active template | completed | error: `No active template found for key ...` | error: `Generation failed upstream` |
+| First output invalid (schema or a business rule), correction valid | completed | completed | completed, `degraded_mode` true |
+| First output invalid, correction call fails | completed | completed | error: `Correction call failed: ServerError` |
+| First output and correction both invalid | completed | completed | error: `Validation failed after retry: ...` |
 
 ---
 
@@ -377,7 +500,7 @@ Returns all `trace_events` rows written during a workflow run, ordered by `creat
 | `prompt_template_key` | string \| null | Set only for the `generate` step |
 | `prompt_template_version` | integer \| null | Set only for the `generate` step |
 | `degraded_mode` | boolean \| null | Set only for the `validate_output` step |
-| `error_type` | string \| null | Machine-readable error classification when status is `"error"` |
+| `error_type` | string \| null | Machine-readable classification of what went wrong, or `null`. Usually set with `status` = `"error"` (`llm_call_failed` for `generate`; `correction_call_failed`, `upstream_generation_failed`, `correction_template_unavailable`, `validation_failed_after_retry` for `validate_output`), but also on some completed steps: `embedding_failed` (`cag_match` fell back to the default category) and `validation_retry_succeeded` (`validate_output`) |
 | `created_at` | string (ISO 8601) | Row insertion timestamp |
 
 ### Error responses

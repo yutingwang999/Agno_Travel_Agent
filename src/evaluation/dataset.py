@@ -23,6 +23,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from app.workflow.config import DAILY_COST_CAP_AUD_PER_PERSON
+
 ROOT_DIR = Path(__file__).resolve().parents[2]
 DATASET_PATH = ROOT_DIR / "eval" / "dataset.jsonl"
 META_PATH = ROOT_DIR / "eval" / "dataset_meta.json"
@@ -98,6 +100,10 @@ class RequestForm(BaseModel):
     budget: str
     travel_style: str
     notes: str | None = Field(default=None, min_length=1, max_length=NOTES_MAX_LENGTH)
+    # Daily budget per person in whole AUD, excluding accommodation; sent with the
+    # request, and it sets the budget constraint's ceiling even for a system that
+    # ignores the field (harden-workflow-guardrails).
+    max_daily_budget_aud: int | None = Field(default=None, ge=1)
 
 
 class GoldSlots(BaseModel):
@@ -210,6 +216,19 @@ def check_dataset(
     ):
         if len(values) < minimum:
             problems.append(f"plan entries cover {len(values)} {label}, expected at least {minimum}")
+
+    # Entries with their own daily budget amount (harden-workflow-guardrails): one per
+    # level, and one whose amount is above its level's default ceiling.
+    with_amount = [e for e in entries if e.form.max_daily_budget_aud is not None]
+    for level in BUDGET_LEVELS:
+        if not any(e.form.budget == level for e in with_amount):
+            problems.append(f"no entry with budget {level!r} and max_daily_budget_aud")
+    if not any(
+        e.form.budget in DAILY_COST_CAP_AUD_PER_PERSON
+        and e.form.max_daily_budget_aud > DAILY_COST_CAP_AUD_PER_PERSON[e.form.budget]
+        for e in with_amount
+    ):
+        problems.append("no entry whose max_daily_budget_aud is above its level's default")
 
     if not any("out_of_scope" in e.tags and e.expected_behavior == "refuse" for e in entries):
         problems.append("no out_of_scope entry expecting refuse (e.g. a non-Australian city)")

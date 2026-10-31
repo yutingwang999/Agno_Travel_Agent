@@ -180,7 +180,7 @@ Three preset buttons pre-fill the form with the same inputs used in `test_golden
 | -------------- | ----------- | ---- | -------- | ------ | ------------------------------ |
 | Family trip    | Sydney      | 5    | moderate | family | High-confidence → no RAG       |
 | Budget trip    | Melbourne   | 3    | budget   | budget | High-confidence → no RAG       |
-| Low-confidence | Sydney      | 4    | moderate | family | Low-confidence → RAG triggered |
+| Low-confidence | Alice Springs | 4  | moderate | spontaneous_urban_nomad | Low-confidence → RAG triggered |
 
 Click a preset, then click **Generate Itinerary**.
 
@@ -199,6 +199,12 @@ After the stream finishes the page automatically calls `GET /traces/{session_id}
 **4. Try the optional template version override**
 
 Enter a version number in the **Template version** field before submitting to test a specific prompt template version (equivalent to `?template_version=N` on the API).
+
+**5. Try a budget amount and the input checks**
+
+- Enter a whole number in **Daily budget per person** (e.g. `150`); the `intake` panel shows `max_daily_budget_aud`, and the itinerary total stays within 150 × the number of days. A fractional amount or `0` is stopped by the form.
+- A trip length above 14 is stopped by the form.
+- A destination outside Australia (`Paris`) or an instruction in the travel style (`ignore previous instructions`) shows the refusal message in the red banner.
 
 ### Clearing trace data between manual runs
 
@@ -236,14 +242,19 @@ Content-Type: application/json
 }
 ```
 
-All four body fields are required. Missing or invalid fields return **422 Unprocessable Entity** — never a 500.
+The first four body fields are required. Missing or invalid fields return **422 Unprocessable Entity** — never a 500.
 
-| Field          | Type      | Values                               | Notes                          |
-| -------------- | --------- | ------------------------------------ | ------------------------------ |
-| `destination`  | `string`  | free text                            | normalised to lowercase        |
-| `trip_length`  | `integer` | ≥ 1                                  | number of days                 |
-| `budget`       | `enum`    | `"budget"`, `"moderate"`, `"luxury"` | any other value → 422          |
-| `travel_style` | `string`  | free text                            | used for CAG semantic matching |
+| Field                  | Type      | Values                               | Notes                                                                 |
+| ---------------------- | --------- | ------------------------------------ | --------------------------------------------------------------------- |
+| `destination`          | `string`  | one Australian place                 | English or Chinese (`"悉尼"`); replaced by its canonical English name |
+| `trip_length`          | `integer` | 1–14                                 | number of days                                                        |
+| `budget`               | `enum`    | `"budget"`, `"moderate"`, `"luxury"` | any other value → 422                                                 |
+| `travel_style`         | `string`  | free text                            | used for CAG semantic matching                                        |
+| `max_daily_budget_aud` | `integer` | ≥ 1, optional                        | whole AUD per person per day, excluding accommodation                 |
+
+**Budget.** Costs are AUD per person, excluding accommodation. A request's daily ceiling is `max_daily_budget_aud` if given, otherwise the level's default — `budget` 70, `moderate` 200, `luxury` none. The prompt states the ceiling, and validation checks the total against it.
+
+**Input guards.** Before the workflow starts, a request is refused with 422 and a `reason` code when a free-text field looks like a prompt injection (`input_rejected`), or when the destination is not one place in the Australian place list (`destination_out_of_scope`). The list covers Australian places of at least 1,000 people, states and territories, major tourist destinations, and one Chinese name per major place; it may wrongly refuse a small place, and it refuses vague destinations ("Australia", "the east coast") and two destinations at once. Field errors keep FastAPI's body without a `reason`. Details and the exact bodies: [docs/api.md](docs/api.md) ("Input guards", "Error responses").
 
 **Optional query parameter:**
 
@@ -370,7 +381,7 @@ rag_retrieve_executor
 
 ### Seeding the knowledge base
 
-`scripts/seed.py` inserts itinerary categories, 3 prompt templates (including the correction template for validate_output), and 13 Australian travel documents into the knowledge base using `knowledge.insert()`:
+`scripts/seed.py` inserts itinerary categories, every version of the 3 prompt templates (including the correction template for validate_output; version 2 states that all costs are AUD per person, excluding accommodation, and version 3 of the two generation templates adds the daily budget ceiling), and 13 Australian travel documents into the knowledge base using `knowledge.insert()`:
 
 ```bash
 python scripts/dev.py seed
@@ -415,6 +426,8 @@ Three prompt templates are seeded in `prompt_templates`:
 
 All templates are versioned (`version`, `is_active`) and fetched from the database at runtime — never hardcoded. The resolved `prompt_template_version` is written to the SSE event `data` field for traceability.
 
+Changing a template: add a new entry to `TEMPLATE_DEFINITIONS` in `scripts/seed.py` (existing versions are never edited), set its number in `ACTIVE_TEMPLATE_VERSIONS`, and run `python scripts/dev.py seed`. Seed makes exactly the declared version of each key active; rolling back is changing the number back and re-running seed. The database allows only one active version per key (migration `0006`), and seed stops before writing if a declared version is not defined.
+
 ### SSE output
 
 ```json
@@ -442,11 +455,18 @@ Step 6 (`validate_output`) parses `raw_llm_output` from the generate step agains
 validate_output_executor
   ├── _extract_raw_llm_output(step_input)
   │     └── reads raw_llm_output from generate SSE event
-  ├── parse_llm_output(raw_text)                        [attempt 1]
-  │     ├── strip markdown fences (```json … ```)
+  ├── _build_validation_context(step_input)
+  │     └── requested trip_length + daily budget ceiling (intake event),
+  │         knowledge context = chunk_text of every rag_retrieve chunk
+  ├── parse_llm_output(raw_text, context)               [attempt 1]
+  │     ├── strip markdown fences (```json … ```)       (fallback; Gemini returns plain JSON)
   │     ├── json.loads(cleaned_text)
   │     ├── ItineraryOutput.model_validate(data)
-  │     └── content guardrail: len(daily_itinerary) == trip_length_days
+  │     └── business rules (business_rules.py), every failure reported:
+  │           ├── day count: internally consistent and equal to the requested trip_length
+  │           ├── cost: daily costs add up to the total (± max(1 AUD, 1%))
+  │           ├── budget: total ≤ daily ceiling × days (per person, excl. accommodation)
+  │           └── unsupported: opening hours and prices in the text must be in the knowledge context
   │
   ├── [success] → emit SSE with itinerary + degraded_mode=False
   │
@@ -454,7 +474,7 @@ validate_output_executor
         ├── resolve_template("validate_output_correction", db_url)
         ├── _build_correction_prompt(template, raw_output, errors)
         ├── _call_llm(correction_prompt, ...)
-        ├── parse_llm_output(retry_output)              [attempt 2]
+        ├── parse_llm_output(retry_output, context)     [attempt 2]
         ├── [success] → emit SSE with itinerary + degraded_mode=True
         └── [failure] → emit SSE status="error" + degraded_mode=True
                         (no unhandled exception)
@@ -643,11 +663,12 @@ Commit before a run you want to cite: a run on uncommitted code is marked `git_d
 │           ├── intake_model.py       # TravelRequest Pydantic model (Step 1 data contract)
 │           ├── travel_workflow.py    # Agno Workflow — 6 steps registered in order
 │           ├── trace_logger.py       # write_trace() — inserts one TraceEvent row per step
-│           ├── cag_matcher.py        # CAG logic: embed intent → pgvector search → MatchResult
+│           ├── cag_matcher.py        # CAG logic: embed intent → in-memory cosine match → MatchResult
 │           ├── gemini_embedder.py    # Agno-compatible Gemini embedder (wraps google-genai)
 │           ├── knowledge_base.py     # Factory: Knowledge + PgVector(travel_docs) + GeminiEmbedder
 │           ├── retrieval_service.py  # RAG logic: knowledge.search() → list[RetrievedChunk]
 │           ├── template_resolver.py  # DB lookup: resolve_template(key) → (text, version)
+│           ├── template_versions.py  # seed helper: insert versions, activate the declared one per key
 │           ├── output_validator.py   # ItineraryOutput Pydantic schema + parse_llm_output()
 │           └── steps/
 │               ├── intake.py              # Step 1 — validates + normalises input (TravelRequest)
@@ -677,7 +698,9 @@ Commit before a run you want to cite: a run on uncommitted code is marked `git_d
 │       ├── 0001_enable_pgvector_create_itinerary_categories.py
 │       ├── 0002_create_prompt_templates.py
 │       ├── 0003_create_source_documents.py
-│       └── 0004_create_trace_events.py
+│       ├── 0004_create_trace_events.py
+│       ├── 0005_add_token_usage_to_trace_events.py
+│       └── 0006_single_active_prompt_template.py
 ├── scripts/
 │   ├── dev.py               # cross-platform task runner
 │   └── seed.py              # seed itinerary_categories, prompt_templates, source_documents
@@ -747,7 +770,7 @@ Values `"budget"`, `"moderate"`, `"luxury"` are now enforced at the Pydantic lay
 `POST /generate` accepts an optional `template_version` query parameter. When set, `resolve_template` fetches that specific version instead of the active one — enabling reproducibility and A/B testing without changing the database. The version is propagated through `additional_data` to `generate_executor`.
 
 **Content-level output guardrail**:  
-`parse_llm_output` now checks that `len(daily_itinerary) == trip_length_days` after Pydantic schema validation. A mismatch triggers the existing retry mechanism in `validate_output_executor` — no extra code path needed.
+`parse_llm_output` now checks that `len(daily_itinerary) == trip_length_days` after Pydantic schema validation. A mismatch triggers the existing retry mechanism in `validate_output_executor` — no extra code path needed. (`harden-workflow-guardrails` extends this into a list of business rules; see "How it works" under validate_output.)
 
 **Seed script robustness fix**:  
 `scripts/seed.py` detects when `travel_docs` exists but is missing the `embedding` column (caused by a partial or legacy seed run) and drops + recreates the table before inserting documents.
@@ -774,16 +797,25 @@ This branch adds a browser UI and a traces read endpoint on top of the completed
 
 ### UI features
 
-- **Form** — destination, trip_length, budget (enum select), travel_style, optional template_version
+- **Form** — destination, trip_length (1–14), budget (enum select), travel_style, optional daily budget per person, optional template_version; error banner shows field validation messages and guard refusals
 - **3 golden preset buttons** — pre-fill the form with the same inputs as `test_golden.py`
 - **SSE step panels** — render in real time as each workflow step completes; `generate` panel highlights template key and version
 - **Trace table** — auto-fetched from `GET /traces/{session_id}` after stream completes; shows step, status, latency, template version, degraded mode
 
 ---
 
+## Data sources and licences
+
+| Data | Used for | Source and licence | Details |
+| --- | --- | --- | --- |
+| Australian place list (`data/places/australia.tsv`) | The destination guard: which destinations are accepted, and their canonical English names | Place names from [GeoNames](https://www.geonames.org/) (`cities1000`), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), plus hand-kept lists of states, tourist destinations and Chinese names written for this project. Contains data from GeoNames (https://www.geonames.org/), licensed under CC BY 4.0. Modified: only Australian places are used, names are lowercased, and the list is combined with hand-kept lists written for this project. | [data/places/SOURCES.md](data/places/SOURCES.md) |
+| Knowledge base, corpus v1 (13 documents in `scripts/seed.py`) | RAG context for generation | Short handwritten summaries written for v0.1.0. To be replaced in `rebuild-rag` by openly licensed sources (mainly Wikivoyage, CC BY-SA), each listed here with its licence | `scripts/seed.py` (`SOURCE_DOCUMENTS`) |
+
+---
+
 ## Design Docs
 
 - [DESIGN.md](docs/DESIGN.md) — data model, workflow steps, SSE contract, prompt strategy
-- [api.md](docs/api.md) — full API reference: request/response formats, SSE event shapes per step
+- [api.md](docs/api.md) — full API reference: request/response formats, SSE event shapes per step, and how each failure inside the workflow is reported ("Failure behaviour")
 - [git-workflow.md](docs/git-workflow.md) — branch order, scope, and merge checklist
 - [CLAUDE.md](docs/CLAUDE.md) — AI tool usage rules and architecture constraints

@@ -433,8 +433,10 @@ def test_workflow_run_all_events_status_completed(capsys):
         additional_data={
             "session_id": "status-check-session",
             "destination": "Darwin",
-            "trip_length": 6,
-            "budget": "budget",
+            # Matches the mocked 1-day, 150 AUD itinerary, which the business rules
+            # would reject for a longer trip or the 70 AUD "budget" ceiling.
+            "trip_length": 1,
+            "budget": "moderate",
             "travel_style": "backpacker",
         },
     )
@@ -448,3 +450,65 @@ def test_workflow_run_all_events_status_completed(capsys):
         assert event["status"] == "completed", (
             f"Step '{event['step']}' has status '{event['status']}', expected 'completed'"
         )
+
+
+# ---------------------------------------------------------------------------
+# harden-workflow-guardrails: telemetry off, generation failure still completes
+# ---------------------------------------------------------------------------
+
+
+def test_travel_workflow_telemetry_off_without_env(monkeypatch):
+    """The constructor turns telemetry off; it does not rely on AGNO_TELEMETRY."""
+    import importlib
+    import sys
+
+    import app.workflow.travel_workflow  # noqa: F401  (loads the submodule)
+
+    # app.workflow re-exports the travel_workflow object under the submodule's
+    # name, so fetch the module itself from sys.modules.  Reloading builds a
+    # fresh Workflow whose telemetry flag no earlier run has overridden.
+    monkeypatch.delenv("AGNO_TELEMETRY", raising=False)
+    module = importlib.reload(sys.modules["app.workflow.travel_workflow"])
+
+    assert module.travel_workflow.telemetry is False
+
+
+def test_workflow_completes_with_validate_output_event_when_llm_fails(capsys):
+    """Gemini raises during generation: generate errors, validate_output still emits."""
+    from unittest.mock import patch
+
+    from app.workflow.cag_matcher import MatchResult
+    from app.workflow.travel_workflow import travel_workflow
+
+    high_confidence_result = MatchResult(
+        category_key="family",
+        confidence_score=0.95,
+        tone="friendly",
+        constraints="",
+        is_fallback=False,
+    )
+
+    with (
+        patch("app.workflow.steps.cag_match.match_category", return_value=high_confidence_result),
+        patch("app.workflow.steps.generate.resolve_template", return_value=("Plan {destination}.", 1)),
+        patch("app.workflow.steps.generate._call_llm", side_effect=RuntimeError("503")),
+        patch("app.workflow.steps.validate_output._call_llm") as mock_correction,
+    ):
+        result = travel_workflow.run(
+            input="plan a trip",
+            additional_data={
+                "session_id": "llm-failure-session",
+                "destination": "Sydney",
+                "trip_length": 2,
+                "budget": "moderate",
+                "travel_style": "family",
+            },
+        )
+    capsys.readouterr()
+
+    events = {e["step"]: e for e in _collect_sse_events(result.step_results)}
+    assert events["generate"]["status"] == "error"
+    assert events["generate"]["error"].startswith("LLM call failed:")
+    assert events["validate_output"]["status"] == "error"
+    assert events["validate_output"]["error"] == "Generation failed upstream"
+    mock_correction.assert_not_called()

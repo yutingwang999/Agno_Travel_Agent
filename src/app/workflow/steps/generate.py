@@ -2,8 +2,9 @@
 
 Reads upstream workflow state to build a fully resolved prompt:
 
-- ``destination``, ``trip_length``, ``budget``, ``travel_style`` from intake
-  (available in ``step_input.additional_data``)
+- ``destination``, ``trip_length``, ``budget``, ``travel_style`` and the
+  optional ``max_daily_budget_aud`` from intake (available in
+  ``step_input.additional_data``); the last two give ``daily_budget_ceiling``
 - ``matched_category``, ``confidence_score``, ``tone``, ``constraints`` from
   the cag_match SSE event
 - ``retrieved_context`` from the rag_retrieve SSE event (empty string when
@@ -29,8 +30,10 @@ import time
 from agno.workflow.types import StepInput, StepOutput
 from google import genai
 
+from app.workflow.budget import ceiling_text, daily_budget_ceiling
 from app.workflow.config import RETRIEVAL_CONFIDENCE_THRESHOLD
 from app.workflow.llm_usage import LLMResult, result_from_response
+from app.workflow.output_validator import STRUCTURED_OUTPUT_CONFIG
 from app.workflow.sse import build_sse_event, sse_event_to_json
 from app.workflow.template_resolver import TemplateNotFoundError, resolve_template
 from app.workflow.trace_logger import write_trace
@@ -168,6 +171,7 @@ def _call_llm(prompt: str, api_key: str, model: str) -> LLMResult:
     response = client.models.generate_content(
         model=model,
         contents=prompt,
+        config=STRUCTURED_OUTPUT_CONFIG,
     )
     return result_from_response(response)
 
@@ -206,6 +210,7 @@ def generate_executor(step_input: StepInput) -> StepOutput:
     trip_length: str = str(additional_data.get("trip_length", ""))
     budget: str = additional_data.get("budget", "")
     travel_style: str = additional_data.get("travel_style", "")
+    daily_ceiling = daily_budget_ceiling(budget, additional_data.get("max_daily_budget_aud"))
 
     # Optional template version override forwarded from the API query parameter.
     # None means "use the active version" (default behaviour).
@@ -246,6 +251,8 @@ def generate_executor(step_input: StepInput) -> StepOutput:
                     db_url=db_url,
                     version=template_version_override,
                 )
+                # Report the template actually used, in the event and the trace.
+                template_key = fallback_key
             else:
                 raise TemplateNotFoundError(
                     f"No active template found for template_key={template_key!r}"
@@ -277,15 +284,38 @@ def generate_executor(step_input: StepInput) -> StepOutput:
         "tone": tone,
         "constraints": constraints,
         "retrieved_context": retrieved_context,
+        "daily_budget_ceiling": ceiling_text(daily_ceiling),
     }
     resolved_prompt: str = _format_template(template_text, variables)
 
-    # Call the LLM with the fully resolved prompt
-    llm_result = _call_llm(
-        prompt=resolved_prompt,
-        api_key=api_key,
-        model=llm_model,
-    )
+    # Call the LLM with the fully resolved prompt.  Only the exception type goes
+    # into the event; the full message stays in the log.
+    try:
+        llm_result = _call_llm(
+            prompt=resolved_prompt,
+            api_key=api_key,
+            model=llm_model,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("generate: LLM call failed")
+        latency_ms = (time.monotonic() - start) * 1000
+        write_trace(
+            db_url=db_url,
+            session_id=session_id,
+            step_name="generate",
+            status="error",
+            latency_ms=latency_ms,
+            prompt_template_key=template_key,
+            prompt_template_version=template_version,
+            error_type="llm_call_failed",
+        )
+        error_event = build_sse_event(
+            session_id=session_id,
+            step="generate",
+            status="error",
+            error=f"LLM call failed: {type(exc).__name__}",
+        )
+        return StepOutput(content=sse_event_to_json(error_event))
     raw_llm_output: str = llm_result.text
 
     sse_event = build_sse_event(

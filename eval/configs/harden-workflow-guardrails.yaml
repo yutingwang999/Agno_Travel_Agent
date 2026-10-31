@@ -1,0 +1,14 @@
+# harden-workflow-guardrails, evaluated in steps on successive commits (task 6.3):
+# (a) cost-unit sentence in the templates, (b) daily budget ceiling in the
+# templates, (c) business rules. Everything else matches v010-baseline, so the
+# runs compare with it directly; the run's git commit tells the steps apart.
+name: harden-workflow-guardrails
+description: v0.1.0 workflow with harden-workflow-guardrails changes up to the run's commit, corpus v1
+generation_model: gemini-3.1-flash-lite
+embedding_model: gemini-embedding-001
+judge_model: gpt-6-luna
+corpus_version: v1
+knowledge_table: travel_docs_v1
+retrieval_k: 5
+judge_concurrency: 8
+request_parser: false

@@ -3,7 +3,8 @@ Seed script for the travel agent database.
 
 Inserts:
   - 3 itinerary_categories  (family, budget, adventure)
-  - 2 prompt_templates       (high_confidence_minimal_context, low_confidence_with_retrieval)
+  - prompt_templates          (every version in TEMPLATE_DEFINITIONS; the version in
+                               ACTIVE_TEMPLATE_VERSIONS is the only active one per key)
   - 13 source documents into the Agno Knowledge base (travel_docs table via PgVector)
 
 Idempotent — safe to run multiple times; existing rows are skipped, not duplicated.
@@ -34,8 +35,8 @@ from sqlalchemy import create_engine, make_url, select  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from app.models.itinerary_category import ItineraryCategory  # noqa: E402
-from app.models.prompt_template import PromptTemplate  # noqa: E402
 from app.workflow.knowledge_base import build_knowledge, knowledge_table_name  # noqa: E402
+from app.workflow.template_versions import apply_template_versions, check_active_versions  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Config
@@ -370,7 +371,7 @@ ITINERARY_CATEGORIES = [
 # ---- Prompt templates -------------------------------------------------------
 # Variables available in both templates:
 #   {destination}, {trip_length}, {budget}, {matched_category},
-#   {tone}, {constraints}, {retrieved_context}
+#   {tone}, {constraints}, {retrieved_context}, {daily_budget_ceiling} (from version 3)
 # ---------------------------------------------------------------------------
 
 HIGH_CONFIDENCE_TEMPLATE = """\
@@ -465,29 +466,115 @@ Return ONLY a corrected valid JSON object with this exact structure — no prose
 }}
 """
 
-PROMPT_TEMPLATES = [
+# ---- Version 2: cost unit (harden-workflow-guardrails) ---------------------
+# v1 plus one sentence stating the unit of every cost, so the model and the
+# budget rule mean the same thing. Nothing else changes, so the evaluation can
+# attribute differences to this sentence.
+
+COST_UNIT_SENTENCE = (
+    "All costs are AUD per person, excluding accommodation: "
+    '"estimated_cost_aud" is what one traveller spends that day, and '
+    '"total_estimated_cost_aud" is what one traveller spends over the whole trip.'
+)
+
+
+def _insert_after(template: str, marker: str, line: str) -> str:
+    """Return *template* with *line* inserted on its own line after *marker*."""
+    assert template.count(marker) == 1, marker
+    return template.replace(marker, f"{marker}\n{line}")
+
+
+def _insert_before(template: str, marker: str, line: str) -> str:
+    """Return *template* with *line* and a blank line inserted before *marker*."""
+    assert template.count(marker) == 1, marker
+    return template.replace(marker, f"{line}\n\n{marker}")
+
+
+HIGH_CONFIDENCE_TEMPLATE_V2 = _insert_after(
+    HIGH_CONFIDENCE_TEMPLATE, "Planning constraints: {constraints}", COST_UNIT_SENTENCE
+)
+LOW_CONFIDENCE_TEMPLATE_V2 = _insert_after(
+    LOW_CONFIDENCE_TEMPLATE, "Planning constraints: {constraints}", COST_UNIT_SENTENCE
+)
+CORRECTION_TEMPLATE_V2 = _insert_before(
+    CORRECTION_TEMPLATE, "Return ONLY a corrected valid JSON object", COST_UNIT_SENTENCE
+)
+
+# ---- Version 3: daily budget ceiling (harden-workflow-guardrails) ------------
+# v2 plus one sentence giving the request's daily ceiling, filled by the generate
+# step ("<amount> AUD per person per day, excluding accommodation" or "none set").
+# Generation templates only: a budget rule failure states the numbers to the
+# correction call.
+
+BUDGET_CEILING_SENTENCE = (
+    "Daily budget ceiling: {daily_budget_ceiling}. If a ceiling is set, keep "
+    '"total_estimated_cost_aud" at or below that ceiling multiplied by {trip_length} days.'
+)
+
+HIGH_CONFIDENCE_TEMPLATE_V3 = _insert_after(
+    HIGH_CONFIDENCE_TEMPLATE_V2, COST_UNIT_SENTENCE, BUDGET_CEILING_SENTENCE
+)
+LOW_CONFIDENCE_TEMPLATE_V3 = _insert_after(
+    LOW_CONFIDENCE_TEMPLATE_V2, COST_UNIT_SENTENCE, BUDGET_CEILING_SENTENCE
+)
+
+# Every version ever defined, append-only: a new wording is a new entry, so
+# earlier results stay reproducible with ?template_version=N.
+TEMPLATE_DEFINITIONS = [
     {
         "template_key": "high_confidence_minimal_context",
         "version": 1,
         "template_text": HIGH_CONFIDENCE_TEMPLATE,
-        "is_active": True,
     },
     {
         "template_key": "low_confidence_with_retrieval",
         "version": 1,
         "template_text": LOW_CONFIDENCE_TEMPLATE,
-        "is_active": True,
     },
     {
         "template_key": "validate_output_correction",
         "version": 1,
         "template_text": CORRECTION_TEMPLATE,
-        "is_active": True,
+    },
+    {
+        "template_key": "high_confidence_minimal_context",
+        "version": 2,
+        "template_text": HIGH_CONFIDENCE_TEMPLATE_V2,
+    },
+    {
+        "template_key": "low_confidence_with_retrieval",
+        "version": 2,
+        "template_text": LOW_CONFIDENCE_TEMPLATE_V2,
+    },
+    {
+        "template_key": "validate_output_correction",
+        "version": 2,
+        "template_text": CORRECTION_TEMPLATE_V2,
+    },
+    {
+        "template_key": "high_confidence_minimal_context",
+        "version": 3,
+        "template_text": HIGH_CONFIDENCE_TEMPLATE_V3,
+    },
+    {
+        "template_key": "low_confidence_with_retrieval",
+        "version": 3,
+        "template_text": LOW_CONFIDENCE_TEMPLATE_V3,
     },
 ]
 
+# The version of each key that requests use by default. Seed makes exactly this
+# version active; change the number to upgrade or roll back.
+ACTIVE_TEMPLATE_VERSIONS = {
+    "high_confidence_minimal_context": 3,
+    "low_confidence_with_retrieval": 3,
+    "validate_output_correction": 2,
+}
+
 # ---- Source documents -------------------------------------------------------
-# Content derived from australia.com pages (factual, no marketing language).
+# Handwritten for v0.1.0 as factual notes in the project's own words. Topics and
+# the selection of places in the Australia-wide documents follow articles on
+# australia.com; corpus v1 is replaced by openly licensed sources in rebuild-rag.
 # ---------------------------------------------------------------------------
 
 SOURCE_DOCUMENTS = [
@@ -502,7 +589,7 @@ SOURCE_DOCUMENTS = [
             "November-February, cooler March-August. Aboriginal cultural experiences available "
             "year-round."
         ),
-        "metadata_json": {"source": "australia.com", "category": "destination"},
+        "metadata_json": {"source": "handwritten", "category": "destination"},
     },
     {
         "destination": "Melbourne",
@@ -514,7 +601,7 @@ SOURCE_DOCUMENTS = [
             "seasons in one day possible. Best visited spring/summer (November-February). "
             "Nearby: Great Ocean Road, Yarra Valley, Dandenong Ranges, Mornington Peninsula."
         ),
-        "metadata_json": {"source": "australia.com", "category": "destination"},
+        "metadata_json": {"source": "handwritten", "category": "destination"},
     },
     {
         "destination": "Gold Coast",
@@ -526,7 +613,7 @@ SOURCE_DOCUMENTS = [
             "with rainforest walks and waterfalls. Approximately 300 sunny days annually. "
             "Public transit includes the G:link tram. High season November-January."
         ),
-        "metadata_json": {"source": "australia.com", "category": "destination"},
+        "metadata_json": {"source": "handwritten", "category": "destination"},
     },
     {
         "destination": "Brisbane",
@@ -539,7 +626,7 @@ SOURCE_DOCUMENTS = [
             "sunshine days per year. Mild winters June-August; peak season November-February. "
             "Airport 17 km from city centre."
         ),
-        "metadata_json": {"source": "australia.com", "category": "destination"},
+        "metadata_json": {"source": "handwritten", "category": "destination"},
     },
     {
         "destination": "Australia",
@@ -553,7 +640,7 @@ SOURCE_DOCUMENTS = [
             "Pro World Surfing Championships; Barnbougle Dunes and Lost Farm golf courses in "
             "Tasmania (ranked top 100 worldwide)."
         ),
-        "metadata_json": {"source": "australia.com", "category": "adventure", "activity": "sport"},
+        "metadata_json": {"source": "handwritten", "category": "adventure", "activity": "sport"},
     },
     {
         "destination": "Australia",
@@ -567,7 +654,7 @@ SOURCE_DOCUMENTS = [
             "QLD (2 hours from Brisbane); Yanchep National Park WA (1 hour from Perth); Tidbinbilla "
             "Nature Reserve ACT (outside Canberra)."
         ),
-        "metadata_json": {"source": "australia.com", "category": "wildlife"},
+        "metadata_json": {"source": "handwritten", "category": "wildlife"},
     },
     {
         "destination": "Australia",
@@ -582,7 +669,7 @@ SOURCE_DOCUMENTS = [
             "Perth, Adelaide; Grafton Jacaranda Festival. Aurora Australis: May-August, Tasmania "
             "(Bruny Island, Cradle Mountain-Lake St Clair, Bathurst Harbour)."
         ),
-        "metadata_json": {"source": "australia.com", "category": "nature"},
+        "metadata_json": {"source": "handwritten", "category": "nature"},
     },
     {
         "destination": "Australia",
@@ -596,7 +683,7 @@ SOURCE_DOCUMENTS = [
             "dolphin swimming (SA); Cradle Mountain chairlift walks with wombats, wallabies, and "
             "Tasmanian devils (TAS)."
         ),
-        "metadata_json": {"source": "australia.com", "category": "family"},
+        "metadata_json": {"source": "handwritten", "category": "family"},
     },
     {
         "destination": "Australia",
@@ -611,7 +698,7 @@ SOURCE_DOCUMENTS = [
             "crayfish, honey, gin. Esperance WA — yoga, photography workshops, Indigenous culture. "
             "Blue Mountains NSW — waterfall hiking, wildlife tours."
         ),
-        "metadata_json": {"source": "australia.com", "category": "culture"},
+        "metadata_json": {"source": "handwritten", "category": "culture"},
     },
     {
         "destination": "Australia",
@@ -625,7 +712,7 @@ SOURCE_DOCUMENTS = [
             "(Vibrance, Dark Mofo festivals). Melbourne — regarded as one of the world's street art "
             "capitals: Hosier Lane, Rutledge Lane, Centre Place; Silo Art Trail through Grampians."
         ),
-        "metadata_json": {"source": "australia.com", "category": "culture", "activity": "street-art"},
+        "metadata_json": {"source": "handwritten", "category": "culture", "activity": "street-art"},
     },
     {
         "destination": "Australia",
@@ -640,7 +727,7 @@ SOURCE_DOCUMENTS = [
             "of Australia (Canberra); MONA (Hobart). Rock art sites nearly 30,000 years old. "
             "Australia has 20 UNESCO World Heritage locations."
         ),
-        "metadata_json": {"source": "australia.com", "category": "culture", "activity": "history"},
+        "metadata_json": {"source": "handwritten", "category": "culture", "activity": "history"},
     },
     {
         "destination": "Australia",
@@ -656,7 +743,7 @@ SOURCE_DOCUMENTS = [
             "encounters, foraging, cave exploration, storytelling. Duration ranges from one-hour "
             "city tours to four-day wilderness walks."
         ),
-        "metadata_json": {"source": "australia.com", "category": "culture", "activity": "indigenous"},
+        "metadata_json": {"source": "handwritten", "category": "culture", "activity": "indigenous"},
     },
     {
         "destination": "Australia",
@@ -672,7 +759,7 @@ SOURCE_DOCUMENTS = [
             "from Darwin) barramundi fishing March-November, mud crab dinners. Victoria — St Kilda "
             "Melbourne award-winning seafood restaurants."
         ),
-        "metadata_json": {"source": "australia.com", "category": "food", "activity": "seafood"},
+        "metadata_json": {"source": "handwritten", "category": "food", "activity": "seafood"},
     },
 ]
 
@@ -715,30 +802,9 @@ def seed_itinerary_categories(session: Session) -> None:
 
 def seed_prompt_templates(session: Session) -> None:
     print("Seeding prompt_templates...")
-    for data in PROMPT_TEMPLATES:
-        existing = session.scalar(
-            select(PromptTemplate).where(
-                PromptTemplate.template_key == data["template_key"],
-                PromptTemplate.version == data["version"],
-            )
-        )
-        if existing:
-            print(
-                f"  [skip] template_key={data['template_key']} "
-                f"version={data['version']} already exists"
-            )
-            continue
-
-        template = PromptTemplate(
-            template_key=data["template_key"],
-            version=data["version"],
-            template_text=data["template_text"],
-            is_active=data["is_active"],
-        )
-        session.add(template)
-        print(f"  [insert] template_key={data['template_key']} version={data['version']}")
-
-    session.commit()
+    log = apply_template_versions(session, TEMPLATE_DEFINITIONS, ACTIVE_TEMPLATE_VERSIONS)
+    for line in log or ["[skip] every defined version exists and the declared versions are active"]:
+        print(f"  {line}")
 
 
 def _travel_docs_has_embedding_column(db_url: str, table_name: str) -> bool:
@@ -802,6 +868,8 @@ def seed_source_documents() -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    # Fail on a bad declaration before connecting or writing anything.
+    check_active_versions(TEMPLATE_DEFINITIONS, ACTIVE_TEMPLATE_VERSIONS)
     print(f"Connecting to database: {make_url(DATABASE_URL).render_as_string(hide_password=True)}")
     engine = create_engine(DATABASE_URL)
 

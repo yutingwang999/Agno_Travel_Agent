@@ -68,6 +68,11 @@ def _templates(summary: dict) -> str:
     return ", ".join(f"{t['key']} v{t['version']}" for t in items) or MISSING
 
 
+def _correction_template(summary: dict) -> str:
+    template = get(summary, "conditions.correction_template")
+    return f"{template['key']} v{template['version']}" if template else MISSING
+
+
 def _judge_prompts(summary: dict) -> str:
     prompts = get(summary, "conditions.judge_prompts") or {}
     return ", ".join(f"{name} v{version}" for name, version in prompts.items()) or MISSING
@@ -84,6 +89,7 @@ CONDITION_ROWS: list[Row] = [
      lambda s: f"{text(get(s, 'conditions.corpus_version'))} / `{text(get(s, 'conditions.knowledge_table'))}`"),
     ("Generation model", lambda s: text(get(s, "conditions.generation_model"))),
     ("Generation templates", _templates),
+    ("Correction template", _correction_template),
     ("Judge model / prompts", lambda s: f"{text(get(s, 'conditions.judge_model'))} ({_judge_prompts(s)})"),
     ("Price table date", lambda s: text(get(s, "conditions.price_table_date"))),
 ]

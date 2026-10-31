@@ -9,6 +9,8 @@ python scripts/dev.py eval-db-setup                                  # once, and
 python scripts/eval_dataset_check.py                                 # dataset format and coverage, no API calls
 python scripts/eval_run.py --config v010-baseline                    # full run (73 entries)
 python scripts/eval_run.py --config v010-baseline --subset smoke     # smoke subset (10 entries)
+python scripts/eval_run.py --config <name> --subset dataset-v1      # the 73 dataset-v1 entries, to compare with the v0.1.0 baseline
+python scripts/eval_run.py --config <name> --subset budget-amount   # the dataset-v2 entries with a budget amount (e074-e079)
 python scripts/eval_compare.py <run id> <run id>                     # Markdown comparison table
 python scripts/eval_gate.py                                          # smoke run + thresholds; non-zero exit on failure
 ```
@@ -24,24 +26,27 @@ Needs `EVAL_DATABASE_URL`, `GEMINI_API_KEY` and `OPENAI_API_KEY` in `.env` (see 
 | `summary.json` | Run conditions (dataset and corpus version, models, templates, judge prompt versions, price table date, git commit, `git_dirty`), every metric, and `phase_seconds` |
 | `results.jsonl` | One line per entry: request, behaviour, all SSE events, retrieval scores, the judge's inputs and verdicts, costs, latencies |
 | `judge_prompts/` | A copy of the judge prompt files the run used; with the inputs stored per entry they reproduce every judge prompt exactly |
+| `generation_prompts/` | The text of every prompt template version the run used (`<template key>_v<version>.txt`, read from the evaluation database): the generation templates the generate events name, and the correction template that was active when the run started (`conditions.correction_template` in `summary.json`). With the request and step events stored per entry they reproduce every prompt sent to the generation model |
 
 ### What is published
 
 | File | Where it lives |
 | --- | --- |
-| `eval/runs/<run id>/summary.json`, `eval/runs/<run id>/judge_prompts/` | This repository. Every number in `docs/experiments.md` can be traced to a `summary.json` |
+| `eval/runs/<run id>/summary.json`, `eval/runs/<run id>/judge_prompts/`, `eval/runs/<run id>/generation_prompts/` | This repository. Every number in `docs/experiments.md` can be traced to a `summary.json` |
 | `eval/calibration/<run id>.agreement.json` (the agreement figures `score` prints: per-stratum counts and rates, no text) | This repository. The judge–human agreement in `docs/experiments.md` can be traced to it |
 | `eval/runs/<run id>/results.jsonl`, `eval/calibration/<run id>.jsonl` (sample, judge verdicts, human answers), `eval/calibration/<run id>.review.md` | Ignored by git here; copied by hand to a private repository, available on request |
 
 The private files hold model output — every itinerary and knowledge context in full, or claim texts taken from them — and the reviewer's item-by-item answers; nothing in them is secret, but they are large or personal. Only runs with `git_dirty = false` are kept; delete the others.
 
-**After a run that is cited in `docs/experiments.md`**: commit its `summary.json` and `judge_prompts/` here, copy its `results.jsonl` to the private repository at the same relative path, and push that repository by hand.
+**After a run that is cited in `docs/experiments.md`**: commit its `summary.json`, `judge_prompts/` and `generation_prompts/` here, copy its `results.jsonl` to the private repository at the same relative path, and push that repository by hand.
 
 **After a calibration**: save the agreement figures with `python scripts/eval_calibration.py score <run id> > eval/calibration/<run id>.agreement.json` and commit that file; copy `<run id>.jsonl` and `<run id>.review.md` to the private repository.
 
 **Keep the local copies.** The calibration script reads `eval/runs/<run id>/results.jsonl`, and so does re-judging a stored run with a new judge prompt (`rebuild-rag` task 2.3). On another machine, copy the files back from the private repository to the same paths before using either.
 
 **Giving someone access**: add them to the private repository as a read-only collaborator and remove them afterwards, or send the files of the runs they asked for. Do not make the repository public temporarily: once public, it can be cloned and forked, and making it private again does not take that back.
+
+**Runs made before `generation_prompts/` existed** (the v0.1.0 baseline runs and `harden-workflow-guardrails` step (a)) were given the directory afterwards with `python scripts/eval_generation_prompts.py <run id> --correction-version N`, which copies the texts from the evaluation database and leaves `summary.json` unchanged; the correction template version is the one active at the run's commit.
 
 ## Reading `summary.json`
 
@@ -52,7 +57,7 @@ Rates are fractions between 0 and 1; `null` means there was nothing to measure (
 | Field | Meaning |
 | --- | --- |
 | `run_id` | `<UTC start time>-<config name>[-<subset>]`; also the directory name |
-| `subset` | `smoke`, `all`, or `entries` (a debugging run with `--entries`) |
+| `subset` | A subset name from `eval/subsets/` (`smoke`, `dataset-v1`, `budget-amount`), `all`, or `entries` (a debugging run with `--entries`) |
 | `entries` | Number of dataset entries sent |
 | `started_at`, `finished_at` | UTC timestamps of the run |
 | `phase_seconds` | Where the run's time went (see below) |
@@ -81,7 +86,8 @@ Two runs are comparable only when these agree, apart from the one thing the expe
 | `judge_prompts` | Judge prompt name → version; the files are copied to `judge_prompts/` |
 | `price_table_date` | Date of `eval/pricing.yaml` used for every cost |
 | `git_commit`, `git_dirty` | Code version; `git_dirty: true` means uncommitted changes (outside `eval/runs/` and `eval/calibration/`) — reference only, not for formal comparison |
-| `generation_templates` | Every prompt template key and version the generate step actually used in this run |
+| `generation_templates` | Every prompt template key and version the generate step actually used in this run; their texts are in `generation_prompts/` |
+| `correction_template` | Key and version of the `validate_output` correction template active when the run started (validate_output does not report it). Absent in runs made before it was recorded |
 
 ### `metrics`
 

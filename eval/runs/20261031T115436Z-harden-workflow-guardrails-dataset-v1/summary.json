@@ -1,0 +1,159 @@
+{
+  "run_id": "20261031T115436Z-harden-workflow-guardrails-dataset-v1",
+  "subset": "dataset-v1",
+  "entries": 73,
+  "started_at": "2026-10-31T11:54:36.468359+00:00",
+  "finished_at": "2026-10-31T12:06:27.156161+00:00",
+  "phase_seconds": {
+    "total": 710.69,
+    "requests": 253.22,
+    "retrieval_measurement": 72.72,
+    "other_sequential": 0.14,
+    "judge_wall": 383.96,
+    "judge_calls_sum": 2380.69
+  },
+  "conditions": {
+    "dataset_version": 2,
+    "corpus_version": "v1",
+    "knowledge_table": "travel_docs_v1",
+    "config": {
+      "name": "harden-workflow-guardrails",
+      "description": "v0.1.0 workflow with harden-workflow-guardrails changes up to the run's commit, corpus v1",
+      "generation_model": "gemini-3.1-flash-lite",
+      "embedding_model": "gemini-embedding-001",
+      "judge_model": "gpt-6-luna",
+      "corpus_version": "v1",
+      "knowledge_table": "travel_docs_v1",
+      "retrieval_k": 5,
+      "judge_concurrency": 8,
+      "request_parser": false
+    },
+    "generation_model": "gemini-3.1-flash-lite",
+    "embedding_model": "gemini-embedding-001",
+    "judge_model": "gpt-6-luna",
+    "judge_prompts": {
+      "faithfulness": 1,
+      "destination": 1
+    },
+    "price_table_date": "2026-10-25",
+    "git_commit": "f77b603b62a3040190fd349fd8bc9e52b324ce96",
+    "git_dirty": false,
+    "generation_templates": [
+      {
+        "key": "high_confidence_minimal_context",
+        "version": 3
+      },
+      {
+        "key": "low_confidence_with_retrieval",
+        "version": 3
+      }
+    ],
+    "correction_template": {
+      "key": "validate_output_correction",
+      "version": 2
+    }
+  },
+  "metrics": {
+    "slot_extraction": {
+      "value": null,
+      "reason": "no request parser"
+    },
+    "retrieval": {
+      "k": 5,
+      "entries": 54,
+      "recall_at_k": 0.9506172839506173,
+      "mrr_at_k": 0.8842592592592593,
+      "errors": 0
+    },
+    "behaviour": {
+      "overall": 0.8767123287671232,
+      "entries": 73,
+      "by_expected_behavior": {
+        "clarify": 0.0,
+        "plan": 1.0,
+        "refuse": 0.8333333333333334
+      },
+      "by_tag": {
+        "chinese_destination": 1.0,
+        "contradictory": 0.0,
+        "mixed_language": 1.0,
+        "out_of_scope": 0.8333333333333334,
+        "prompt_injection": 0.8333333333333334,
+        "underspecified": 0.0,
+        "untagged": 1.0
+      }
+    },
+    "constraints": {
+      "planned": 60,
+      "trip_length_rate": 1.0,
+      "budget_rate": 1.0,
+      "budget_entries": 41,
+      "budget_not_applicable": 19,
+      "destination_rate": 0.95,
+      "destination_judged": 60
+    },
+    "faithfulness": {
+      "overall": {
+        "itineraries": 60,
+        "claims": 985,
+        "supported_share": 0.13908629441624365
+      },
+      "with_context": {
+        "itineraries": 43,
+        "claims": 720,
+        "supported_share": 0.19027777777777777
+      },
+      "without_context": {
+        "itineraries": 17,
+        "claims": 265,
+        "supported_share": 0.0
+      },
+      "judge_errors": 0
+    },
+    "system": {
+      "requests": 73,
+      "format_pass_rate": 1.0,
+      "retry_rate": 0.0,
+      "error_rate": 0.0,
+      "latency_p50_ms": 4183.611399999791,
+      "latency_p95_ms": 5184.1047149977385,
+      "step_latency_ms": {
+        "intake": {
+          "runs": 60,
+          "mean_ms": 0.0
+        },
+        "cag_match": {
+          "runs": 60,
+          "mean_ms": 670.6
+        },
+        "retrieval_decision": {
+          "runs": 60,
+          "mean_ms": 0.0
+        },
+        "rag_retrieve": {
+          "runs": 43,
+          "mean_ms": 668.6
+        },
+        "generate": {
+          "runs": 60,
+          "mean_ms": 2931.0
+        },
+        "validate_output": {
+          "runs": 60,
+          "mean_ms": 1.3
+        }
+      }
+    },
+    "cost": {
+      "currency": "USD",
+      "price_table_date": "2026-10-25",
+      "requests": 73,
+      "mean_generation_usd": 0.0009042876712328767,
+      "mean_embedding_usd": 3.4998287671232875e-06,
+      "mean_request_usd": 0.0009077875,
+      "requests_missing_usage": 0,
+      "judge_calls": 120,
+      "judge_total_usd": 0.10122770000000002
+    }
+  }
+}
