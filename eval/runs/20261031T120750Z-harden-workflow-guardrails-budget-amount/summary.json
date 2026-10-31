@@ -1,0 +1,152 @@
+{
+  "run_id": "20261031T120750Z-harden-workflow-guardrails-budget-amount",
+  "subset": "budget-amount",
+  "entries": 6,
+  "started_at": "2026-10-31T12:07:50.231112+00:00",
+  "finished_at": "2026-10-31T12:09:07.754684+00:00",
+  "phase_seconds": {
+    "total": 77.52,
+    "requests": 23.53,
+    "retrieval_measurement": 7.97,
+    "other_sequential": 0.04,
+    "judge_wall": 45.5,
+    "judge_calls_sum": 210.09
+  },
+  "conditions": {
+    "dataset_version": 2,
+    "corpus_version": "v1",
+    "knowledge_table": "travel_docs_v1",
+    "config": {
+      "name": "harden-workflow-guardrails",
+      "description": "v0.1.0 workflow with harden-workflow-guardrails changes up to the run's commit, corpus v1",
+      "generation_model": "gemini-3.1-flash-lite",
+      "embedding_model": "gemini-embedding-001",
+      "judge_model": "gpt-6-luna",
+      "corpus_version": "v1",
+      "knowledge_table": "travel_docs_v1",
+      "retrieval_k": 5,
+      "judge_concurrency": 8,
+      "request_parser": false
+    },
+    "generation_model": "gemini-3.1-flash-lite",
+    "embedding_model": "gemini-embedding-001",
+    "judge_model": "gpt-6-luna",
+    "judge_prompts": {
+      "faithfulness": 1,
+      "destination": 1
+    },
+    "price_table_date": "2026-10-25",
+    "git_commit": "f77b603b62a3040190fd349fd8bc9e52b324ce96",
+    "git_dirty": false,
+    "generation_templates": [
+      {
+        "key": "high_confidence_minimal_context",
+        "version": 3
+      },
+      {
+        "key": "low_confidence_with_retrieval",
+        "version": 3
+      }
+    ],
+    "correction_template": {
+      "key": "validate_output_correction",
+      "version": 2
+    }
+  },
+  "metrics": {
+    "slot_extraction": {
+      "value": null,
+      "reason": "no request parser"
+    },
+    "retrieval": {
+      "k": 5,
+      "entries": 6,
+      "recall_at_k": 0.9444444444444443,
+      "mrr_at_k": 1.0,
+      "errors": 0
+    },
+    "behaviour": {
+      "overall": 1.0,
+      "entries": 6,
+      "by_expected_behavior": {
+        "plan": 1.0
+      },
+      "by_tag": {
+        "budget_amount": 1.0,
+        "mixed_language": 1.0
+      }
+    },
+    "constraints": {
+      "planned": 6,
+      "trip_length_rate": 1.0,
+      "budget_rate": 1.0,
+      "budget_entries": 6,
+      "budget_not_applicable": 0,
+      "destination_rate": 1.0,
+      "destination_judged": 6
+    },
+    "faithfulness": {
+      "overall": {
+        "itineraries": 6,
+        "claims": 89,
+        "supported_share": 0.16853932584269662
+      },
+      "with_context": {
+        "itineraries": 5,
+        "claims": 80,
+        "supported_share": 0.1875
+      },
+      "without_context": {
+        "itineraries": 1,
+        "claims": 9,
+        "supported_share": 0.0
+      },
+      "judge_errors": 0
+    },
+    "system": {
+      "requests": 6,
+      "format_pass_rate": 1.0,
+      "retry_rate": 0.0,
+      "error_rate": 0.0,
+      "latency_p50_ms": 4173.799699998199,
+      "latency_p95_ms": 4542.80692499924,
+      "step_latency_ms": {
+        "intake": {
+          "runs": 6,
+          "mean_ms": 0.0
+        },
+        "cag_match": {
+          "runs": 6,
+          "mean_ms": 627.8
+        },
+        "retrieval_decision": {
+          "runs": 6,
+          "mean_ms": 0.0
+        },
+        "rag_retrieve": {
+          "runs": 5,
+          "mean_ms": 641.0
+        },
+        "generate": {
+          "runs": 6,
+          "mean_ms": 2575.3
+        },
+        "validate_output": {
+          "runs": 6,
+          "mean_ms": 0.0
+        }
+      }
+    },
+    "cost": {
+      "currency": "USD",
+      "price_table_date": "2026-10-25",
+      "requests": 6,
+      "mean_generation_usd": 0.0011165833333333334,
+      "mean_embedding_usd": 3.7312499999999992e-06,
+      "mean_request_usd": 0.001120314583333333,
+      "requests_missing_usage": 0,
+      "judge_calls": 12,
+      "judge_total_usd": 0.009711999999999998
+    }
+  }
+}
