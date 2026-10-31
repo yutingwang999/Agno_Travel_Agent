@@ -572,7 +572,9 @@ ACTIVE_TEMPLATE_VERSIONS = {
 }
 
 # ---- Source documents -------------------------------------------------------
-# Content derived from australia.com pages (factual, no marketing language).
+# Handwritten for v0.1.0 as factual notes in the project's own words. Topics and
+# the selection of places in the Australia-wide documents follow articles on
+# australia.com; corpus v1 is replaced by openly licensed sources in rebuild-rag.
 # ---------------------------------------------------------------------------
 
 SOURCE_DOCUMENTS = [
@@ -587,7 +589,7 @@ SOURCE_DOCUMENTS = [
             "November-February, cooler March-August. Aboriginal cultural experiences available "
             "year-round."
         ),
-        "metadata_json": {"source": "australia.com", "category": "destination"},
+        "metadata_json": {"source": "handwritten", "category": "destination"},
     },
     {
         "destination": "Melbourne",
@@ -599,7 +601,7 @@ SOURCE_DOCUMENTS = [
             "seasons in one day possible. Best visited spring/summer (November-February). "
             "Nearby: Great Ocean Road, Yarra Valley, Dandenong Ranges, Mornington Peninsula."
         ),
-        "metadata_json": {"source": "australia.com", "category": "destination"},
+        "metadata_json": {"source": "handwritten", "category": "destination"},
     },
     {
         "destination": "Gold Coast",
@@ -611,7 +613,7 @@ SOURCE_DOCUMENTS = [
             "with rainforest walks and waterfalls. Approximately 300 sunny days annually. "
             "Public transit includes the G:link tram. High season November-January."
         ),
-        "metadata_json": {"source": "australia.com", "category": "destination"},
+        "metadata_json": {"source": "handwritten", "category": "destination"},
     },
     {
         "destination": "Brisbane",
@@ -624,7 +626,7 @@ SOURCE_DOCUMENTS = [
             "sunshine days per year. Mild winters June-August; peak season November-February. "
             "Airport 17 km from city centre."
         ),
-        "metadata_json": {"source": "australia.com", "category": "destination"},
+        "metadata_json": {"source": "handwritten", "category": "destination"},
     },
     {
         "destination": "Australia",
@@ -638,7 +640,7 @@ SOURCE_DOCUMENTS = [
             "Pro World Surfing Championships; Barnbougle Dunes and Lost Farm golf courses in "
             "Tasmania (ranked top 100 worldwide)."
         ),
-        "metadata_json": {"source": "australia.com", "category": "adventure", "activity": "sport"},
+        "metadata_json": {"source": "handwritten", "category": "adventure", "activity": "sport"},
     },
     {
         "destination": "Australia",
@@ -652,7 +654,7 @@ SOURCE_DOCUMENTS = [
             "QLD (2 hours from Brisbane); Yanchep National Park WA (1 hour from Perth); Tidbinbilla "
             "Nature Reserve ACT (outside Canberra)."
         ),
-        "metadata_json": {"source": "australia.com", "category": "wildlife"},
+        "metadata_json": {"source": "handwritten", "category": "wildlife"},
     },
     {
         "destination": "Australia",
@@ -667,7 +669,7 @@ SOURCE_DOCUMENTS = [
             "Perth, Adelaide; Grafton Jacaranda Festival. Aurora Australis: May-August, Tasmania "
             "(Bruny Island, Cradle Mountain-Lake St Clair, Bathurst Harbour)."
         ),
-        "metadata_json": {"source": "australia.com", "category": "nature"},
+        "metadata_json": {"source": "handwritten", "category": "nature"},
     },
     {
         "destination": "Australia",
@@ -681,7 +683,7 @@ SOURCE_DOCUMENTS = [
             "dolphin swimming (SA); Cradle Mountain chairlift walks with wombats, wallabies, and "
             "Tasmanian devils (TAS)."
         ),
-        "metadata_json": {"source": "australia.com", "category": "family"},
+        "metadata_json": {"source": "handwritten", "category": "family"},
     },
     {
         "destination": "Australia",
@@ -696,7 +698,7 @@ SOURCE_DOCUMENTS = [
             "crayfish, honey, gin. Esperance WA — yoga, photography workshops, Indigenous culture. "
             "Blue Mountains NSW — waterfall hiking, wildlife tours."
         ),
-        "metadata_json": {"source": "australia.com", "category": "culture"},
+        "metadata_json": {"source": "handwritten", "category": "culture"},
     },
     {
         "destination": "Australia",
@@ -710,7 +712,7 @@ SOURCE_DOCUMENTS = [
             "(Vibrance, Dark Mofo festivals). Melbourne — regarded as one of the world's street art "
             "capitals: Hosier Lane, Rutledge Lane, Centre Place; Silo Art Trail through Grampians."
         ),
-        "metadata_json": {"source": "australia.com", "category": "culture", "activity": "street-art"},
+        "metadata_json": {"source": "handwritten", "category": "culture", "activity": "street-art"},
     },
     {
         "destination": "Australia",
@@ -725,7 +727,7 @@ SOURCE_DOCUMENTS = [
             "of Australia (Canberra); MONA (Hobart). Rock art sites nearly 30,000 years old. "
             "Australia has 20 UNESCO World Heritage locations."
         ),
-        "metadata_json": {"source": "australia.com", "category": "culture", "activity": "history"},
+        "metadata_json": {"source": "handwritten", "category": "culture", "activity": "history"},
     },
     {
         "destination": "Australia",
@@ -741,7 +743,7 @@ SOURCE_DOCUMENTS = [
             "encounters, foraging, cave exploration, storytelling. Duration ranges from one-hour "
             "city tours to four-day wilderness walks."
         ),
-        "metadata_json": {"source": "australia.com", "category": "culture", "activity": "indigenous"},
+        "metadata_json": {"source": "handwritten", "category": "culture", "activity": "indigenous"},
     },
     {
         "destination": "Australia",
@@ -757,7 +759,7 @@ SOURCE_DOCUMENTS = [
             "from Darwin) barramundi fishing March-November, mud crab dinners. Victoria — St Kilda "
             "Melbourne award-winning seafood restaurants."
         ),
-        "metadata_json": {"source": "australia.com", "category": "food", "activity": "seafood"},
+        "metadata_json": {"source": "handwritten", "category": "food", "activity": "seafood"},
     },
 ]
 

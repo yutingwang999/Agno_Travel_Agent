@@ -81,7 +81,7 @@ def test_summarize_averages_over_entries():
 
 def test_v1_chunk_without_section_is_handwritten_title():
     """Spec scenario: a v0.1.0 document is matched as ("handwritten", <title>)."""
-    chunk = _chunk("Family Adventure Travel in Australia", source="australia.com", category="family")
+    chunk = _chunk("Family Adventure Travel in Australia", source="some-source", category="family")
     assert chunk_section(chunk) == ("handwritten", "Family Adventure Travel in Australia")
 
 

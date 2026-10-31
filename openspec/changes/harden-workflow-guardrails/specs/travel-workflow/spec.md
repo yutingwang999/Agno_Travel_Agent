@@ -77,7 +77,7 @@ The frontend SHALL offer an optional input for the daily budget per person (AUD,
 - **THEN** the form asks for a whole number and no request is sent
 
 ### Requirement: Out-of-scope destination guard
-Before the workflow starts, `POST /generate` SHALL look up the normalised destination in the Australian place list. Normalisation SHALL lowercase the destination, strip it, collapse inner whitespace and drop a trailing Australian state or territory suffix. A match SHALL replace the destination with its canonical name; no match SHALL be rejected with 422 and the reason code `destination_out_of_scope`, without calling any external API.
+Before the workflow starts, `POST /generate` SHALL look up the normalised destination in the Australian place list. Normalisation SHALL lowercase the destination, strip it, collapse inner whitespace and, when the full name is not listed, drop trailing Australian state, territory or country qualifiers. A match SHALL replace the destination with its canonical name; no match SHALL be rejected with 422 and the reason code `destination_out_of_scope`, without calling any external API.
 
 #### Scenario: Foreign city
 - **WHEN** a client posts a valid body with `destination` = `"Paris"`
@@ -93,8 +93,8 @@ Before the workflow starts, `POST /generate` SHALL look up the normalised destin
 - **THEN** the guard lets the request through and the intake event has `destination` = `"sydney"`
 
 #### Scenario: Traditional Chinese name
-- **WHEN** a client posts a valid body with `destination` = `"雪梨"`
-- **THEN** the guard lets the request through and the intake event has `destination` = `"sydney"`
+- **WHEN** a client posts a valid body with `destination` = `"墨爾本"`
+- **THEN** the guard lets the request through and the intake event has `destination` = `"melbourne"`
 
 #### Scenario: State suffix
 - **WHEN** a client posts a valid body with `destination` = `"Sydney, NSW"`
