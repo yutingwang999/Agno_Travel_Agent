@@ -180,7 +180,7 @@ Three preset buttons pre-fill the form with the same inputs used in `test_golden
 | -------------- | ----------- | ---- | -------- | ------ | ------------------------------ |
 | Family trip    | Sydney      | 5    | moderate | family | High-confidence → no RAG       |
 | Budget trip    | Melbourne   | 3    | budget   | budget | High-confidence → no RAG       |
-| Low-confidence | Sydney      | 4    | moderate | family | Low-confidence → RAG triggered |
+| Low-confidence | Alice Springs | 4  | moderate | spontaneous_urban_nomad | Low-confidence → RAG triggered |
 
 Click a preset, then click **Generate Itinerary**.
 
