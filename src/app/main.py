@@ -16,13 +16,15 @@ import uuid
 from typing import Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 
 from app.models.trace_event import TraceEvent
+from app.workflow.input_guard import GuardRejection, guard_request
 from app.workflow.intake_model import TravelRequest
 from app.workflow.travel_workflow import travel_workflow
 
@@ -33,6 +35,16 @@ app = FastAPI(
     description="AI-powered travel itinerary planning using CAG + RAG workflow",
     version="0.1.0",
 )
+
+
+@app.exception_handler(GuardRejection)
+async def guard_rejection_handler(request: Request, exc: GuardRejection) -> JSONResponse:
+    """Return a guard refusal as 422 ``{"reason": <code>, "detail": <fixed message>}``.
+
+    Field validation errors keep FastAPI's default body (``{"detail": [...]}``),
+    so the presence of ``reason`` tells the two apart.
+    """
+    return JSONResponse(status_code=422, content={"reason": exc.reason, "detail": exc.detail})
 
 
 @app.get("/health")
@@ -232,7 +244,11 @@ async def generate(
     """Execute the travel itinerary workflow and stream results as SSE.
 
     FastAPI automatically returns 422 Unprocessable Entity when ``request``
-    fails Pydantic validation (missing or invalid fields).
+    fails Pydantic validation (missing or invalid fields).  The input guards
+    then run before the workflow: a prompt-injection match or a destination that
+    is not an Australian place is refused with 422 and a reason code (see
+    :mod:`app.workflow.input_guard`); an accepted destination is replaced by its
+    canonical English name.
 
     Each yielded ``data`` event is a JSON-serialised SSE event matching the
     structure defined in DESIGN.md section 9:
@@ -253,6 +269,7 @@ async def generate(
         A ``text/event-stream`` response that emits one SSE event per workflow
         step.  The first event always contains the ``session_id``.
     """
+    request = guard_request(request)
     session_id = str(uuid.uuid4())
 
     async def event_generator():
