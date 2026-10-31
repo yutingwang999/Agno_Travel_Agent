@@ -80,6 +80,13 @@ After schema validation passes, the step SHALL find opening-hours statements (a 
 - **WHEN** the itinerary mentions "$25 entry" and the knowledge context contains "$25 entry"
 - **THEN** the unsupported specifics rule passes for that phrase
 
+### Requirement: Request budget figures are supported
+The unsupported specifics rule SHALL treat the request's own budget figures as supported: its daily budget ceiling, and that ceiling multiplied by the requested trip length. A request without a daily ceiling has no such figures.
+
+#### Scenario: Budget ceiling repeated
+- **WHEN** a 5-day `budget` request without `max_daily_budget_aud` produces a tip "keep daily costs under 70 AUD" and the knowledge context has no prices
+- **THEN** the unsupported specifics rule passes for that phrase
+
 ### Requirement: Validation knowledge context
 The knowledge context used by validation rules SHALL be the `chunk_text` of every chunk in the `rag_retrieve` event, joined together, or the empty string when retrieval did not run or returned no chunks.
 

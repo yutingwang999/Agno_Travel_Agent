@@ -245,3 +245,24 @@ def test_parse_llm_output_passes_a_compliant_itinerary():
     raw = json.dumps(_itinerary(days=2, daily_cost=150).model_dump())
     output, errors = parse_llm_output(raw, ValidationContext(requested_trip_length=2, daily_ceiling=200.0))
     assert errors is None and output is not None
+
+
+def test_request_budget_figures_are_supported():
+    """Spec scenario "Budget ceiling repeated": the model restates the request's own ceiling."""
+    output = _itinerary(days=5, daily_cost=60, tips=[
+        "Shop at supermarkets to keep daily costs under 70 AUD.",
+        "The whole trip stays within $350.",
+    ])
+    context = ValidationContext(requested_trip_length=5, daily_ceiling=70.0)
+    assert unsupported_specifics_rule(output, context) is None
+
+
+def test_other_prices_still_fail_with_a_ceiling():
+    output = _itinerary(days=5, daily_cost=60, tips=["A laksa costs $15 at the markets."])
+    context = ValidationContext(requested_trip_length=5, daily_ceiling=70.0)
+    assert "$15" in unsupported_specifics_rule(output, context)
+
+
+def test_no_ceiling_means_no_request_figures():
+    output = _itinerary(days=2, daily_cost=60, tips=["Keep it under 70 AUD a day."])
+    assert unsupported_specifics_rule(output, ValidationContext(requested_trip_length=2)) is not None

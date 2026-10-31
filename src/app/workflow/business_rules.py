@@ -181,15 +181,26 @@ def _text_fields(output: "ItineraryOutput") -> str:
     return "\n".join(parts + list(output.key_tips))
 
 
+def _request_amounts(output: "ItineraryOutput", context: ValidationContext) -> set[float]:
+    """The budget figures the request itself gives: daily ceiling and trip ceiling."""
+    if context.daily_ceiling is None:
+        return set()
+    days = context.requested_trip_length or output.trip_length_days
+    return {float(context.daily_ceiling), float(context.daily_ceiling * days)}
+
+
 def unsupported_specifics_rule(output: "ItineraryOutput", context: ValidationContext) -> str | None:
     """Opening hours and prices in the text fields must also appear in the knowledge context.
 
     Times and amounts are compared by value, so "9:30am" matches "9.30 am" and
-    "$25" matches "A$25" or "AUD 25".  Numeric cost fields are exempt.
+    "$25" matches "A$25" or "AUD 25".  Numeric cost fields are exempt, and so
+    are the request's own budget figures — the daily ceiling and the trip
+    ceiling — which the generation template states and the model may repeat
+    ("stay under 70 AUD a day").
     """
     text = _text_fields(output)
     context_times = all_times(context.knowledge_context)
-    context_amounts = amounts(context.knowledge_context)
+    context_amounts = amounts(context.knowledge_context) | _request_amounts(output, context)
     bad_times = sorted(opening_hours_times(text) - context_times)
     bad_amounts = sorted(amounts(text) - context_amounts)
     if not bad_times and not bad_amounts:
