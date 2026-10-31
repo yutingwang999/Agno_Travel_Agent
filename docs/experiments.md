@@ -32,6 +32,7 @@ This file records the effect of every change that affects quality, behaviour or 
 
 | Date | Change | What changed | Key result | Record |
 | --- | --- | --- | --- | --- |
+| 2026-10-31 | `harden-workflow-guardrails` | Final: input guards, budget amount, 14-day limit (dataset v2, `dataset-v1` subset ×2 + `budget-amount` ×2) | Behaviour correctness 74.0% → 87.7% (`out_of_scope` and `prompt_injection` 0% → 83.3%); days and budget 100%; retry 0.8%, error 0%; faithfulness with context 19.6% on the same itineraries (baseline 23.0%, not met); a loose budget amount raises spending | [Final](#2026-10-31--harden-workflow-guardrails-final--input-guards-budget-amount-and-the-full-change-against-the-baseline) |
 | 2026-10-31 | `harden-workflow-guardrails` | (c) response schema + business rules (two runs) | Days and budget 100%, enforced by code; retry 4.8%, all corrections pass, error 0%; p50 3.98 s and $0.00114 per request (both lower than baseline); faithfulness with context 21.5% (baseline 23.0%, not improved) | [(c) rules](#2026-10-31--harden-workflow-guardrails-c--structured-output-and-business-rules) |
 | 2026-10-28 | `harden-workflow-guardrails` | (b) daily budget ceiling stated in the generation templates | Within budget 86.5% → 100% (52 / 52) with no retries or extra cost, but some itineraries only lower their estimates (e049, e053); faithfulness with context 19.1% (a: 20.8%, baseline mean 23.0%) | [(b) budget ceiling](#2026-10-28--harden-workflow-guardrails-b--state-the-daily-budget-ceiling-in-the-generation-templates) |
 | 2026-10-28 | `harden-workflow-guardrails` | (a) per-person AUD cost unit stated in the templates | Within budget 59.6% → 86.5% (`moderate` median per-person day ~220 → 115 AUD); faithfulness with context 20.8% (baseline 22.2% / 23.8%); cost, retries, errors unchanged | [(a) cost unit](#2026-10-28--harden-workflow-guardrails-a--state-the-per-person-aud-cost-unit-in-the-templates) |
@@ -77,6 +78,60 @@ Copy the template below, fill it in, and put it at the **top** of the "Records" 
 ---
 
 ## Records
+
+### 2026-10-31 · harden-workflow-guardrails (final) · input guards, budget amount and the full change against the baseline
+
+- **What changed since (c)**: the input guards (prompt-injection patterns and the Australian place list, refusing with 422 before the workflow), the optional `max_daily_budget_aud`, `trip_length` limited to 14 days, and the unsupported-specifics rule no longer rejecting the request's own budget figures. Dataset v2 adds six `budget_amount` entries (e074–e079); v1 entries are unchanged.
+- **Why**: task 6.3's final comparison of the whole change with the v0.1.0 baseline, and a paired measurement of the budget amount.
+- **Runs compared**: baseline runs 1 and 2 and (c) runs 1 and 2 as above → `20261031T114451Z-harden-workflow-guardrails-dataset-v1` (final run 1) and `20261031T115436Z-harden-workflow-guardrails-dataset-v1` (final run 2), subset `dataset-v1` = the 73 v1 entries; `20261031T120629Z-harden-workflow-guardrails-budget-amount` and `20261031T120750Z-harden-workflow-guardrails-budget-amount`, subset `budget-amount` = e074–e079. All four `git_dirty = false`, commit `f77b603`. Smoke run on the same commit, for reference: `20261031T114315Z-harden-workflow-guardrails-smoke`.
+- **Run conditions**: as in (c), except git commit `f77b603` and dataset v2 (the `dataset-v1` subset holds exactly the v1 entries).
+- **Results** (subset `dataset-v1`, comparable with the baseline):
+
+  | Metric | Baseline (mean of 2) | (c) (mean of 2) | Final run 1 | Final run 2 | Final mean |
+  | --- | --- | --- | --- | --- | --- |
+  | Behaviour correctness (overall) | 74.0% | 74.0% | 87.7% (64 / 73) | 87.7% (64 / 73) | 87.7% |
+  | Behaviour correctness: `out_of_scope` / `prompt_injection` | 0.0% / 0.0% | 0.0% / 0.0% | 83.3% / 83.3% | 83.3% / 83.3% | 83.3% / 83.3% |
+  | Behaviour correctness: `mixed_language` / `chinese_destination` | 100% / 100% | 100% / 100% | 100% / 100% | 100% / 100% | 100% / 100% |
+  | Behaviour correctness: `contradictory` / `underspecified` | 0% / 0% | 0% / 0% | 0% / 0% | 0% / 0% | 0% / 0% |
+  | Planned itineraries | 73 | 73 | 60 | 60 | 60 |
+  | Constraint satisfaction: days | 100.0% | 100.0% | 100.0% | 100.0% | 100.0% |
+  | Constraint satisfaction: budget | 59.6% (of 52) | 100.0% (of 52) | 100.0% (41 / 41) | 100.0% (41 / 41) | 100.0% |
+  | Constraint satisfaction: attractions in the destination | 91.1% | 97.3% | 96.7% | 95.0% | 95.9% |
+  | Faithfulness (with knowledge context), as reported | 23.0% | 21.5% | 20.2% (135 / 668) | 19.0% (137 / 720) | 19.6% |
+  | Faithfulness (with knowledge context), the same 43 itineraries in every run | 23.0% (22.0 / 24.0) | 21.3% (20.0 / 22.6) | 20.2% | 19.0% | 19.6% |
+  | Format pass / retry / error rate | 100% / 0% / 0% | 95.2% / 4.8% / 0% | 98.3% / 1.7% / 0% | 100% / 0% / 0% | 99.2% / 0.8% / 0% |
+  | End-to-end latency p50 / p95 (requests that ran the workflow) | 4.54 s / 5.51 s | 3.98 s / 5.14 s | 4.22 s / 5.30 s | 4.18 s / 5.18 s | 4.20 s / 5.24 s |
+  | Cost per request (all 73, refusals cost nothing) | $0.00118 | $0.00114 | $0.00093 | $0.00091 | $0.00092 |
+  | Judge cost (reported separately) | $0.146 | $0.125 | $0.101 | $0.101 | — |
+
+  "The same 43 itineraries" are the entries planned in both final runs that had knowledge context; the per-run claim counts for the baseline and (c) are computed from their `results.jsonl` over those entries. Budget shares are over capped itineraries (`luxury` without an amount is N/A): 41 of the 60 planned here, 52 of 73 before.
+
+  Paired budget amounts (subset `budget-amount` against the same entries without an amount in the final `dataset-v1` runs; totals per person, excluding accommodation, run 1 / run 2):
+
+  | Pair | Request | Daily ceiling without → with amount | Total without amount | Total with amount |
+  | --- | --- | --- | --- | --- |
+  | e004 → e074 | Brisbane, 2 days, `budget` | 70 → 50 | 65 / 125 | 50 / 45 |
+  | e024 → e075 | Hobart, 5 days, `budget` | 70 → 120 | 245 / 235 | 300 / 285 |
+  | e022 → e076 | Melbourne, 6 days, `moderate` | 200 → 120 | 420 / 440 | 375 / 340 |
+  | e001 → e077 | Sydney, 3 days, `moderate` | 200 → 300 | 380 / 360 | 320 / 360 |
+  | e003 → e078 | Gold Coast, 5 days, `luxury` | none → 1,500 | 4,500 / 3,550 | 5,900 / 6,800 |
+  | e029 → e079 | Cairns, 5 days, `luxury` | none → 600 | 11,800 / 10,000 | 2,900 / 3,000 |
+
+  All 12 itineraries with an amount are within their ceiling, with no retry and no error (both `budget-amount` runs: days, budget and attractions 100%, retry 0%).
+
+- **Conclusion against the proposal's success criteria**:
+  - Days and within budget reach 100%: **met**, in both final runs and in the `budget-amount` runs, enforced by code since (c).
+  - `out_of_scope` behaviour improves: **met**, 0% → 83.3% (5 of 6 refused with `destination_out_of_scope`; e047 is the known miss). Every `prompt_injection` entry whose injection is in a request field is blocked: **met**, 5 of 5 (e058, injection in `notes`, is not applicable). `mixed_language` does not drop: **met**, 100%.
+  - Faithfulness improves: **not met**. On the same 43 itineraries it is 23.0% for the baseline, 21.3% for (c) and 19.6% for the final runs; every harden run since (a) is below the baseline mean (one, (c) run 2 at 22.7% as reported, is above baseline run 1 at 22.2%). The final runs are lower than (c) although nothing between them should touch generation (run-to-run spreads 2.6 and 1.2 pp), so that part is likely noise; taken over all six runs the drop from the baseline is about 2–3 pp.
+  - The budget effect is reported in steps: **met**, records (a), (b), (c).
+  - Retry rate and latency are reported: retry 0.8%, all corrections pass, no errors; p50 4.20 s against 4.54 s for the baseline; no gate threshold changed.
+  - Behaviour correctness overall rises from 74.0% to 87.7%. The nine wrong entries per run: seven `clarify` entries, which no system behaviour can satisfy yet (four planned — e014, e032, e049, e050 — and three refused as out of scope — e048, e072, e073, the vague destinations), and the known misses e047 and e058.
+- **Surprises or problems**:
+  - **A loose ceiling raises spending.** e078's 1,500 a day takes the Gold Coast trip from 4,500 / 3,550 to 5,900 / 6,800, against no ceiling at all for the same request without an amount; the stated number works as a target as well as a limit. A tight ceiling is followed to the edge: e079 totals 2,900 / 3,000 against a trip ceiling of 3,000, down from 11,800 / 10,000. Whether those amounts are plausible for the activities planned is not checked (roadmap item 4).
+  - Cost per request falls to $0.00092 because the 13 refused requests cost nothing; per planned itinerary it is about $0.00112, the same as (c).
+  - The retry rate falls from 4.8% in (c) to 0.8%. Part of it is the fix for the request's own budget figures (two of (c)'s seven retries) and the refused requests no longer reaching generation (e045 and e052 retried in (c)); the rest is within what one run to the next can show.
+  - p50 latency is 0.2 s higher than in (c) for the same generation code; the set of requests timed changed (refusals return before the workflow and are not timed), and the difference is small, so it is not attributed.
+- **Cost**: the four final runs and the smoke run together cost about $0.42 (generation about $0.14, judge about $0.25, smoke about $0.03).
 
 ### 2026-10-31 · harden-workflow-guardrails (c) · structured output and business rules
 
