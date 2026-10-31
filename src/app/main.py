@@ -33,7 +33,7 @@ load_dotenv()
 app = FastAPI(
     title="Travel Itinerary Planner",
     description="AI-powered travel itinerary planning using CAG + RAG workflow",
-    version="0.1.0",
+    version="0.2.0",
 )
 
 
