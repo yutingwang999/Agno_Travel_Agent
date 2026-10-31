@@ -1,5 +1,11 @@
 """Shared workflow configuration constants."""
 
+# Longest trip a request may ask for, in days (harden-workflow-guardrails). Output
+# length grows with the number of days: a very long trip is slow, costly and can be
+# cut off at the model's output limit, and repeated long requests would run up the
+# Gemini bill of a public deployment. Longer requests are rejected with 422.
+MAX_TRIP_LENGTH_DAYS: int = 14
+
 # Minimum CAG confidence score to skip RAG retrieval.
 # Raise to require retrieval more often; lower to rely more on cached answers.
 RETRIEVAL_CONFIDENCE_THRESHOLD: float = 0.85

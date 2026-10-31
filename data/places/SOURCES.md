@@ -28,6 +28,7 @@ The place list contains place names from GeoNames (CC BY 4.0). Attribution: "Con
 
 - Places under 1,000 people that are not in a hand-kept list are rejected (roadmap items 3 and 4 can replace the list).
 - Bare "维多利亚" is not listed (it also names places outside Australia); "维多利亚州" is.
+- One destination per request: two places ("Sydney, Melbourne", "Tasmania, Victoria") are rejected. A trailing state is not checked against the place's own state, so "Sydney, Tasmania" is accepted as `sydney`.
 - Each place has one Chinese name (in Simplified and Traditional script); other translations of the same place are not listed, so a request using one is rejected.
 
 ## Updating

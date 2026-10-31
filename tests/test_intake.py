@@ -291,3 +291,74 @@ def test_travel_request_ignores_extra_fields():
         }
     )
     assert request.destination == "hobart"
+
+
+# ---------------------------------------------------------------------------
+# max_daily_budget_aud (harden-workflow-guardrails task 5.7)
+# ---------------------------------------------------------------------------
+
+_BASE = {"destination": "Sydney", "trip_length": 2, "budget": "moderate", "travel_style": "family"}
+
+
+def test_no_budget_amount_is_null_in_the_intake_event():
+    """Spec scenario "No budget amount"."""
+    from app.workflow.steps.intake import intake_executor
+
+    data = json.loads(intake_executor(_make_step_input()).content)["data"]
+    assert data["max_daily_budget_aud"] is None
+
+
+def test_budget_amount_is_carried_by_the_intake_event():
+    from app.workflow.steps.intake import intake_executor
+
+    data = json.loads(intake_executor(_make_step_input({"max_daily_budget_aud": 150})).content)["data"]
+    assert data["max_daily_budget_aud"] == 150
+
+
+@pytest.mark.parametrize("amount", [0, -10, 85.5])
+def test_invalid_budget_amount_rejected(amount):
+    from app.workflow.intake_model import TravelRequest
+
+    with pytest.raises(ValidationError):
+        TravelRequest(**_BASE, max_daily_budget_aud=amount)
+
+
+@pytest.mark.parametrize("amount", [1, 150, 20000, 1_000_000])
+def test_budget_amount_accepted_without_upper_bound(amount):
+    from app.workflow.intake_model import TravelRequest
+
+    assert TravelRequest(**_BASE, max_daily_budget_aud=amount).max_daily_budget_aud == amount
+
+
+def test_amount_above_the_level_default_is_accepted():
+    """Spec scenario "Amount above the level default": budget level, 500 a day."""
+    from app.workflow.budget import daily_budget_ceiling
+    from app.workflow.intake_model import TravelRequest
+
+    request = TravelRequest(**{**_BASE, "budget": "budget"}, max_daily_budget_aud=500)
+    assert daily_budget_ceiling(request.budget, request.max_daily_budget_aud) == 500
+
+
+# ---------------------------------------------------------------------------
+# Trip length upper bound
+# ---------------------------------------------------------------------------
+
+
+def test_fourteen_days_accepted():
+    from app.workflow.intake_model import TravelRequest
+
+    assert TravelRequest(**{**_BASE, "trip_length": 14}).trip_length == 14
+
+
+@pytest.mark.parametrize("days", [15, 30, 1000])
+def test_trip_longer_than_fourteen_days_rejected(days):
+    from app.workflow.intake_model import TravelRequest
+
+    with pytest.raises(ValidationError, match="trip_length must be at most 14"):
+        TravelRequest(**{**_BASE, "trip_length": days})
+
+
+def test_upper_bound_matches_config():
+    from app.workflow.config import MAX_TRIP_LENGTH_DAYS
+
+    assert MAX_TRIP_LENGTH_DAYS == 14
