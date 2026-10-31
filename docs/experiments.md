@@ -32,6 +32,7 @@ This file records the effect of every change that affects quality, behaviour or 
 
 | Date | Change | What changed | Key result | Record |
 | --- | --- | --- | --- | --- |
+| 2026-10-31 | `harden-workflow-guardrails` | (c) response schema + business rules (two runs) | Days and budget 100%, enforced by code; retry 4.8%, all corrections pass, error 0%; p50 3.98 s and $0.00114 per request (both lower than baseline); faithfulness with context 21.5% (baseline 23.0%, not improved) | [(c) rules](#2026-10-31--harden-workflow-guardrails-c--structured-output-and-business-rules) |
 | 2026-10-28 | `harden-workflow-guardrails` | (b) daily budget ceiling stated in the generation templates | Within budget 86.5% → 100% (52 / 52) with no retries or extra cost, but some itineraries only lower their estimates (e049, e053); faithfulness with context 19.1% (a: 20.8%, baseline mean 23.0%) | [(b) budget ceiling](#2026-10-28--harden-workflow-guardrails-b--state-the-daily-budget-ceiling-in-the-generation-templates) |
 | 2026-10-28 | `harden-workflow-guardrails` | (a) per-person AUD cost unit stated in the templates | Within budget 59.6% → 86.5% (`moderate` median per-person day ~220 → 115 AUD); faithfulness with context 20.8% (baseline 22.2% / 23.8%); cost, retries, errors unchanged | [(a) cost unit](#2026-10-28--harden-workflow-guardrails-a--state-the-per-person-aud-cost-unit-in-the-templates) |
 | 2026-10-26 | `build-evaluation-harness` | v0.1.0 baseline | Recall@5 0.951, faithfulness with context 23.0%, within budget 59.6%, behaviour correctness 74.0% (every refuse / clarify entry wrong), p50 4.54 s, $0.00118 per request; judge–human agreement ≥ 88.9% in every stratum | [Baseline](#v010-baseline) |
@@ -76,6 +77,52 @@ Copy the template below, fill it in, and put it at the **top** of the "Records" 
 ---
 
 ## Records
+
+### 2026-10-31 · harden-workflow-guardrails (c) · structured output and business rules
+
+- **What changed** (two things, both in this step): (1) the generate and correction calls request JSON with `ItineraryOutput` as Gemini's response schema (task section 3); (2) after schema validation, `validate_output` checks four business rules — the day count against the request, daily costs adding up to the total, the total within the daily ceiling times the days, and no opening hours or prices in the text that the retrieved chunks do not state — and a failure enters the existing correction call (task section 4). Templates are unchanged from (b) (generation v3, correction v2).
+- **Why**: the rules make the constraints code-checked instead of relying on the model; step (c) of task 6.3 measures what they add after (a) and (b), and what they cost in retries and latency. The response schema is in the same step because it landed before the rules; the 3.1 experiment showed it shortens output by about 15%, so latency, cost and claim counts below carry both effects.
+- **Runs compared**: baseline runs 1 and 2, (a) and (b) as above → `20261031T012134Z-harden-workflow-guardrails` (run 1) and `20261031T013206Z-harden-workflow-guardrails` (run 2), both `git_dirty = false`, commit `95f8583`. Smoke run on the same commit, for reference: `20261031T011951Z-harden-workflow-guardrails-smoke`.
+- **Run conditions**: as in (b), except git commit `95f8583`.
+- **Results**:
+
+  | Metric | Baseline (mean of 2) | (a) | (b) | (c) run 1 | (c) run 2 | (c) mean |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | Recall@5 / MRR@5 | 0.951 / 0.884 | 0.951 / 0.884 | 0.951 / 0.884 | 0.951 / 0.884 | 0.951 / 0.884 | — |
+  | Faithfulness (with knowledge context) | 23.0% | 20.8% | 19.1% | 20.3% (166 / 816) | 22.7% (179 / 789) | 21.5% |
+  | Faithfulness (without knowledge context) | 0.0% | 0.0% | 0.0% | 0.0% | 0.0% | 0.0% |
+  | Constraint satisfaction: days | 100.0% | 100.0% | 100.0% | 100.0% | 100.0% | 100.0% |
+  | Constraint satisfaction: budget (52 capped entries) | 59.6% | 86.5% | 100.0% | 100.0% (52 / 52) | 100.0% (52 / 52) | 100.0% |
+  | Constraint satisfaction: attractions in the destination | 91.1% | 97.3% | 97.3% | 97.3% | 97.3% | 97.3% |
+  | Behaviour correctness (overall; every tag) | 74.0% | 74.0% | 74.0% | 74.0% | 74.0% | 74.0% |
+  | Format pass rate (first validation passed) | 100.0% | 100.0% | 100.0% | 94.5% | 95.9% | 95.2% |
+  | Retry rate | 0.0% | 0.0% | 0.0% | 5.5% (4 / 73) | 4.1% (3 / 73) | 4.8% |
+  | Error rate | 0.0% | 0.0% | 0.0% | 0.0% | 0.0% | 0.0% |
+  | End-to-end latency p50 / p95 | 4.54 s / 5.51 s | 4.32 s / 5.30 s | 4.30 s / 5.34 s | 4.02 s / 5.07 s | 3.93 s / 5.21 s | 3.98 s / 5.14 s |
+  | Mean step latency: `generate` / `validate_output` | 3244 / 0 ms | 3097 / 0 ms | 3117 / 0 ms | 2738 / 111 ms | 2750 / 91 ms | 2744 / 101 ms |
+  | Cost per request (generation + embedding, incl. corrections) | $0.00118 | $0.00118 | $0.00119 | $0.00113 | $0.00114 | $0.00114 |
+  | Judge cost (reported separately) | $0.146 | $0.142 | $0.149 | $0.127 | $0.124 | — |
+
+  The baseline column is the mean of runs 1 and 2 in the baseline record. Which rules fired on the first validation, found by re-running the rules on each run's stored `generate` output with the context rebuilt from its events (every correction then passed, so every retried request completed with `degraded_mode` true):
+
+  | Run | Entry | Rule | Detail |
+  | --- | --- | --- | --- |
+  | 1 | e024, e034 | unsupported | price $70 not in the retrieved chunks |
+  | 1 | e045 (`out_of_scope`, no context) | unsupported | price $10 |
+  | 1 | e057 (`chinese_destination`) | unsupported | price $30 |
+  | 2 | e026 | unsupported | price $15 |
+  | 2 | e052 (`prompt_injection`) | unsupported | prices $4, $10, $15, $18, $20, $25 |
+  | 2 | e073 (`underspecified`, luxury) | cost | daily costs 15,500, total 15,700 |
+
+  Faithfulness claims with knowledge context, supported / extracted: run 1 `named_place` 160 / 677, `transport` 5 / 84, `price` 0 / 46, `opening_hours` 1 / 9; run 2 175 / 663, 4 / 73, 0 / 46, 0 / 7 (baseline run 1: 207 / 767, 7 / 105, 0 / 77, 0 / 13). Per-person daily cost, median / max: `budget` 47 / 65 and 55 / 65, `moderate` 132 / 189 and 126 / 199, `luxury` 2,107 / 3,100 and 1,857 / 4,500.
+
+- **Conclusion**: the proposal's constraint criterion holds with the rules on: days and budget are 100% in both runs, now enforced by code rather than by the model following the prompt (the budget rule never had to fire, since (b)'s ceiling in the prompt already kept every itinerary under it). The rules cost little: 3–4 of 73 requests needed one correction call, every correction passed, and no request ended in error. Latency and cost went down, not up (p50 3.98 s against 4.54 s for the baseline, $0.00114 against $0.00118), because the response schema shortens the output (`generate` −500 ms) by more than the corrections add. **Faithfulness did not improve**: the (c) mean, 21.5%, is below the baseline mean, 23.0%, with a run-to-run spread of 2.4 pp in (c) and 1.6 pp in the baseline; it is back up from (b)'s single run (19.1%). The proposal's "faithfulness improves" criterion is not met by sections 1–4.
+- **Surprises or problems**:
+  - The unsupported-specifics rule catches only amounts written as currency in the text (6 of the 7 retries). The judge still finds 46 price claims per run, none supported: it also counts prices without a currency marker and the per-day estimates the rule exempts on purpose. The rule removed some unsupported prices, not the judge's price category.
+  - The cost rule fired once in 146 requests (e073), and the correction fixed it; keeping it in the correction flow (design decision 5) stands.
+  - Fewer claims are extracted (about 800 with context against about 940 in the baseline), consistent with shorter output; supported `named_place` claims fall more (about 168 against 210). Whether shorter itineraries name fewer corpus places or the judge extracts differently from them is not separated here; `rebuild-rag` changes the corpus and re-judges with faithfulness v2.
+  - e045, e052 and e073 are refuse / clarify entries that were planned and then corrected; section 5's guards stop e045 (Bali) and e052 before generation.
+- **Cost**: per request $0.00114 (corrections included) and p50 3.98 s, both lower than every earlier step. The smoke gate's `format_pass_rate` threshold (0.9) now has less headroom: one retry in the 10 smoke entries puts it at exactly 0.9. Not changed; revisit if the gate starts failing on single retries.
 
 ### 2026-10-28 · harden-workflow-guardrails (b) · state the daily budget ceiling in the generation templates
 
