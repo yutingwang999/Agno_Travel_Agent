@@ -419,6 +419,18 @@
       // ---------------------------------------------------------------------------
       let currentSessionId = null;
 
+      // Readable text for a non-2xx response body. A guard refusal is
+      // {"reason", "detail": "<message>"}; a field validation error is FastAPI's
+      // {"detail": [{"loc", "msg", ...}]}, shown as each error's msg.
+      function errorMessage(body, status) {
+        const detail = body && body.detail;
+        if (typeof detail === "string" && detail) return detail;
+        if (Array.isArray(detail) && detail.length) {
+          return detail.map((e) => (e && e.msg) || "Invalid input").join("; ");
+        }
+        return `HTTP ${status}`;
+      }
+
       function showError(msg) {
         const banner = document.getElementById("error-banner");
         banner.textContent = msg;
@@ -477,9 +489,12 @@
         })
           .then((response) => {
             if (!response.ok) {
-              return response.json().then((err) => {
-                throw new Error(err.detail || `HTTP ${response.status}`);
-              });
+              return response
+                .json()
+                .catch(() => ({}))
+                .then((err) => {
+                  throw new Error(errorMessage(err, response.status));
+                });
             }
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
