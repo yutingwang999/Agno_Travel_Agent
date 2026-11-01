@@ -11,8 +11,6 @@ They assert structure and branch correctness — NOT exact LLM output strings.
 Run with: pytest -m integration tests/test_golden.py
 """
 
-import contextlib
-import io
 import json
 import uuid
 from unittest.mock import patch
@@ -69,10 +67,11 @@ def _run_workflow_and_collect_events(
                           because no match exceeded minimum similarity.
 
     Returns:
-        List of parsed SSE event dicts emitted by the workflow.
+        List of SSE event dicts in the order the steps finished.
     """
+    from app.main import _run_workflow
     from app.workflow.cag_matcher import MatchResult
-    from app.workflow.travel_workflow import travel_workflow
+    from app.workflow.intake_model import TravelRequest
 
     mock_result = MatchResult(
         category_key="general" if is_fallback else "weekend",
@@ -81,56 +80,18 @@ def _run_workflow_and_collect_events(
         constraints="suitable for all",
         is_fallback=is_fallback,
     )
+    travel_request = TravelRequest(
+        destination=destination,
+        trip_length=trip_length,
+        budget=budget,
+        travel_style=travel_style,
+    )
 
     with patch(
         "app.workflow.steps.cag_match.match_category",
         return_value=mock_result,
     ):
-        captured_stdout = io.StringIO()
-        with contextlib.redirect_stdout(captured_stdout):
-            result = travel_workflow.run(
-                input=f"plan a {trip_length}-day trip to {destination}",
-                additional_data={
-                    "session_id": session_id,
-                    "destination": destination,
-                    "trip_length": trip_length,
-                    "budget": budget,
-                    "travel_style": travel_style,
-                },
-            )
-
-    # Collect events from step results (mirrors _collect_step_result_events in main.py)
-    events: list[dict] = []
-    for step_result in result.step_results:
-        if step_result.steps:
-            # Condition node — recurse into sub-steps (e.g. rag_retrieve)
-            for sub in step_result.steps:
-                if sub.content:
-                    try:
-                        events.append(json.loads(sub.content))
-                    except (json.JSONDecodeError, TypeError):
-                        pass
-        elif step_result.content:
-            try:
-                events.append(json.loads(step_result.content))
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-    # Parse the retrieval_decision event emitted to stdout
-    stdout_text = captured_stdout.getvalue().strip()
-    if stdout_text:
-        for line in stdout_text.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                event = json.loads(line)
-                if isinstance(event, dict) and "step" in event:
-                    events.append(event)
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-    return events
+        return list(_run_workflow(session_id, travel_request))
 
 
 def _assert_sse_structure(events: list[dict]) -> None:

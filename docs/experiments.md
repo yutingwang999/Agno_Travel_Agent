@@ -32,6 +32,7 @@ This file records the effect of every change that affects quality, behaviour or 
 
 | Date | Change | What changed | Key result | Record |
 | --- | --- | --- | --- | --- |
+| 2026-11-01 | `true-sse-streaming` | Events streamed as each step finishes; routing decision moved from a Condition evaluator to a plain Step | No evaluation run (not quality-affecting). Manual check: early panels appear quickly, then a visible pause at generate | [Streaming](#2026-11-01--true-sse-streaming--no-evaluation-run-delivery-timing-only) |
 | 2026-10-31 | `harden-workflow-guardrails` | Final: input guards, budget amount, 14-day limit (dataset v2, `dataset-v1` subset ×2 + `budget-amount` ×2) | Behaviour correctness 74.0% → 87.7% (`out_of_scope` and `prompt_injection` 0% → 83.3%); days and budget 100%; retry 0.8%, error 0%; faithfulness with context 19.6% on the same itineraries (baseline 23.0%, not met); a loose budget amount raises spending | [Final](#2026-10-31--harden-workflow-guardrails-final--input-guards-budget-amount-and-the-full-change-against-the-baseline) |
 | 2026-10-31 | `harden-workflow-guardrails` | (c) response schema + business rules (two runs) | Days and budget 100%, enforced by code; retry 4.8%, all corrections pass, error 0%; p50 3.98 s and $0.00114 per request (both lower than baseline); faithfulness with context 21.5% (baseline 23.0%, not improved) | [(c) rules](#2026-10-31--harden-workflow-guardrails-c--structured-output-and-business-rules) |
 | 2026-10-28 | `harden-workflow-guardrails` | (b) daily budget ceiling stated in the generation templates | Within budget 86.5% → 100% (52 / 52) with no retries or extra cost, but some itineraries only lower their estimates (e049, e053); faithfulness with context 19.1% (a: 20.8%, baseline mean 23.0%) | [(b) budget ceiling](#2026-10-28--harden-workflow-guardrails-b--state-the-daily-budget-ceiling-in-the-generation-templates) |
@@ -78,6 +79,19 @@ Copy the template below, fill it in, and put it at the **top** of the "Records" 
 ---
 
 ## Records
+
+### 2026-11-01 · true-sse-streaming · no evaluation run (delivery timing only)
+
+**What changed**: `POST /generate` sends each step's SSE event as soon as the step finishes instead of after the whole workflow; the workflow runs off the event loop; the `retrieval_decision` event comes from a plain Step instead of a Condition evaluator's `print()`. The routing threshold, prompts, templates, models and validation rules are unchanged, and the same steps run in the same order with the same event contents.
+
+**Why no evaluation run**: the harness measures what a request produces (retrieval, itinerary content, behaviour, latency of the whole request, cost); none of these is changed by when events reach the client. Decided with the user on 2026-11-01. No numbers are recorded for this change.
+
+**What was checked instead**:
+- Unit tests (`tests/test_streaming.py`, real uvicorn server): the first three events arrive while generate is still running; `GET /health` answers during generation; two concurrent requests each receive only their own `session_id`; after a client disconnect, validate_output does not start. All four fail against the previous `main.py`.
+- Integration tier: 21 passed, including the golden end-to-end test that asserts all 6 steps.
+- Manual check in the browser (Low-confidence preset, by the user): the panels up to `rag_retrieve` appeared quickly one after another, followed by a visible pause before `generate` (the Gemini generation call) and `validate_output`. Not timed; no screenshot kept.
+
+---
 
 ### 2026-10-31 · harden-workflow-guardrails (final) · input guards, budget amount and the full change against the baseline
 

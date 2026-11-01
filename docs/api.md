@@ -382,7 +382,7 @@ The `detail` is fixed per code: it never repeats the submitted input or says whi
 
 ### Failure behaviour
 
-Once the request body is valid, a failure inside the workflow never breaks the stream: every request ends with a `validate_output` event. To find the cause of a failed request, look for the first event with `status` = `"error"`; the trace rows (`GET /traces/{session_id}`) carry the matching `error_type`. Error messages name only the exception type; the full exception is in the server log.
+Once the request body is valid, a failure inside the workflow never breaks the stream: every request whose client stays connected ends with a `validate_output` event. To find the cause of a failed request, look for the first event with `status` = `"error"`; the trace rows (`GET /traces/{session_id}`) carry the matching `error_type`. Error messages name only the exception type; the full exception is in the server log.
 
 #### Overview and `cag_match`
 
@@ -392,15 +392,27 @@ flowchart TD
     B --> C{cag_match:<br/>embed intent,<br/>load categories}
     C -- ok --> C1[completed:<br/>best category and score]
     C -- raises --> C2["completed: family, confidence 0.0,<br/>is_fallback true<br/>trace: embedding_failed"]
-    C1 --> D{"retrieval_decision:<br/>confidence >= 0.85?"}
+    C1 --> D["retrieval_decision (Step):<br/>routing_decision = rag_retrieve<br/>if confidence < 0.85, else generate"]
     C2 --> D
-    D -- no --> E["rag_retrieve<br/>(a failed search continues<br/>with empty context)"]
-    D -- yes --> F[generate]
+    D --> R{"retrieval_branch (Condition):<br/>routing_decision?"}
+    R -- rag_retrieve --> E["rag_retrieve<br/>(a failed search continues<br/>with empty context)"]
+    R -- generate --> F[generate]
     E --> F
     F --> G[validate_output]
 ```
 
-An embedding failure is treated as "no match": confidence 0.0 sends the request down the retrieval path.
+An embedding failure is treated as "no match": confidence 0.0 sends the request down the retrieval path. `retrieval_branch` emits no event of its own; it only reads the `retrieval_decision` event, and falls back to running `rag_retrieve` if that event is missing or malformed.
+
+#### Client disconnects
+
+```mermaid
+flowchart TD
+    A[client closes the connection<br/>while step N is running] --> B[step N runs to completion<br/>and writes its trace row]
+    B --> C[its event is not delivered]
+    C --> D["no later step starts<br/>(no further Gemini calls, no further trace rows)"]
+```
+
+The stream simply ends; there is no error event, because there is no client left to receive it. In `GET /traces/{session_id}` such a run stops at the step that was running when the client left, so a run without a `validate_output` row was cut short by its client rather than failing.
 
 #### `generate`
 

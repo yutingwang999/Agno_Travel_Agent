@@ -6,7 +6,8 @@ git-workflow.md branch 4 (feat/workflow-skeleton).
 Workflow steps:
     1. intake              — validate and normalise user input
     2. cag_match           — classify intent via semantic matching
-    3. retrieval_decision  — Condition: route to rag_retrieve when confidence < 0.85
+    3. retrieval_decision  — decide whether to retrieve (confidence < 0.85); the
+                             retrieval_branch Condition reads that decision
     4. rag_retrieve        — retrieve top-k documents (conditional on step 3)
     5. generate            — resolve prompt template and call LLM
     6. validate_output     — validate LLM output; retry once on failure
@@ -21,8 +22,9 @@ from app.workflow.steps import (
     cag_match_executor,
     generate_executor,
     intake_executor,
+    needs_retrieval,
     rag_retrieve_executor,
-    retrieval_decision_evaluator,
+    retrieval_decision_executor,
     validate_output_executor,
 )
 
@@ -39,12 +41,15 @@ travel_workflow = Workflow(
         # Step 2: classify user intent into itinerary category
         Step(name="cag_match", executor=cag_match_executor),
 
-        # Step 3: conditional routing — run rag_retrieve only when needed
+        # Step 3: decide whether rag_retrieve is needed and emit the decision
+        Step(name="retrieval_decision", executor=retrieval_decision_executor),
+
+        # Step 4: run rag_retrieve only when retrieval_decision chose it
         # evaluator returns True  →  execute steps   (rag_retrieve runs)
         # evaluator returns False →  execute else_steps (empty → skip rag)
         Condition(
-            name="retrieval_decision",
-            evaluator=retrieval_decision_evaluator,
+            name="retrieval_branch",
+            evaluator=needs_retrieval,
             steps=[
                 Step(name="rag_retrieve", executor=rag_retrieve_executor),
             ],

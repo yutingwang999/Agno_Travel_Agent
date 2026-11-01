@@ -1,7 +1,7 @@
 # intent-routing Specification
 
 ## Purpose
-Defines the CAG side of the workflow: how the `cag_match` step classifies the user's intent into an itinerary category using embeddings over the preloaded `itinerary_categories` reference data, and how the `retrieval_decision` condition uses the resulting confidence score to decide whether RAG retrieval runs. CAG answers "what to generate"; RAG (see `knowledge-retrieval`) answers "what information to include".
+Defines the CAG side of the workflow: how the `cag_match` step classifies the user's intent into an itinerary category using embeddings over the preloaded `itinerary_categories` reference data, and how the `retrieval_decision` step uses the resulting confidence score to decide whether RAG retrieval runs. CAG answers "what to generate"; RAG (see `knowledge-retrieval`) answers "what information to include".
 
 ## Requirements
 
@@ -50,7 +50,7 @@ The `cag_match` event `data` SHALL contain `matched_category`, `confidence_score
 - **THEN** its event `data` has exactly those five keys
 
 ### Requirement: Retrieval routing threshold
-The `retrieval_decision` condition SHALL compare the cag_match `confidence_score` with `RETRIEVAL_CONFIDENCE_THRESHOLD` (0.85). A score below the threshold SHALL route to `rag_retrieve`; a score at or above it SHALL skip retrieval and proceed to `generate`. A missing or unparseable score SHALL be treated as 0.0, which routes to retrieval.
+The `retrieval_decision` step SHALL compare the cag_match `confidence_score` with `RETRIEVAL_CONFIDENCE_THRESHOLD` (0.85). A score below the threshold SHALL route to `rag_retrieve`; a score at or above it SHALL skip retrieval and proceed to `generate`. A missing or unparseable score SHALL be treated as 0.0, which routes to retrieval.
 
 #### Scenario: High confidence skips retrieval
 - **WHEN** `confidence_score` is 0.85
@@ -65,11 +65,15 @@ The `retrieval_decision` condition SHALL compare the cag_match `confidence_score
 - **THEN** the score is treated as 0.0 and `rag_retrieve` runs
 
 ### Requirement: Routing decision event
-The `retrieval_decision` step SHALL emit an event on both branches whose `data` contains `routing_decision` (`"rag_retrieve"` or `"generate"`), `confidence_score`, and `threshold`. In the current implementation the event is written to stdout by the condition evaluator and collected by the API layer.
+The `retrieval_decision` step SHALL emit an event on both branches whose `data` contains `routing_decision` (`"rag_retrieve"` or `"generate"`), `confidence_score`, and `threshold`. The event SHALL be delivered through the same step-output channel as every other step's event, and SHALL NOT be written to or read from standard output.
 
 #### Scenario: Decision visible in stream
 - **WHEN** retrieval is skipped
 - **THEN** the stream still contains a `retrieval_decision` event with `routing_decision` = `"generate"`
+
+#### Scenario: No stdout side effect
+- **WHEN** the routing decision is made
+- **THEN** nothing is printed to standard output by the workflow
 
 ### Requirement: Embedding failure fallback
 If embedding the intent text or loading `itinerary_categories` raises an exception, the `cag_match` step SHALL log the error, SHALL report the same result as the empty-reference-data fallback (`matched_category` = `"family"`, `confidence_score` = 0.0, `tone` = `"friendly and helpful"`, `constraints` = `""`, `is_fallback` = `true`) with `status` = `"completed"`, and SHALL record `error_type` = `"embedding_failed"` in its trace row.
