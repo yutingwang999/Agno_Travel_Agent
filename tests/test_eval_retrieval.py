@@ -178,7 +178,7 @@ def test_query_text_matches_the_workflow(mocked_workflow):
     from app.workflow.intake_model import TravelRequest
 
     form = {"destination": "Sydney", "trip_length": 3, "budget": "moderate", "travel_style": "family"}
-    _run_workflow("sid-workflow", TravelRequest.model_validate(form))
+    list(_run_workflow("sid-workflow", TravelRequest.model_validate(form)))
 
     assert len(mocked_workflow) == 1
     assert workflow_query_text(form) == mocked_workflow[0]

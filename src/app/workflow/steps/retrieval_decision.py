@@ -1,10 +1,13 @@
 """Step 3: retrieval_decision — routes workflow based on CAG confidence score.
 
-Implements the Agno Condition node evaluator defined in DESIGN.md section 6.
+A plain Step that makes the routing decision and emits it as its SSE event,
+followed by an Agno Condition (``retrieval_branch``) whose evaluator only reads
+that decision back.  Splitting the two keeps the event on the same step-output
+channel as every other step (no stdout side effect).
 
 Threshold:
-    confidence_score >= 0.85  →  evaluator returns False  →  skip rag_retrieve
-    confidence_score <  0.85  →  evaluator returns True   →  run  rag_retrieve
+    confidence_score >= 0.85  →  routing_decision "generate"      →  skip rag_retrieve
+    confidence_score <  0.85  →  routing_decision "rag_retrieve"  →  run  rag_retrieve
 
 The branch decision is written to the SSE event ``data`` field.
 """
@@ -13,31 +16,29 @@ import json
 import os
 import time
 
-from agno.workflow.types import StepInput
+from agno.workflow.types import StepInput, StepOutput
 
 from app.workflow.config import RETRIEVAL_CONFIDENCE_THRESHOLD
 from app.workflow.sse import build_sse_event, sse_event_to_json
 from app.workflow.trace_logger import write_trace
 
 
-def retrieval_decision_evaluator(step_input: StepInput) -> bool:
-    """Route the workflow based on CAG confidence score.
+def retrieval_decision_executor(step_input: StepInput) -> StepOutput:
+    """Decide whether rag_retrieve runs, based on the CAG confidence score.
 
-    Reads ``confidence_score`` from the cag_match step output, compares it
-    against the 0.85 threshold defined in DESIGN.md, and returns:
+    Reads ``confidence_score`` from the cag_match step output and compares it
+    against the 0.85 threshold defined in DESIGN.md.
 
-        True  → execute rag_retrieve (low confidence, retrieval needed)
-        False → skip rag_retrieve, proceed directly to generate
-
-    Emits an SSE event with the routing decision in the ``data`` field.
+    Writes ``routing_decision`` (``"rag_retrieve"`` or ``"generate"``),
+    ``confidence_score`` and ``threshold`` to the SSE event ``data`` field;
+    :func:`needs_retrieval` reads ``routing_decision`` back for the Condition.
 
     Args:
         step_input: Agno step input carrying previous step outputs and
                     session metadata in ``additional_data``.
 
     Returns:
-        True when retrieval is needed (confidence_score < 0.85).
-        False when confidence is high enough to skip retrieval.
+        A StepOutput whose content is the JSON-serialised SSE event.
     """
     additional_data: dict = step_input.additional_data or {}
     session_id: str = additional_data.get("session_id", "unknown")
@@ -46,9 +47,9 @@ def retrieval_decision_evaluator(step_input: StepInput) -> bool:
     start = time.monotonic()
 
     confidence_score = _extract_confidence_score(step_input)
-    needs_retrieval = confidence_score < RETRIEVAL_CONFIDENCE_THRESHOLD
-
-    routing_decision = "rag_retrieve" if needs_retrieval else "generate"
+    routing_decision = (
+        "rag_retrieve" if confidence_score < RETRIEVAL_CONFIDENCE_THRESHOLD else "generate"
+    )
 
     sse_event = build_sse_event(
         session_id=session_id,
@@ -61,10 +62,6 @@ def retrieval_decision_evaluator(step_input: StepInput) -> bool:
         },
     )
 
-    # Side-effect: print the SSE event so it is visible during tests.
-    # The FastAPI layer (feat/fastapi-service) will stream these events via SSE.
-    print(sse_event_to_json(sse_event))
-
     latency_ms = (time.monotonic() - start) * 1000
     write_trace(
         db_url=db_url,
@@ -74,7 +71,24 @@ def retrieval_decision_evaluator(step_input: StepInput) -> bool:
         latency_ms=latency_ms,
     )
 
-    return needs_retrieval
+    return StepOutput(content=sse_event_to_json(sse_event))
+
+
+def needs_retrieval(step_input: StepInput) -> bool:
+    """Condition evaluator: True when the retrieval_decision step chose rag_retrieve.
+
+    Has no side effects.  Falls back to True (run retrieval, the safe default)
+    if the retrieval_decision output is unavailable or malformed.
+    """
+    content = step_input.get_step_content("retrieval_decision")
+    if content is None:
+        return True
+
+    try:
+        event = json.loads(content)
+        return event.get("data", {}).get("routing_decision") != "generate"
+    except (json.JSONDecodeError, TypeError, AttributeError):
+        return True
 
 
 def _extract_confidence_score(step_input: StepInput) -> float:

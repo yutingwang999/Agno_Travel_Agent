@@ -1,13 +1,15 @@
 """feat/retrieval-decision merge checklist tests.
 
 Verifies:
-  - confidence_score >= 0.85 → evaluator returns False (rag_retrieve skipped)
-  - confidence_score <  0.85 → evaluator returns True  (rag_retrieve runs)
-  - Boundary: exactly 0.85 → returns False (threshold is inclusive)
+  - confidence_score >= 0.85 → routing_decision "generate" (rag_retrieve skipped)
+  - confidence_score <  0.85 → routing_decision "rag_retrieve" (rag_retrieve runs)
+  - Boundary: exactly 0.85 → "generate" (threshold is inclusive)
   - SSE event data field contains routing_decision, confidence_score, threshold
   - Missing cag_match output defaults to retrieval (safe fallback)
   - Malformed cag_match output defaults to retrieval (safe fallback)
   - RETRIEVAL_CONFIDENCE_THRESHOLD constant equals 0.85
+  - The event travels in StepOutput.content; nothing is printed (true-sse-streaming)
+  - The Condition evaluator only reads the decision back from that event
 """
 
 import json
@@ -69,13 +71,37 @@ def _make_step_input(confidence_score: float | None = None, raw_content: str | N
     return StepInput(additional_data=additional_data)
 
 
+def _decide(step_input) -> dict:
+    """Run retrieval_decision_executor and return its parsed SSE event."""
+    from app.workflow.steps.retrieval_decision import retrieval_decision_executor
+
+    return json.loads(retrieval_decision_executor(step_input).content)
+
+
+def _make_decision_step_input(raw_content: str | None):
+    """Build a StepInput whose retrieval_decision output is ``raw_content``."""
+    from agno.workflow.types import StepInput, StepOutput
+
+    if raw_content is None:
+        return StepInput(additional_data={"session_id": "test-session"})
+    return StepInput(
+        additional_data={"session_id": "test-session"},
+        previous_step_outputs={
+            "retrieval_decision": StepOutput(step_name="retrieval_decision", content=raw_content)
+        },
+    )
+
+
 # ---------------------------------------------------------------------------
 # Import checks
 # ---------------------------------------------------------------------------
 
 
-def test_retrieval_decision_evaluator_importable():
-    from app.workflow.steps.retrieval_decision import retrieval_decision_evaluator  # noqa: F401
+def test_retrieval_decision_step_functions_importable():
+    from app.workflow.steps.retrieval_decision import (  # noqa: F401
+        needs_retrieval,
+        retrieval_decision_executor,
+    )
 
 
 def test_retrieval_confidence_threshold_constant():
@@ -89,40 +115,19 @@ def test_retrieval_confidence_threshold_constant():
 # ---------------------------------------------------------------------------
 
 
-def test_high_confidence_returns_false(capsys):
-    """confidence_score >= 0.85 → evaluator returns False → rag_retrieve skipped."""
-    from app.workflow.steps.retrieval_decision import retrieval_decision_evaluator
+@pytest.mark.parametrize(
+    ("confidence_score", "expected"),
+    [
+        (0.90, "generate"),
+        (0.50, "rag_retrieve"),
+        (0.85, "generate"),  # boundary: threshold is inclusive
+        (0.8499, "rag_retrieve"),
+    ],
+)
+def test_routing_decision_follows_threshold(confidence_score, expected):
+    event = _decide(_make_step_input(confidence_score=confidence_score))
 
-    result = retrieval_decision_evaluator(_make_step_input(confidence_score=0.90))
-
-    assert result is False
-
-
-def test_low_confidence_returns_true(capsys):
-    """confidence_score < 0.85 → evaluator returns True → rag_retrieve runs."""
-    from app.workflow.steps.retrieval_decision import retrieval_decision_evaluator
-
-    result = retrieval_decision_evaluator(_make_step_input(confidence_score=0.50))
-
-    assert result is True
-
-
-def test_exactly_at_threshold_returns_false(capsys):
-    """Boundary: confidence_score == 0.85 → evaluator returns False (inclusive)."""
-    from app.workflow.steps.retrieval_decision import retrieval_decision_evaluator
-
-    result = retrieval_decision_evaluator(_make_step_input(confidence_score=0.85))
-
-    assert result is False
-
-
-def test_just_below_threshold_returns_true(capsys):
-    """confidence_score = 0.8499 (just below 0.85) → evaluator returns True."""
-    from app.workflow.steps.retrieval_decision import retrieval_decision_evaluator
-
-    result = retrieval_decision_evaluator(_make_step_input(confidence_score=0.8499))
-
-    assert result is True
+    assert event["data"]["routing_decision"] == expected
 
 
 # ---------------------------------------------------------------------------
@@ -130,62 +135,23 @@ def test_just_below_threshold_returns_true(capsys):
 # ---------------------------------------------------------------------------
 
 
-def test_sse_event_contains_routing_decision_rag_retrieve(capsys):
-    """Checklist: SSE event data contains routing_decision='rag_retrieve' for low confidence."""
-    from app.workflow.steps.retrieval_decision import retrieval_decision_evaluator
-
-    retrieval_decision_evaluator(_make_step_input(confidence_score=0.50))
-
-    captured = capsys.readouterr()
-    event = json.loads(captured.out.strip())
-
-    assert event["data"]["routing_decision"] == "rag_retrieve"
-
-
-def test_sse_event_contains_routing_decision_generate(capsys):
-    """Checklist: SSE event data contains routing_decision='generate' for high confidence."""
-    from app.workflow.steps.retrieval_decision import retrieval_decision_evaluator
-
-    retrieval_decision_evaluator(_make_step_input(confidence_score=0.90))
-
-    captured = capsys.readouterr()
-    event = json.loads(captured.out.strip())
-
-    assert event["data"]["routing_decision"] == "generate"
-
-
-def test_sse_event_data_contains_confidence_score(capsys):
+def test_sse_event_data_contains_confidence_score():
     """SSE event data must include the confidence_score that drove the decision."""
-    from app.workflow.steps.retrieval_decision import retrieval_decision_evaluator
-
-    retrieval_decision_evaluator(_make_step_input(confidence_score=0.65))
-
-    captured = capsys.readouterr()
-    event = json.loads(captured.out.strip())
+    event = _decide(_make_step_input(confidence_score=0.65))
 
     assert event["data"]["confidence_score"] == pytest.approx(0.65)
 
 
-def test_sse_event_data_contains_threshold(capsys):
+def test_sse_event_data_contains_threshold():
     """SSE event data must include the threshold value for traceability."""
-    from app.workflow.steps.retrieval_decision import retrieval_decision_evaluator
-
-    retrieval_decision_evaluator(_make_step_input(confidence_score=0.80))
-
-    captured = capsys.readouterr()
-    event = json.loads(captured.out.strip())
+    event = _decide(_make_step_input(confidence_score=0.80))
 
     assert event["data"]["threshold"] == pytest.approx(0.85)
 
 
-def test_sse_event_structure(capsys):
+def test_sse_event_structure():
     """SSE event must have session_id, step, status, timestamp, data, error fields."""
-    from app.workflow.steps.retrieval_decision import retrieval_decision_evaluator
-
-    retrieval_decision_evaluator(_make_step_input(confidence_score=0.80))
-
-    captured = capsys.readouterr()
-    event = json.loads(captured.out.strip())
+    event = _decide(_make_step_input(confidence_score=0.80))
 
     assert event["step"] == "retrieval_decision"
     assert event["status"] == "completed"
@@ -195,39 +161,67 @@ def test_sse_event_structure(capsys):
     assert "error" in event
 
 
+@pytest.mark.parametrize("confidence_score", [0.50, 0.90])
+def test_routing_decision_prints_nothing(capsys, confidence_score):
+    """Spec scenario "No stdout side effect": the event is not written to stdout."""
+    from app.workflow.steps.retrieval_decision import needs_retrieval, retrieval_decision_executor
+
+    output = retrieval_decision_executor(_make_step_input(confidence_score=confidence_score))
+    needs_retrieval(_make_decision_step_input(output.content))
+
+    assert capsys.readouterr().out == ""
+
+
 # ---------------------------------------------------------------------------
 # Fallback behaviour — missing or malformed cag_match output
 # ---------------------------------------------------------------------------
 
 
-def test_missing_cag_match_output_defaults_to_retrieval(capsys):
-    """Checklist: no cag_match output → defaults to True (run rag_retrieve, safe default)."""
-    from app.workflow.steps.retrieval_decision import retrieval_decision_evaluator
+def test_missing_cag_match_output_defaults_to_retrieval():
+    """Checklist: no cag_match output → rag_retrieve (safe default)."""
+    event = _decide(_make_step_input())
 
-    # StepInput with no previous_step_outputs
-    result = retrieval_decision_evaluator(_make_step_input())
-
-    assert result is True
+    assert event["data"]["routing_decision"] == "rag_retrieve"
 
 
-def test_malformed_cag_match_output_defaults_to_retrieval(capsys):
-    """Malformed JSON from cag_match → defaults to True (safe fallback)."""
-    from app.workflow.steps.retrieval_decision import retrieval_decision_evaluator
+def test_malformed_cag_match_output_defaults_to_retrieval():
+    """Malformed JSON from cag_match → rag_retrieve (safe fallback)."""
+    event = _decide(_make_step_input(raw_content="not valid json {{{"))
 
-    result = retrieval_decision_evaluator(_make_step_input(raw_content="not valid json {{{"))
-
-    assert result is True
+    assert event["data"]["routing_decision"] == "rag_retrieve"
 
 
-def test_missing_confidence_score_in_data_defaults_to_retrieval(capsys):
+def test_missing_confidence_score_in_data_defaults_to_retrieval():
     """cag_match data without confidence_score key → defaults to 0.0 → retrieval runs."""
-    from app.workflow.steps.retrieval_decision import retrieval_decision_evaluator
-
-    # Valid JSON but no confidence_score in data
     raw = json.dumps({"step": "cag_match", "status": "completed", "data": {}})
-    result = retrieval_decision_evaluator(_make_step_input(raw_content=raw))
+    event = _decide(_make_step_input(raw_content=raw))
 
-    assert result is True
+    assert event["data"]["routing_decision"] == "rag_retrieve"
+
+
+# ---------------------------------------------------------------------------
+# needs_retrieval — the Condition evaluator reads the decision back
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("confidence_score", "expected"),
+    [(0.90, False), (0.50, True)],
+)
+def test_needs_retrieval_follows_the_decision_event(confidence_score, expected):
+    from app.workflow.steps.retrieval_decision import needs_retrieval, retrieval_decision_executor
+
+    output = retrieval_decision_executor(_make_step_input(confidence_score=confidence_score))
+
+    assert needs_retrieval(_make_decision_step_input(output.content)) is expected
+
+
+@pytest.mark.parametrize("raw_content", [None, "not valid json {{{", "[]", json.dumps({"data": {}})])
+def test_needs_retrieval_defaults_to_retrieval(raw_content):
+    """Missing or malformed decision output → True (run retrieval, safe default)."""
+    from app.workflow.steps.retrieval_decision import needs_retrieval
+
+    assert needs_retrieval(_make_decision_step_input(raw_content)) is True
 
 
 # ---------------------------------------------------------------------------

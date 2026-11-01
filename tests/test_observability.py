@@ -334,25 +334,25 @@ def test_cag_match_trace_fields(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# retrieval_decision_evaluator — write_trace call
+# retrieval_decision_executor — write_trace call
 # ---------------------------------------------------------------------------
 
 
-def test_retrieval_decision_calls_write_trace_once(monkeypatch, capsys):
-    """retrieval_decision_evaluator must call write_trace exactly once."""
+def test_retrieval_decision_calls_write_trace_once(monkeypatch):
+    """retrieval_decision_executor must call write_trace exactly once."""
     monkeypatch.setenv("DATABASE_URL", "postgresql://x:x@localhost/x")
     mock_write = MagicMock()
     monkeypatch.setattr(
         "app.workflow.steps.retrieval_decision.write_trace", mock_write
     )
 
-    from app.workflow.steps.retrieval_decision import retrieval_decision_evaluator
+    from app.workflow.steps.retrieval_decision import retrieval_decision_executor
 
-    retrieval_decision_evaluator(_make_basic_step_input())
+    retrieval_decision_executor(_make_basic_step_input())
     mock_write.assert_called_once()
 
 
-def test_retrieval_decision_trace_fields(monkeypatch, capsys):
+def test_retrieval_decision_trace_fields(monkeypatch):
     """retrieval_decision trace must carry session_id, step_name, status, latency_ms."""
     monkeypatch.setenv("DATABASE_URL", "postgresql://x:x@localhost/x")
     mock_write = MagicMock()
@@ -360,9 +360,9 @@ def test_retrieval_decision_trace_fields(monkeypatch, capsys):
         "app.workflow.steps.retrieval_decision.write_trace", mock_write
     )
 
-    from app.workflow.steps.retrieval_decision import retrieval_decision_evaluator
+    from app.workflow.steps.retrieval_decision import retrieval_decision_executor
 
-    retrieval_decision_evaluator(_make_basic_step_input(session_id="sid-rd"))
+    retrieval_decision_executor(_make_basic_step_input(session_id="sid-rd"))
 
     kwargs = mock_write.call_args.kwargs
     assert kwargs["session_id"] == "sid-rd"
@@ -863,25 +863,20 @@ def test_integration_six_trace_rows_after_full_workflow_run(monkeypatch):
         is_fallback=False,
     )
 
-    import contextlib
-    import io
-
     with patch(
         "app.workflow.steps.cag_match.match_category",
         return_value=low_confidence_result,
     ):
-        stdout_capture = io.StringIO()
-        with contextlib.redirect_stdout(stdout_capture):
-            travel_workflow.run(
-                input="plan a trip to Sydney",
-                additional_data={
-                    "session_id": session_id,
-                    "destination": "sydney",
-                    "trip_length": 3,
-                    "budget": "moderate",
-                    "travel_style": "family",
-                },
-            )
+        travel_workflow.run(
+            input="plan a trip to Sydney",
+            additional_data={
+                "session_id": session_id,
+                "destination": "sydney",
+                "trip_length": 3,
+                "budget": "moderate",
+                "travel_style": "family",
+            },
+        )
 
     engine = create_engine(db_url)
     with Session(engine) as session:
@@ -917,25 +912,20 @@ def test_integration_all_trace_rows_have_required_fields(monkeypatch):
         is_fallback=False,
     )
 
-    import contextlib
-    import io
-
     with patch(
         "app.workflow.steps.cag_match.match_category",
         return_value=low_confidence_result,
     ):
-        stdout_capture = io.StringIO()
-        with contextlib.redirect_stdout(stdout_capture):
-            travel_workflow.run(
-                input="plan a trip to Melbourne",
-                additional_data={
-                    "session_id": session_id,
-                    "destination": "melbourne",
-                    "trip_length": 3,
-                    "budget": "moderate",
-                    "travel_style": "family",
-                },
-            )
+        travel_workflow.run(
+            input="plan a trip to Melbourne",
+            additional_data={
+                "session_id": session_id,
+                "destination": "melbourne",
+                "trip_length": 3,
+                "budget": "moderate",
+                "travel_style": "family",
+            },
+        )
 
     engine = create_engine(db_url)
     with Session(engine) as session:
@@ -975,25 +965,20 @@ def test_integration_generate_row_has_template_fields(monkeypatch):
         is_fallback=False,
     )
 
-    import contextlib
-    import io
-
     with patch(
         "app.workflow.steps.cag_match.match_category",
         return_value=high_confidence_result,
     ):
-        stdout_capture = io.StringIO()
-        with contextlib.redirect_stdout(stdout_capture):
-            travel_workflow.run(
-                input="plan a trip to Brisbane",
-                additional_data={
-                    "session_id": session_id,
-                    "destination": "brisbane",
-                    "trip_length": 3,
-                    "budget": "moderate",
-                    "travel_style": "family",
-                },
-            )
+        travel_workflow.run(
+            input="plan a trip to Brisbane",
+            additional_data={
+                "session_id": session_id,
+                "destination": "brisbane",
+                "trip_length": 3,
+                "budget": "moderate",
+                "travel_style": "family",
+            },
+        )
 
     engine = create_engine(db_url)
     with Session(engine) as session:

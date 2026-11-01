@@ -26,14 +26,16 @@
    - Alternative: run the workflow in a thread with `run_in_threadpool`; when each step's executor completes, it puts its event into an `asyncio.Queue` isolated by `session_id` (via `loop.call_soon_threadsafe`), and the SSE generator takes events from the queue.
    Both approaches satisfy the spec; the choice is an implementation detail.
 
-3. **No more sorting by `_STEP_ORDER`.** Events are sent in actual completion order; the workflow itself runs sequentially, so the order is naturally correct. `_STEP_ORDER` is kept only for test assertions.
+   **Experiment result (task 1.1, Agno 2.5.14):** `workflow.run(..., stream=True, stream_events=True)` returns a synchronous iterator that yields each event as the step finishes (a 1 s step showed up 1 s later, not at the end). Every step, including one nested inside a `Condition`, yields a `StepCompletedEvent` whose `step_name` and `content` are the step's own `StepOutput`. `StepOutputEvent` is **not** yielded for steps nested in a `Condition`, so it cannot be used. A skipped branch yields only `ConditionExecutionStarted/CompletedEvent`, with no step events. **Chosen:** the preferred approach. `main.py` iterates the sync stream through Starlette's `iterate_in_threadpool` (each `next()` runs off the event loop) and forwards the `content` of every `StepCompletedEvent` that parses as an SSE event; all other event types are ignored. No queue and no shared state is needed. The `Condition` is renamed (`retrieval_branch`) because the new plain Step takes the name `retrieval_decision`; trace rows keep `step_name="retrieval_decision"`.
+
+3. **No more sorting by `_STEP_ORDER`.** Events are sent in actual completion order; the workflow itself runs sequentially, so the order is naturally correct. No test needed `_STEP_ORDER`, so it was removed rather than kept.
 
 ## Risks / Trade-offs
 
 - [Agno's streaming event interface changes between versions] → Confirm the interface with an experiment first; concentrate the adapter code in one function in `main.py`, covered by tests.
-- [With the thread approach, the workflow keeps running in the background after the client disconnects, continuing to consume LLM calls] → This change accepts that and records it under Open Questions.
+- [Client disconnects mid-run] → With the chosen approach the server pulls the workflow one step at a time, so a disconnect stops it at the next step boundary: the running step finishes (Starlette's worker-thread call cannot be interrupted), later steps never start, and the trace ends at that step. Decided with the user on 2026-11-01 in favour of this over running to completion: no Gemini spend after the client has gone. Documented in `docs/api.md` (Failure behaviour → Client disconnects) and covered by `tests/test_streaming.py`.
 - [TestClient reads SSE differently from a browser and cannot detect "arriving step by step"] → In tests, mock a slow step and assert that the first event is received before the slow step finishes.
 
 ## Open Questions
 
-- Should a running workflow be cancelled after the client disconnects? It does not affect this change's spec and can be handled later.
+- ~~Should a running workflow be cancelled after the client disconnects?~~ Resolved: it stops at the next step boundary (see Risks). Interrupting the step that is running (e.g. an in-flight Gemini call) is not attempted.

@@ -94,8 +94,9 @@ def test_all_step_executors_importable():
         cag_match_executor,
         generate_executor,
         intake_executor,
+        needs_retrieval,
         rag_retrieve_executor,
-        retrieval_decision_evaluator,
+        retrieval_decision_executor,
         validate_output_executor,
     )
 
@@ -239,24 +240,18 @@ def test_validate_output_executor_returns_sse_event():
     _assert_sse_step_output(output, "validate_output")
 
 
-def test_retrieval_decision_evaluator_returns_bool():
-    from app.workflow.steps.retrieval_decision import retrieval_decision_evaluator
+def test_needs_retrieval_returns_bool():
+    from app.workflow.steps.retrieval_decision import needs_retrieval
 
-    result = retrieval_decision_evaluator(_make_step_input())
+    result = needs_retrieval(_make_step_input())
     assert isinstance(result, bool)
 
 
-def test_retrieval_decision_evaluator_propagates_session_id(capsys):
-    from app.workflow.steps.retrieval_decision import retrieval_decision_evaluator
+def test_retrieval_decision_executor_returns_sse_event():
+    from app.workflow.steps.retrieval_decision import retrieval_decision_executor
 
-    retrieval_decision_evaluator(_make_step_input(session_id="sid-xyz"))
-    captured = capsys.readouterr()
-    event = json.loads(captured.out.strip())
-
-    assert event["session_id"] == "sid-xyz"
-    assert event["step"] == "retrieval_decision"
-    assert event["status"] == "completed"
-    assert "timestamp" in event
+    output = retrieval_decision_executor(_make_step_input(session_id="sid-xyz"))
+    _assert_sse_step_output(output, "retrieval_decision", session_id="sid-xyz")
 
 
 # ---------------------------------------------------------------------------
@@ -274,8 +269,8 @@ def _collect_sse_events(step_results) -> list[dict]:
     events = []
     for step_result in step_results:
         if step_result.steps:
-            # Condition node — the evaluator's event is not in step_results;
-            # collect events from sub-steps (e.g. rag_retrieve) if they ran.
+            # Condition node — collect events from sub-steps (e.g. rag_retrieve)
+            # if they ran.
             for sub in step_result.steps:
                 if sub.content:
                     try:
@@ -290,7 +285,7 @@ def _collect_sse_events(step_results) -> list[dict]:
     return events
 
 
-def test_workflow_run_produces_six_sse_events(capsys):
+def test_workflow_run_produces_six_sse_events():
     """All 6 steps emit one SSE event when the low-confidence path is taken."""
     from unittest.mock import patch
 
@@ -319,20 +314,13 @@ def test_workflow_run_produces_six_sse_events(capsys):
             },
         )
 
-    # Events from step executors (intake, cag_match, rag_retrieve, generate, validate_output)
-    executor_events = _collect_sse_events(result.step_results)
-
-    # Event from retrieval_decision evaluator (printed as side-effect)
-    captured = capsys.readouterr()
-    evaluator_event = json.loads(captured.out.strip())
-
-    all_events = executor_events + [evaluator_event]
+    all_events = _collect_sse_events(result.step_results)
     assert len(all_events) == 6, (
         f"Expected 6 SSE events, got {len(all_events)}: {[e['step'] for e in all_events]}"
     )
 
 
-def test_workflow_run_all_events_have_required_fields(capsys):
+def test_workflow_run_all_events_have_required_fields():
     """Every SSE event must contain session_id, step, status, and timestamp."""
     from app.workflow.travel_workflow import travel_workflow
 
@@ -348,10 +336,7 @@ def test_workflow_run_all_events_have_required_fields(capsys):
         },
     )
 
-    executor_events = _collect_sse_events(result.step_results)
-    captured = capsys.readouterr()
-    evaluator_event = json.loads(captured.out.strip())
-    all_events = executor_events + [evaluator_event]
+    all_events = _collect_sse_events(result.step_results)
 
     required_fields = {"session_id", "step", "status", "timestamp"}
     for event in all_events:
@@ -359,7 +344,7 @@ def test_workflow_run_all_events_have_required_fields(capsys):
         assert not missing, f"Event for step '{event.get('step')}' is missing fields: {missing}"
 
 
-def test_workflow_run_session_id_propagated_to_all_events(capsys):
+def test_workflow_run_session_id_propagated_to_all_events():
     """session_id must be identical in every SSE event."""
     from app.workflow.travel_workflow import travel_workflow
 
@@ -375,10 +360,7 @@ def test_workflow_run_session_id_propagated_to_all_events(capsys):
         },
     )
 
-    executor_events = _collect_sse_events(result.step_results)
-    captured = capsys.readouterr()
-    evaluator_event = json.loads(captured.out.strip())
-    all_events = executor_events + [evaluator_event]
+    all_events = _collect_sse_events(result.step_results)
 
     for event in all_events:
         assert event["session_id"] == session_id, (
@@ -386,7 +368,7 @@ def test_workflow_run_session_id_propagated_to_all_events(capsys):
         )
 
 
-def test_workflow_run_all_six_step_names_present(capsys):
+def test_workflow_run_all_six_step_names_present():
     """All 6 step names appear in emitted events when low-confidence path is taken."""
     from unittest.mock import patch
 
@@ -414,17 +396,14 @@ def test_workflow_run_all_six_step_names_present(capsys):
             },
         )
 
-    executor_events = _collect_sse_events(result.step_results)
-    captured = capsys.readouterr()
-    evaluator_event = json.loads(captured.out.strip())
-    all_events = executor_events + [evaluator_event]
+    all_events = _collect_sse_events(result.step_results)
 
     step_names = {e["step"] for e in all_events}
     expected = {"intake", "cag_match", "retrieval_decision", "rag_retrieve", "generate", "validate_output"}
     assert step_names == expected, f"Step name mismatch: {step_names} != {expected}"
 
 
-def test_workflow_run_all_events_status_completed(capsys):
+def test_workflow_run_all_events_status_completed():
     """All stub events must have status='completed'."""
     from app.workflow.travel_workflow import travel_workflow
 
@@ -441,10 +420,7 @@ def test_workflow_run_all_events_status_completed(capsys):
         },
     )
 
-    executor_events = _collect_sse_events(result.step_results)
-    captured = capsys.readouterr()
-    evaluator_event = json.loads(captured.out.strip())
-    all_events = executor_events + [evaluator_event]
+    all_events = _collect_sse_events(result.step_results)
 
     for event in all_events:
         assert event["status"] == "completed", (
@@ -473,7 +449,7 @@ def test_travel_workflow_telemetry_off_without_env(monkeypatch):
     assert module.travel_workflow.telemetry is False
 
 
-def test_workflow_completes_with_validate_output_event_when_llm_fails(capsys):
+def test_workflow_completes_with_validate_output_event_when_llm_fails():
     """Gemini raises during generation: generate errors, validate_output still emits."""
     from unittest.mock import patch
 
@@ -504,7 +480,6 @@ def test_workflow_completes_with_validate_output_event_when_llm_fails(capsys):
                 "travel_style": "family",
             },
         )
-    capsys.readouterr()
 
     events = {e["step"]: e for e in _collect_sse_events(result.step_results)}
     assert events["generate"]["status"] == "error"

@@ -284,24 +284,25 @@ data: {"session_id": "...", "step": "validate_output", "status": "completed", ..
 - Each `data` line is a JSON-serialised SSE event matching DESIGN.md section 9.
 - `session_id` is generated per request (`uuid4`) and is identical across all events.
 - The `rag_retrieve` event is present only when `confidence_score < 0.85`.
-- Events arrive in workflow order: `intake → cag_match → retrieval_decision → (rag_retrieve) → generate → validate_output`.
+- Events arrive in workflow order, each as soon as its step finishes: `intake → cag_match → retrieval_decision → (rag_retrieve) → generate → validate_output`. Other requests (e.g. `GET /health`) are answered while a workflow runs.
+- If the client disconnects, the step that is running finishes and no further step starts.
 
 ### How it works
 
 ```
 POST /generate
   ├── FastAPI validates TravelRequest body  →  422 on bad input
+  ├── input guards (prompt injection, Australian destination)  →  422 with a reason code
   ├── generate session_id = uuid4()
-  ├── _run_workflow(session_id, request)
-  │     ├── travel_workflow.run(additional_data={session_id, destination, ...})
-  │     │     stdout captured via contextlib.redirect_stdout to collect
-  │     │     the retrieval_decision evaluator's side-effect print()
-  │     ├── _collect_step_result_events(result.step_results)
-  │     │     └── parses intake, cag_match, (rag_retrieve), generate, validate_output
-  │     ├── parse retrieval_decision event from captured stdout
-  │     └── sort all events by _STEP_ORDER → [0..5]
   └── EventSourceResponse(event_generator())
-        └── yields {"data": json.dumps(event)} for each event
+        └── iterate _run_workflow(session_id, request) in a worker thread
+              ├── travel_workflow.run(additional_data={session_id, destination, ...},
+              │                       stream=True, stream_events=True)
+              │     intake → cag_match → retrieval_decision (Step)
+              │       → retrieval_branch (Condition: rag_retrieve if chosen)
+              │       → generate → validate_output
+              ├── each StepCompletedEvent carries that step's SSE event JSON
+              └── yields {"data": json.dumps(event)} as soon as the step finishes
 ```
 
 ### Try it
