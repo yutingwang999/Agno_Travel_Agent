@@ -89,13 +89,27 @@ Each step SHALL return its SSE event, serialised as JSON, as its step output con
 - **WHEN** a step reads a field from an upstream step that did not run
 - **THEN** it receives an empty value and continues
 
-### Requirement: Event delivery timing
-In the current implementation, `POST /generate` SHALL run the whole workflow to completion, collect all step events, sort them into the canonical step order, and only then write them to the SSE stream.
+### Requirement: Incremental event delivery
+`POST /generate` SHALL write each step's event to the SSE stream as soon as that step finishes, without waiting for later steps, and events SHALL arrive in the order the steps executed.
 
-#### Scenario: Events arrive together
-- **WHEN** a request is processed
-- **THEN** no event is sent until the `validate_output` step has finished
-- **AND** all events are then sent in canonical order
+#### Scenario: First event arrives before generation finishes
+- **WHEN** a request is processed and the generate step takes several seconds
+- **THEN** the `intake` and `cag_match` events are received by the client before the `generate` step finishes
+
+#### Scenario: Order preserved
+- **WHEN** a low-confidence request is processed
+- **THEN** events arrive in the order `intake`, `cag_match`, `retrieval_decision`, `rag_retrieve`, `generate`, `validate_output`
+
+### Requirement: Non-blocking request handling
+While a workflow is running for one request, the service SHALL continue to accept and answer other HTTP requests; workflow execution SHALL NOT block the server's event loop, and concurrent requests SHALL NOT share mutable per-request state such as redirected standard output.
+
+#### Scenario: Health check during generation
+- **WHEN** a `POST /generate` request is in its generate step
+- **THEN** a concurrent `GET /health` returns 200 without waiting for the generation to finish
+
+#### Scenario: Concurrent requests keep their own events
+- **WHEN** two `POST /generate` requests run at the same time
+- **THEN** each stream contains only events carrying its own `session_id`
 
 ### Requirement: Per-step trace record
 Each executed step SHALL write one row to `trace_events` containing `session_id`, `step_name`, `status`, and `latency_ms`. The generate step SHALL also record `prompt_template_key` and `prompt_template_version` on success; the validate_output step SHALL also record `degraded_mode` and, when applicable, `error_type`. A failure to write a trace row SHALL be logged and SHALL NOT fail the step.
