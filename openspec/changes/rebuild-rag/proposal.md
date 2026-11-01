@@ -19,7 +19,7 @@ A complete redesign of routing (LLM request parsing, whether to introduce true C
 
 ## What Changes
 
-- **Expand the knowledge base to realistic scale**: use open data whose licence permits it — mainly Wikivoyage (CC BY-SA, attribution required), supplemented by government open data; do not scrape copyrighted travel sites or sites that forbid scraping. The target is several hundred to a thousand-plus text chunks.
+- **Expand the knowledge base to realistic scale**: use open data whose licence permits it — Wikivoyage (CC BY-SA, attribution required); government open data was considered and not used (decided 2026-11-01, see design); do not scrape copyrighted travel sites or sites that forbid scraping. The target is several hundred to a thousand-plus text chunks.
 - **Data processing pipeline**: clean → split by section (using Wikivoyage's natural See / Do / Eat / Sleep structure, with overly long sections split further) → add metadata (city, state, category, source URL, section) → write into pgvector. The script can be re-run without producing duplicate data.
 - **Retrieval upgrades, each step compared with the evaluation harness**:
   - a. Vector-only retrieval (baseline)

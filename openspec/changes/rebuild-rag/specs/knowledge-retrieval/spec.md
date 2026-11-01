@@ -70,6 +70,13 @@ The `rag_retrieve` step SHALL run for every request that reaches the workflow.
 - **WHEN** a new source is added to the corpus
 - **THEN** its licence and attribution are listed in `data/knowledge/SOURCES.md`
 
+### Requirement: Corpus kept out of the repository
+The built corpus, any fixture derived from it, and the source list (`data/knowledge/sources.yaml`, `data/knowledge/SOURCES.md`) SHALL NOT be committed to the repository. `sources.yaml` SHALL record every source's pinned revision so that a rebuild from scratch reproduces the same corpus.
+
+#### Scenario: Rebuild from pinned sources
+- **WHEN** the downloaded sources and the built corpus are deleted and the corpus is rebuilt from `sources.yaml`
+- **THEN** the result is identical to the corpus built before the deletion
+
 ### Requirement: Destination filtering
 Before ranking, the step SHALL restrict candidates to chunks whose `destination` equals the request destination or `"australia"`. If the knowledge base has no chunks for the request destination, the step SHALL search only `"australia"` chunks. The event `data` SHALL include `destination_matched`, true when chunks exist for the request destination.
 
