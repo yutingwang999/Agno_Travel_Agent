@@ -37,6 +37,7 @@ from evaluation.judge import (
     FaithfulnessVerdict,
     Judge,
     destination_rate,
+    faithfulness_by_coverage,
     faithfulness_summary,
     itinerary_text,
     knowledge_context,
@@ -308,6 +309,8 @@ def summarise(results: list[EntryRun], config: RunConfig, pricing: Pricing) -> d
     retrieval_results = [r.retrieval for r in results if r.retrieval]
     faith = [(FaithfulnessVerdict.model_validate(r.faithfulness["verdict"]), r.faithfulness["had_context"])
              for r in results if r.faithfulness]
+    by_coverage = [(FaithfulnessVerdict.model_validate(r.faithfulness["verdict"]), r.entry.corpus_coverage)
+                   for r in results if r.faithfulness and r.entry.corpus_coverage]
     places = [DestinationVerdict.model_validate(r.destination["verdict"]) for r in results if r.destination]
     judge_usage = [(d["input_tokens"], d["output_tokens"])
                    for r in results for d in (r.faithfulness, r.destination) if d]
@@ -328,6 +331,7 @@ def summarise(results: list[EntryRun], config: RunConfig, pricing: Pricing) -> d
             "behaviour": behaviour_correctness(pairs),
             "constraints": constraints,
             "faithfulness": {**faithfulness_summary(faith),
+                             "by_corpus_coverage": faithfulness_by_coverage(by_coverage),
                              "judge_errors": sum(1 for r in results if r.judge_error)},
             "system": {**system_metrics([r.outcome for r in results]),
                        "step_latency_ms": step_latencies(results)},

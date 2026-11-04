@@ -13,6 +13,17 @@ A retrieved chunk SHALL count as relevant to an entry when the pair identifying 
 
 ## ADDED Requirements
 
+### Requirement: Corpus coverage grouping
+Plan entries of a corpus-versioned dataset SHALL carry `corpus_coverage`: `"city"` when their labels include corpus pages, `"national_only"` when they include only Australia-wide documents, `"none"` when they have no labels because the corpus holds nothing for the request. The dataset check SHALL reject a value that disagrees with the labels. An entry with `"none"` SHALL take no part in Recall and MRR, and the run summary SHALL report `supported_share` per group.
+
+#### Scenario: Destination outside the corpus
+- **WHEN** an entry requests a destination for which neither pages nor Australia-wide documents apply
+- **THEN** it has `corpus_coverage` = `"none"` and empty `relevant_sections`, passes the dataset check, and is left out of Recall
+
+#### Scenario: Faithfulness per group
+- **WHEN** a run finishes on a dataset with `corpus_coverage`
+- **THEN** its summary has `metrics.faithfulness.by_corpus_coverage` with `itineraries`, `claims` and `supported_share` per group
+
 ### Requirement: Stepwise retrieval comparison
 The harness SHALL support evaluating these retrieval configurations on the same corpus version, each adding one change to the previous: (a) vector-only, (b) vector with destination filtering, (c) hybrid lexical and vector search with fusion and destination filtering, (d) configuration (c) with reranking; and the comparison report SHALL list Recall@5, MRR@5, and retrieval latency p50/p95 for each.
 

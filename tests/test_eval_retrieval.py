@@ -192,6 +192,13 @@ def test_query_text_matches_the_workflow(mocked_workflow):
     assert workflow_query_text(form) == mocked_workflow[0]
 
 
+def test_budget_amount_does_not_change_the_retrieval_query(mocked_workflow):
+    """The budget-amount entries compare with their originals only while both retrieve the same chunks."""
+    form = {"destination": "Sydney", "trip_length": 3, "budget": "moderate", "travel_style": "family"}
+
+    assert workflow_query_text({**form, "max_daily_budget_aud": 300}) == workflow_query_text(form)
+
+
 def test_query_text_is_built_even_for_high_confidence(monkeypatch):
     """Spec scenario: an entry that would skip retrieval still gets the workflow's query."""
     monkeypatch.setenv("DATABASE_URL", "postgresql://test:test@localhost/test")

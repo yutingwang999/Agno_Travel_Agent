@@ -136,6 +136,7 @@ Observed behaviour is `plan` (a validated itinerary), `refuse` (422 with a guard
 | `overall` | `itineraries`, `claims` and `supported_share` over all judged itineraries |
 | `with_context` | The same, for requests that went through retrieval |
 | `without_context` | The same, for requests the generator answered with no knowledge context; every claim is unsupported by definition, so expect 0 |
+| `by_corpus_coverage` | The same per `corpus_coverage` group of the dataset: `city` (pages for the destination), `national_only` (only Australia-wide documents apply), `none` (nothing applies; these entries have no labels and take no part in Recall) |
 | `judge_errors` | Itineraries the judge could not score after its retries |
 
 `supported_share` measures grounding, not truth: a correct fact that the knowledge base does not contain counts as unsupported. Compare `with_context` across runs; it is the number retrieval changes are expected to move.

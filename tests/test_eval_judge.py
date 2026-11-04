@@ -12,6 +12,7 @@ from evaluation.judge import (
     Judge,
     PlaceCheck,
     destination_rate,
+    faithfulness_by_coverage,
     faithfulness_summary,
     itinerary_text,
     knowledge_context,
@@ -104,6 +105,19 @@ def test_itinerary_text_lists_days_and_tips():
     text = itinerary_text(ITINERARY)
     assert text.startswith("Day 1: morning: Opera House tour")
     assert text.endswith("Tip: Buy an Opal card")
+
+
+def test_faithfulness_by_coverage_reports_each_group():
+    """Spec scenario "Faithfulness per group"."""
+    supported = FaithfulnessVerdict(claims=[Claim(category="named_place", text="A place", supported=True)])
+    unsupported = FaithfulnessVerdict(claims=[Claim(category="price", text="$25 entry", supported=False)])
+
+    summary = faithfulness_by_coverage([(supported, "city"), (unsupported, "city"), (unsupported, "none")])
+
+    assert summary == {
+        "city": {"itineraries": 2, "claims": 2, "supported_share": pytest.approx(0.5)},
+        "none": {"itineraries": 1, "claims": 1, "supported_share": 0.0},
+    }
 
 
 def test_faithfulness_summary_splits_by_context():

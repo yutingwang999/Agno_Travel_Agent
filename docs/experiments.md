@@ -32,6 +32,7 @@ This file records the effect of every change that affects quality, behaviour or 
 
 | Date | Change | What changed | Key result | Record |
 | --- | --- | --- | --- | --- |
+| 2026-11-04 | `rebuild-rag` | Dataset v3: labels moved to corpus v2. Check before the switch that corpus v1 still gives the same retrieval after the corpus left the code and embedding task types became configurable | Recall@5 0.951 and MRR@5 0.884, unchanged from the final `harden-workflow-guardrails` runs; later v1 configs need a commit from before dataset v3 | [Labels v2](#2026-11-04--rebuild-rag--dataset-v3-labels-for-corpus-v2-and-the-check-before-the-switch) |
 | 2026-11-04 | Repository history rewrite | Corpus v1 text removed from all of git history; every commit hash changed | No numbers changed. `git_commit` in earlier run summaries refers to the old hashes | [History rewrite](#2026-11-04--repository-history-rewrite--git_commit-values-in-earlier-runs-use-old-hashes) |
 | 2026-11-01 | `true-sse-streaming` | Events streamed as each step finishes; routing decision moved from a Condition evaluator to a plain Step | No evaluation run (not quality-affecting). Manual check: early panels appear quickly, then a visible pause at generate | [Streaming](#2026-11-01--true-sse-streaming--no-evaluation-run-delivery-timing-only) |
 | 2026-10-31 | `harden-workflow-guardrails` | Final: input guards, budget amount, 14-day limit (dataset v2, `dataset-v1` subset ×2 + `budget-amount` ×2) | Behaviour correctness 74.0% → 87.7% (`out_of_scope` and `prompt_injection` 0% → 83.3%); days and budget 100%; retry 0.8%, error 0%; faithfulness with context 19.6% on the same itineraries (baseline 23.0%, not met); a loose budget amount raises spending | [Final](#2026-10-31--harden-workflow-guardrails-final--input-guards-budget-amount-and-the-full-change-against-the-baseline) |
@@ -80,6 +81,31 @@ Copy the template below, fill it in, and put it at the **top** of the "Records" 
 ---
 
 ## Records
+
+### 2026-11-04 · rebuild-rag · dataset v3: labels for corpus v2, and the check before the switch
+
+**Check before the switch** (run `20261104T053245Z-harden-workflow-guardrails-dataset-v1`, config `harden-workflow-guardrails`, subset `dataset-v1`, commit `a650229`, no uncommitted code): corpus v1 moved from `scripts/seed.py` to a private file and embedding task types became selectable, with v1 tables staying `semantic`. Compared with the two final `harden-workflow-guardrails` runs:
+
+| Metric | This run | Final harden runs |
+| --- | --- | --- |
+| Recall@5 | 0.951 | 0.951 / 0.951 |
+| MRR@5 | 0.884 | 0.884 / 0.884 |
+| Behaviour correctness | 87.7% | 87.7% / 87.7% |
+| Days / budget constraints | 100% / 100% | 100% / 100% |
+| Faithfulness with context | 20.4% | 20.2% / 19.0% |
+| Retry rate | 1.7% | 1.7% / 0% |
+| Error rate | 0% | 0% / 0% |
+| Latency p50 | 4.64 s | 4.22 s / 4.18 s |
+
+Retrieval is unchanged. Latency is about 0.4 s higher in this single run; the cause was not investigated.
+
+**Budget-amount entries**: in the stored corpus v1 runs (three of the originals, two of the copies), e074–e079 have the same query and the same retrieved sections in the same order as e004, e024, e022, e001, e003 and e029, because the amount is not part of the query. A unit test now holds this. Not yet measured on corpus v2.
+
+**Dataset v3**: labels name a page and section. They were drafted from what the sections contain (lines matching each request's theme, not retrieval results) and reviewed by the user. Australia-wide labels kept from v1 were not re-examined. Coverage of the 60 plan entries: 38 `city`, 16 `national_only`, 6 `none` (all Gold Coast, left out of Recall). Known weak labels, where the corpus has little on the request: e006, e012, e025, e036, e037, e038, e062. Recall on v3 is not comparable with Recall on v2 labels: the corpus and the labels both changed.
+
+**To re-run a corpus v1 configuration** after this: check out a commit from before dataset v3 and restore `data/knowledge/v1/source_documents.json` from the private repository.
+
+---
 
 ### 2026-11-04 · repository history rewrite · `git_commit` values in earlier runs use old hashes
 
@@ -394,5 +420,6 @@ Every modification of the evaluation dataset (`eval/dataset.jsonl`) must be reco
 
 | Date | Version | What changed | Reason | Entries affected |
 | --- | --- | --- | --- | --- |
+| 2026-11-04 | v3 | `relevant_sections` of all 60 plan entries relabelled for corpus v2 by page title + section; retired v1 city guides removed from labels; plan entries gain `corpus_coverage`; `corpus_version` set to v2. Requests unchanged | `rebuild-rag` replaces the corpus (task 2.1). Labels name the page because destination + section would merge every district's `Eat` into one label and inflate Recall | e001–e012, e016–e029, e034–e044, e054–e057, e059–e071, e074–e079 |
 | 2026-10-31 | v2 | Added e074–e079 (tag `budget_amount`): each is a copy of a v1 plan entry — e074/e004, e075/e024, e076/e022, e077/e001, e078/e003, e079/e029 — with `form.max_daily_budget_aud` (50, 120, 120, 300, 1500, 600) and the amount added to the utterance, so each pair differs only in the amount; e079 keeps e029's `mixed_language` tag and mixed-language utterance. `gold_slots` has no amount field yet (added with a request parser, roadmap item 3). Subsets `dataset-v1` (e001–e073) and `budget-amount` (e074–e079) let runs compare with the v1 baseline and report the new entries separately. No v1 entry changed | `harden-workflow-guardrails` adds `max_daily_budget_aud` (task 6.5); the spec requires entries with an amount for every budget level, a `luxury` one and one above its level's default. Written and reviewed before the final evaluation of the change | e074–e079 (new) |
 | 2026-10-25 | v1 | Initial version: 73 entries (54 plan / 12 refuse / 7 clarify), labelled against corpus v1 (the 13 handwritten v0.1.0 documents); 24 entries carry `form.notes` | Written and reviewed entry by entry before any experiment | All (e001–e073) |

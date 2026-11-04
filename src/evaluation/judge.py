@@ -154,20 +154,29 @@ def faithfulness_summary(verdicts: list[tuple[FaithfulnessVerdict, bool]]) -> di
 
     *verdicts* pairs each itinerary's verdict with whether its generator was given context.
     """
-    def share(items: list[tuple[FaithfulnessVerdict, bool]]) -> dict:
-        claims = [claim for verdict, _ in items for claim in verdict.claims]
-        supported = sum(claim.supported for claim in claims)
-        return {
-            "itineraries": len(items),
-            "claims": len(claims),
-            "supported_share": supported / len(claims) if claims else None,
-        }
-
     return {
-        "overall": share(verdicts),
-        "with_context": share([v for v in verdicts if v[1]]),
-        "without_context": share([v for v in verdicts if not v[1]]),
+        "overall": _claim_share([verdict for verdict, _ in verdicts]),
+        "with_context": _claim_share([verdict for verdict, had_context in verdicts if had_context]),
+        "without_context": _claim_share([verdict for verdict, had_context in verdicts if not had_context]),
     }
+
+
+def _claim_share(verdicts: list[FaithfulnessVerdict]) -> dict:
+    claims = [claim for verdict in verdicts for claim in verdict.claims]
+    supported = sum(claim.supported for claim in claims)
+    return {
+        "itineraries": len(verdicts),
+        "claims": len(claims),
+        "supported_share": supported / len(claims) if claims else None,
+    }
+
+
+def faithfulness_by_coverage(verdicts: list[tuple[FaithfulnessVerdict, str]]) -> dict:
+    """The same share per ``corpus_coverage`` group, keyed by group name."""
+    groups: dict[str, list[FaithfulnessVerdict]] = {}
+    for verdict, coverage in verdicts:
+        groups.setdefault(coverage, []).append(verdict)
+    return {coverage: _claim_share(group) for coverage, group in sorted(groups.items())}
 
 
 def destination_rate(verdicts: list[DestinationVerdict]) -> float | None:
