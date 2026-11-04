@@ -43,6 +43,8 @@ def parse_args() -> argparse.Namespace:
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--subset", help="subset name in eval/subsets/ (e.g. smoke)")
     group.add_argument("--entries", help="comma-separated entry ids, for debugging")
+    parser.add_argument("--retrieval-only", action="store_true",
+                        help="measure retrieval alone: nothing is generated or judged")
     return parser.parse_args()
 
 
@@ -89,31 +91,81 @@ def check_database(db_url: str, knowledge_table: str) -> None:
                  "run: python scripts/dev.py eval-db-setup")
 
 
-def make_services(client, config, db_url: str):
-    from pydantic import ValidationError
-    from sqlalchemy import create_engine, text
-
-    from app.main import build_additional_data
-    from app.workflow.intake_model import TravelRequest
+def make_retrieve(config, db_url: str):
     from app.workflow.knowledge_base import build_knowledge
     from app.workflow.retrieval_service import _search_knowledge
-    from app.workflow.steps.cag_match import _build_intent_text
-    from evaluation.judge import Judge
-    from evaluation.retrieval import workflow_query_text
-    from evaluation.runner import Services
 
-    engine = create_engine(db_url)
     api_key = os.environ["GEMINI_API_KEY"]
-
-    def send(form: dict) -> tuple[int, str]:
-        response = client.post("/generate", json=form)
-        return response.status_code, response.text
 
     def retrieve(query: str) -> list:
         # Not retrieve_documents(): it turns failures into an empty result,
         # which would read as Recall = 0 instead of an error.
         knowledge = build_knowledge(db_url=db_url, api_key=api_key, embedding_model=config.embedding_model)
         return _search_knowledge(knowledge, query, config.retrieval_k)
+
+    return retrieve
+
+
+def retrieval_only(args, config, db_url: str, meta, entries) -> int:
+    """A run that measures retrieval alone; see evaluation.runner.run_retrieval_only."""
+    from evaluation.retrieval import workflow_query_text
+    from evaluation.runner import append_jsonl, run_retrieval_only
+
+    commit, dirty = git_state()
+    started = utc_now()
+    subset = args.subset or ("entries" if args.entries else None)
+    run_id = make_run_id(config.name, f"{subset}-retrieval" if subset else "retrieval", started)
+    run_dir = RUNS_DIR / run_id
+    run_dir.mkdir(parents=True)
+    print(f"run {run_id}: retrieval only, git {commit[:7]}{' (dirty)' if dirty else ''}")
+
+    metrics = run_retrieval_only(entries, config, workflow_query_text, make_retrieve(config, db_url),
+                                 on_result=lambda record: append_jsonl(run_dir / "results.jsonl", record))
+    finished = utc_now()
+    summary = {
+        "run_id": run_id,
+        "retrieval_only": True,
+        "subset": subset or "all",
+        "entries": len(entries),
+        "started_at": started.isoformat(),
+        "finished_at": finished.isoformat(),
+        "phase_seconds": {"total": round((finished - started).total_seconds(), 2)},
+        "conditions": {
+            "dataset_version": meta.dataset_version,
+            "corpus_version": meta.corpus_version,
+            "knowledge_table": config.knowledge_table,
+            "config": config.model_dump(),
+            "embedding_model": config.embedding_model,
+            "git_commit": commit,
+            "git_dirty": dirty,
+        },
+        "metrics": metrics,
+    }
+    (run_dir / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n",
+                                          encoding="utf-8")
+    retrieval = metrics["retrieval"]
+    print(f"recall@{config.retrieval_k}: {retrieval['recall_at_k']}  |  mrr: {retrieval['mrr_at_k']}  |  "
+          f"errors: {retrieval['errors']}  |  retrieve p50: {retrieval['retrieve_latency_p50_ms']} ms")
+    print(f"wrote {run_dir}")
+    return 0
+
+
+def make_services(client, config, db_url: str):
+    from pydantic import ValidationError
+    from sqlalchemy import create_engine, text
+
+    from app.main import build_additional_data
+    from app.workflow.intake_model import TravelRequest
+    from app.workflow.steps.cag_match import _build_intent_text
+    from evaluation.judge import Judge
+    from evaluation.retrieval import workflow_query_text
+    from evaluation.runner import Services
+
+    engine = create_engine(db_url)
+
+    def send(form: dict) -> tuple[int, str]:
+        response = client.post("/generate", json=form)
+        return response.status_code, response.text
 
     def trace_rows(session_id: str) -> list[dict]:
         with engine.connect() as conn:
@@ -132,7 +184,7 @@ def make_services(client, config, db_url: str):
             return None
         return _build_intent_text(build_additional_data("eval", request))
 
-    return Services(send=send, query_text=workflow_query_text, retrieve=retrieve,
+    return Services(send=send, query_text=workflow_query_text, retrieve=make_retrieve(config, db_url),
                     trace_rows=trace_rows, intent_text=intent_text, judge=Judge.from_env())
 
 
@@ -162,6 +214,8 @@ def main() -> int:
                  f"config {config.name!r} uses {config.corpus_version!r}")
     ids = load_subset(args.subset) if args.subset else (args.entries.split(",") if args.entries else None)
     entries = select_entries(load_dataset(), ids)
+    if args.retrieval_only:
+        return retrieval_only(args, config, db_url, meta, entries)
     pricing = load_pricing()
     # validate_output does not report its template version; record the active one.
     correction_version = active_version(db_url, CORRECTION_TEMPLATE_KEY)

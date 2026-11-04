@@ -192,6 +192,13 @@ def test_query_text_matches_the_workflow(mocked_workflow):
     assert workflow_query_text(form) == mocked_workflow[0]
 
 
+def test_query_uses_the_canonical_destination_like_the_workflow(mocked_workflow):
+    """POST /generate replaces a Chinese destination by its English name; so must the harness."""
+    form = {"destination": "悉尼", "trip_length": 3, "budget": "moderate", "travel_style": "family"}
+
+    assert workflow_query_text(form) == workflow_query_text({**form, "destination": "Sydney"})
+
+
 def test_budget_amount_does_not_change_the_retrieval_query(mocked_workflow):
     """The budget-amount entries compare with their originals only while both retrieve the same chunks."""
     form = {"destination": "Sydney", "trip_length": 3, "budget": "moderate", "travel_style": "family"}

@@ -42,7 +42,7 @@ from evaluation.judge import (
     itinerary_text,
     knowledge_context,
 )
-from evaluation.metrics import constraint_rates, system_metrics
+from evaluation.metrics import constraint_rates, percentile, system_metrics
 from evaluation.retrieval import RetrievalResult, evaluate_entry, summarize
 
 CONFIGS_DIR = ROOT_DIR / "eval" / "configs"
@@ -171,6 +171,59 @@ def run_entry(entry: DatasetEntry, config: RunConfig, services: Services, pricin
     result.cost = request_cost(result.trace_rows, embedded, config.generation_model,
                                config.embedding_model, pricing)
     return result
+
+
+def run_retrieval_only(
+    entries: list[DatasetEntry],
+    config: RunConfig,
+    query_text: Callable[[dict], str],
+    retrieve: Callable[[str], list],
+    on_result: Callable[[dict], None] | None = None,
+) -> dict:
+    """Measure retrieval alone: no request is sent, nothing is generated or judged.
+
+    Enough for comparing retrieval configurations, because Recall and MRR depend only
+    on the query, the knowledge base and the labels. Returns the metrics of a summary.
+    """
+    results: list[tuple[DatasetEntry, RetrievalResult]] = []
+    errors = 0
+    latencies: list[float] = []
+
+    def timed_retrieve(query: str) -> list:
+        start = time.perf_counter()
+        chunks = retrieve(query)
+        latencies.append(_elapsed_ms(start))
+        return chunks
+
+    for entry in entries:
+        if not entry.relevant_sections:
+            continue
+        record: dict = {"entry_id": entry.id, "corpus_coverage": entry.corpus_coverage, "tags": entry.tags}
+        try:
+            result = evaluate_entry(entry, query_text, timed_retrieve, config.retrieval_k)
+            results.append((entry, result))
+            record["retrieval"] = asdict(result)
+        except Exception as exc:  # noqa: BLE001 — record it and keep going
+            errors += 1
+            record["retrieval_error"] = describe_exception(exc)
+        if on_result:
+            on_result(record)
+
+    groups: dict[str, list[RetrievalResult]] = {}
+    for entry, result in results:
+        if entry.corpus_coverage:
+            groups.setdefault(entry.corpus_coverage, []).append(result)
+    return {
+        "retrieval": {
+            **summarize([result for _, result in results], config.retrieval_k),
+            "errors": errors,
+            "by_corpus_coverage": {
+                coverage: summarize(group, config.retrieval_k) for coverage, group in sorted(groups.items())
+            },
+            "retrieve_latency_p50_ms": percentile(latencies, 50),
+            "retrieve_latency_p95_ms": percentile(latencies, 95),
+        },
+    }
 
 
 def judge_entry(result: EntryRun, judge: Judge) -> None:

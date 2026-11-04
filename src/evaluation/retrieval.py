@@ -69,12 +69,14 @@ def workflow_query_text(form: dict, session_id: str = "eval-retrieval") -> str:
     embeds the request); intake and cag_match write their usual trace rows.
     """
     from app.main import build_additional_data
+    from app.workflow.input_guard import guard_request
     from app.workflow.intake_model import TravelRequest
     from app.workflow.steps.cag_match import cag_match_executor
     from app.workflow.steps.intake import intake_executor
     from app.workflow.steps.rag_retrieve import _build_query_text
 
-    additional_data = build_additional_data(session_id, TravelRequest.model_validate(form))
+    # guard_request as POST /generate does: it replaces the destination by its canonical name.
+    additional_data = build_additional_data(session_id, guard_request(TravelRequest.model_validate(form)))
     step_input = StepInput(additional_data=additional_data)
     previous: dict[str, StepOutput] = {
         "intake": intake_executor(step_input),

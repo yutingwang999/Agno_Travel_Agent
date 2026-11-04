@@ -10,6 +10,7 @@ python scripts/eval_dataset_check.py                                 # dataset f
 python scripts/eval_run.py --config v010-baseline                    # full run (73 entries)
 python scripts/eval_run.py --config v010-baseline --subset smoke     # smoke subset (10 entries)
 python scripts/eval_run.py --config <name> --subset dataset-v1      # the 73 dataset-v1 entries, to compare with the v0.1.0 baseline
+python scripts/eval_run.py --config <name> --retrieval-only          # retrieval alone (Recall, MRR, retrieve latency): nothing generated or judged; for comparing retrieval configurations
 python scripts/eval_run.py --config <name> --subset budget-amount   # the dataset-v2 entries with a budget amount (e074-e079)
 python scripts/eval_compare.py <run id> <run id>                     # Markdown comparison table
 python scripts/eval_gate.py                                          # smoke run + thresholds; non-zero exit on failure

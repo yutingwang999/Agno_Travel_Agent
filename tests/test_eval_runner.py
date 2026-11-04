@@ -18,6 +18,7 @@ from evaluation.runner import (
     result_record,
     retry,
     run,
+    run_retrieval_only,
     select_entries,
     summarise,
     write_prompt_copies,
@@ -252,3 +253,48 @@ def test_budget_amount_is_sent_with_the_request():
 
     assert sent[0]["max_daily_budget_aud"] == 150
     assert "max_daily_budget_aud" not in sent[1]
+
+
+def _coverage_entry(entry_id, sections, coverage):
+    return DatasetEntry.model_validate({
+        "id": entry_id, "tags": [],
+        "form": {"destination": "Sydney", "trip_length": 2, "budget": "budget", "travel_style": "family"},
+        "utterance": "...", "gold_slots": {"destination": "sydney", "trip_length_days": 2},
+        "expected_behavior": "plan",
+        "relevant_sections": [{"source": "handwritten", "section": s} for s in sections],
+        "corpus_coverage": coverage,
+    })
+
+
+def test_retrieval_only_measures_labelled_entries_without_sending_anything():
+    entries = [
+        _coverage_entry("e1", ["Hit"], "national_only"),
+        _coverage_entry("e2", ["Miss"], "national_only"),
+        _coverage_entry("e3", [], "none"),
+    ]
+    chunk = RetrievedChunk(destination="australia", title="Hit", chunk_text="...", metadata={})
+    records = []
+
+    metrics = run_retrieval_only(entries, CONFIG, lambda form: "query", lambda query: [chunk], records.append)
+
+    retrieval = metrics["retrieval"]
+    assert set(metrics) == {"retrieval"}
+    assert retrieval["entries"] == 2  # coverage "none" takes no part
+    assert retrieval["recall_at_k"] == pytest.approx(0.5)
+    assert retrieval["by_corpus_coverage"]["national_only"]["entries"] == 2
+    assert "none" not in retrieval["by_corpus_coverage"]
+    assert retrieval["retrieve_latency_p50_ms"] >= 0
+    assert [record["entry_id"] for record in records] == ["e1", "e2"]
+
+
+def test_retrieval_only_records_an_error_instead_of_a_zero_recall():
+    def failing(query):
+        raise RuntimeError("database down")
+
+    records = []
+    metrics = run_retrieval_only([_coverage_entry("e1", ["Hit"], "national_only")], CONFIG,
+                                 lambda form: "query", failing, records.append)
+
+    assert metrics["retrieval"]["errors"] == 1
+    assert metrics["retrieval"]["recall_at_k"] is None
+    assert "retrieval_error" in records[0]
