@@ -217,6 +217,25 @@ def test_build_twice_gives_identical_bytes(corpus, tmp_path, monkeypatch):
     assert first and first == second
 
 
+def test_fixture_takes_national_documents_and_a_few_chunks_per_section(corpus):
+    def chunk(destination, section):
+        return {"destination": destination, "section": section}
+
+    chunks = (
+        [chunk("australia", "Made-up Topic")] * 3
+        + [chunk("sydney", "Eat")] * 5
+        + [chunk("sydney", "Get in")]
+        + [chunk("hobart", "Eat")]
+    )
+
+    selected = corpus.select_fixture(chunks)
+
+    assert selected.count(chunk("australia", "Made-up Topic")) == 3
+    assert selected.count(chunk("sydney", "Eat")) == corpus.FIXTURE_CHUNKS_PER_SECTION
+    assert chunk("sydney", "Get in") not in selected
+    assert chunk("hobart", "Eat") not in selected
+
+
 def test_download_refuses_a_revision_the_wiki_no_longer_has(corpus, tmp_path, monkeypatch):
     monkeypatch.setattr(corpus, "RAW_DIR", tmp_path)
     monkeypatch.setattr(corpus, "REQUEST_PAUSE_SECONDS", 0)

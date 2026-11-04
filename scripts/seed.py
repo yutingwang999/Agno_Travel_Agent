@@ -5,8 +5,9 @@ Inserts:
   - 3 itinerary_categories  (family, budget, adventure)
   - prompt_templates          (every version in TEMPLATE_DEFINITIONS; the version in
                                ACTIVE_TEMPLATE_VERSIONS is the only active one per key)
-  - the corpus v1 documents from a local private file into the Agno Knowledge base
-    (travel_docs table via PgVector); skipped with a warning when the file is missing
+  - the corpus into the Agno Knowledge base (travel_docs table via PgVector): the JSONL
+    file named by KNOWLEDGE_CORPUS (default DEFAULT_CORPUS), or "v1" for the corpus v1
+    documents; both are private local files, skipped with a warning when missing
 
 Idempotent — safe to run multiple times; existing rows are skipped, not duplicated.
 
@@ -14,6 +15,7 @@ Usage:
     python scripts/seed.py
 """
 
+import hashlib
 import json
 import os
 import sys
@@ -33,7 +35,8 @@ load_dotenv(os.path.join(ROOT_DIR, ".env"))
 
 from google import genai  # noqa: E402
 from google.genai import types  # noqa: E402
-from sqlalchemy import create_engine, make_url, select  # noqa: E402
+from agno.knowledge.document.base import Document  # noqa: E402
+from sqlalchemy import create_engine, make_url, select, text  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from app.models.itinerary_category import ItineraryCategory  # noqa: E402
@@ -582,6 +585,13 @@ ACTIVE_TEMPLATE_VERSIONS = {
 SOURCE_DOCUMENTS_PATH = os.path.join(ROOT_DIR, "data", "knowledge", "v1", "source_documents.json")
 EMBEDDING_CACHE_DIR = os.path.join(ROOT_DIR, ".cache", "embeddings")
 
+# Which corpus goes into the knowledge base: "v1", or a JSONL file from
+# scripts/build_corpus.py, relative to the repository root.
+CORPUS_V1 = "v1"
+DEFAULT_CORPUS = os.path.join("data", "knowledge", "corpus_c800_o80.jsonl")
+CHECKSUM_KEY = "corpus_sha256"
+INSERT_BATCH_SIZE = 100
+
 
 def load_source_documents(path: str = SOURCE_DOCUMENTS_PATH) -> list[dict]:
     """Return the corpus v1 documents, or an empty list when the local file is missing."""
@@ -698,6 +708,104 @@ def seed_source_documents() -> None:
         )
 
 
+def load_corpus(path: str) -> tuple[list[dict], str]:
+    """Return a JSONL corpus and its checksum; no chunks when the local file is missing."""
+    try:
+        with open(path, "rb") as file:
+            raw = file.read()
+    except FileNotFoundError:
+        print(
+            f"  [warn] corpus file not found: {path}\n"
+            "  [warn] the knowledge base stays empty; itineraries are generated without "
+            "retrieved context. Build it with scripts/build_corpus.py; the corpus is private: "
+            'see docs/evaluation.md, "What is published".'
+        )
+        return [], ""
+    chunks = [json.loads(line) for line in raw.decode("utf-8").splitlines()]
+    return chunks, hashlib.sha256(raw).hexdigest()
+
+
+def _seeded_chunks(db_url: str, table_name: str, checksum: str) -> int:
+    """Return how many rows of the table carry this corpus checksum, or -1 if others remain."""
+    if not _travel_docs_has_embedding_column(db_url, table_name):
+        return -1
+    query = text(
+        f'SELECT count(*), count(*) FILTER (WHERE meta_data->>:key = :checksum) FROM ai."{table_name}"'
+    )
+    with create_engine(db_url).connect() as connection:
+        total, matching = connection.execute(query, {"key": CHECKSUM_KEY, "checksum": checksum}).one()
+    return matching if total == matching else -1
+
+
+def _stored_with_embedding(db_url: str, table_name: str) -> int:
+    query = text(f'SELECT count(embedding) FROM ai."{table_name}"')
+    with create_engine(db_url).connect() as connection:
+        return connection.execute(query).scalar_one()
+
+
+def seed_corpus(path: str) -> None:
+    """Make the knowledge-base table hold exactly this corpus file.
+
+    A table already holding it is left alone, before any embedding call. Anything
+    else (another chunking configuration, changed text, an interrupted seed, the
+    documents of corpus v1) is dropped and rebuilt; the embedding cache makes that
+    free for chunks embedded before.
+    """
+    table_name = knowledge_table_name()
+    print(f"Seeding knowledge base ({table_name}) from {path}...")
+    chunks, checksum = load_corpus(path)
+    if not chunks:
+        return
+    if _seeded_chunks(DATABASE_URL, table_name, checksum) == len(chunks):
+        print(f"  [skip] the table already holds these {len(chunks)} chunks")
+        return
+
+    knowledge = build_knowledge(
+        db_url=DATABASE_URL,
+        api_key=GEMINI_API_KEY,
+        embedding_model=EMBEDDING_MODEL,
+        table_name=table_name,
+        cache_dir=EMBEDDING_CACHE_DIR,
+    )
+    vector_db = knowledge.vector_db
+    if vector_db.table_exists():
+        print("  [rebuild] dropping the previous contents")
+        vector_db.drop()
+    vector_db.create()
+
+    documents = [
+        Document(
+            id=chunk["chunk_id"],
+            name=chunk["title"],
+            content=chunk["chunk_text"],
+            meta_data={
+                **{key: chunk[key] for key in ("chunk_id", "destination", "state", "topic", "source", "section")},
+                CHECKSUM_KEY: checksum,
+            },
+        )
+        for chunk in chunks
+    ]
+    for start in range(0, len(documents), INSERT_BATCH_SIZE):
+        vector_db.insert(checksum, documents[start : start + INSERT_BATCH_SIZE])
+        print(f"  [insert] {min(start + INSERT_BATCH_SIZE, len(documents))}/{len(documents)}")
+
+    # Agno logs a document it could not embed and carries on, so count what arrived.
+    stored = _stored_with_embedding(DATABASE_URL, table_name)
+    if stored != len(chunks):
+        raise SystemExit(
+            f"ERROR: {stored} of {len(chunks)} chunks were stored; see the errors logged above. "
+            "Run the seed again: chunks embedded so far come from the cache."
+        )
+
+
+def seed_knowledge_base() -> None:
+    corpus = os.environ.get("KNOWLEDGE_CORPUS") or DEFAULT_CORPUS
+    if corpus == CORPUS_V1:
+        seed_source_documents()
+    else:
+        seed_corpus(os.path.join(ROOT_DIR, corpus))
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -712,7 +820,7 @@ def main() -> None:
         seed_itinerary_categories(session)
         seed_prompt_templates(session)
 
-    seed_source_documents()
+    seed_knowledge_base()
 
     print("Seed complete.")
 

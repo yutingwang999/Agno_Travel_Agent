@@ -40,6 +40,9 @@ EVAL_KNOWLEDGE_TASK_TYPES = {"v1": "semantic"}
 
 DEFAULT_KNOWLEDGE_TABLE = "travel_docs"
 
+# The corpus of the test database (generated, never committed): see build_corpus.py.
+TEST_CORPUS = "tests/fixtures/knowledge/corpus.jsonl"
+
 
 def load_env() -> None:
     """Load .env without overriding variables already set in the shell."""
@@ -155,8 +158,10 @@ def test_db_setup():
     print("--- preparing test database ---")
     create_database_if_missing(url)
     migrate_database(url)
+    # The small fixed corpus; built from the full one, which is built first if missing.
+    run([sys.executable, "scripts/build_corpus.py", "fixture"])
     print("--- running seed script against the test database ---")
-    run([sys.executable, "scripts/seed.py"], env={"DATABASE_URL": url})
+    run([sys.executable, "scripts/seed.py"], env={"DATABASE_URL": url, "KNOWLEDGE_CORPUS": TEST_CORPUS})
     count_rows(url)
 
 
@@ -204,6 +209,7 @@ def eval_db_setup():
                 "DATABASE_URL": url,
                 "KNOWLEDGE_TABLE_NAME": table,
                 "KNOWLEDGE_TASK_TYPES": EVAL_KNOWLEDGE_TASK_TYPES[corpus],
+                "KNOWLEDGE_CORPUS": corpus,
             },
         )
         count_rows(url, knowledge_table=table)

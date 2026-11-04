@@ -5,6 +5,7 @@ Usage:
     python scripts/build_corpus.py pin --destination <city> --state <state> --page <title> [--subpages]
     python scripts/build_corpus.py download
     python scripts/build_corpus.py build [--chunk-size N] [--overlap N]
+    python scripts/build_corpus.py fixture
 
 Which pages make up the corpus is private too, so this script names none of them:
 "pin" records a page's current revision in data/knowledge/sources.yaml and its
@@ -12,6 +13,7 @@ attribution in data/knowledge/SOURCES.md. Both files live only in the private
 repository (docs/evaluation.md, "What is published"). "download" fetches exactly
 the pinned revisions into data/knowledge/raw/, and fails for a page rather than
 take a newer revision. "build" downloads what is missing and writes the JSONL.
+"fixture" writes the small corpus of the test database, built from the full one.
 """
 
 import argparse
@@ -22,6 +24,7 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+from collections import Counter
 from datetime import date
 from pathlib import Path
 
@@ -47,6 +50,14 @@ AUSTRALIA_WIDE_DESTINATION = "Australia"
 # Characters. A starting point: task 4.5 compares chunk sizes on the evaluation dataset.
 DEFAULT_CHUNK_SIZE = 800
 DEFAULT_OVERLAP = 80
+
+# The test database's corpus: the destinations the golden and integration tests name
+# in full, a few chunks per section (the main page comes first), and the national
+# documents. A destination outside this list then retrieves only the national ones.
+FIXTURE_PATH = ROOT_DIR / "tests" / "fixtures" / "knowledge" / "corpus.jsonl"
+FIXTURE_DESTINATIONS = ("sydney", "melbourne", "brisbane")
+FIXTURE_SECTIONS = ("See", "Do", "Eat", "Sleep")
+FIXTURE_CHUNKS_PER_SECTION = 2
 
 INTRODUCTION_SECTION = "Introduction"
 DEFAULT_TOPIC = "general"
@@ -464,6 +475,36 @@ def build(sources: list[dict], chunk_size: int, overlap: int) -> Path:
     return path
 
 
+def select_fixture(chunks: list[dict]) -> list[dict]:
+    """The chunks of the test database's corpus, in corpus order."""
+    taken: Counter = Counter()
+    selected = []
+    for chunk in chunks:
+        if chunk["destination"] == AUSTRALIA_WIDE_DESTINATION.lower():
+            selected.append(chunk)
+        elif chunk["destination"] in FIXTURE_DESTINATIONS and chunk["section"] in FIXTURE_SECTIONS:
+            key = (chunk["destination"], chunk["section"])
+            if taken[key] < FIXTURE_CHUNKS_PER_SECTION:
+                taken[key] += 1
+                selected.append(chunk)
+    return selected
+
+
+def write_fixture(sources: list[dict]) -> Path:
+    """Write the test database's corpus, building the full corpus first if it is missing."""
+    source_path = corpus_path(DEFAULT_CHUNK_SIZE, DEFAULT_OVERLAP)
+    if not source_path.exists():
+        build(sources, DEFAULT_CHUNK_SIZE, DEFAULT_OVERLAP)
+    lines = source_path.read_text(encoding="utf-8").splitlines()
+    selected = select_fixture([json.loads(line) for line in lines])
+    FIXTURE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with FIXTURE_PATH.open("w", encoding="utf-8", newline="\n") as handle:
+        for chunk in selected:
+            handle.write(json.dumps(chunk, ensure_ascii=False) + "\n")
+    print(f"Wrote {len(selected)} chunks to {FIXTURE_PATH.relative_to(ROOT_DIR)}")
+    return FIXTURE_PATH
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -476,12 +517,15 @@ def main() -> int:
     build_parser = commands.add_parser("build", help="write the JSONL for a chunking configuration")
     build_parser.add_argument("--chunk-size", type=int, default=DEFAULT_CHUNK_SIZE)
     build_parser.add_argument("--overlap", type=int, default=DEFAULT_OVERLAP)
+    commands.add_parser("fixture", help="write the test database's small corpus")
     args = parser.parse_args()
 
     if args.command == "pin":
         pin(args.destination, args.state, args.page, args.subpages)
     elif args.command == "download":
         download(load_sources())
+    elif args.command == "fixture":
+        write_fixture(load_sources())
     else:
         build(load_sources(), args.chunk_size, args.overlap)
     return 0
