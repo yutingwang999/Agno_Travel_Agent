@@ -32,6 +32,7 @@ This file records the effect of every change that affects quality, behaviour or 
 
 | Date | Change | What changed | Key result | Record |
 | --- | --- | --- | --- | --- |
+| 2026-11-04 | Repository history rewrite | Corpus v1 text removed from all of git history; every commit hash changed | No numbers changed. `git_commit` in earlier run summaries refers to the old hashes | [History rewrite](#2026-11-04--repository-history-rewrite--git_commit-values-in-earlier-runs-use-old-hashes) |
 | 2026-11-01 | `true-sse-streaming` | Events streamed as each step finishes; routing decision moved from a Condition evaluator to a plain Step | No evaluation run (not quality-affecting). Manual check: early panels appear quickly, then a visible pause at generate | [Streaming](#2026-11-01--true-sse-streaming--no-evaluation-run-delivery-timing-only) |
 | 2026-10-31 | `harden-workflow-guardrails` | Final: input guards, budget amount, 14-day limit (dataset v2, `dataset-v1` subset ×2 + `budget-amount` ×2) | Behaviour correctness 74.0% → 87.7% (`out_of_scope` and `prompt_injection` 0% → 83.3%); days and budget 100%; retry 0.8%, error 0%; faithfulness with context 19.6% on the same itineraries (baseline 23.0%, not met); a loose budget amount raises spending | [Final](#2026-10-31--harden-workflow-guardrails-final--input-guards-budget-amount-and-the-full-change-against-the-baseline) |
 | 2026-10-31 | `harden-workflow-guardrails` | (c) response schema + business rules (two runs) | Days and budget 100%, enforced by code; retry 4.8%, all corrections pass, error 0%; p50 3.98 s and $0.00114 per request (both lower than baseline); faithfulness with context 21.5% (baseline 23.0%, not improved) | [(c) rules](#2026-10-31--harden-workflow-guardrails-c--structured-output-and-business-rules) |
@@ -79,6 +80,18 @@ Copy the template below, fill it in, and put it at the **top** of the "Records" 
 ---
 
 ## Records
+
+### 2026-11-04 · repository history rewrite · `git_commit` values in earlier runs use old hashes
+
+**What changed**: the text of corpus v1 was removed from every commit in the repository's history, because corpus text is no longer kept in git (`docs/evaluation.md`, "What is published"). The rewrite changed the hash of all 96 commits. No file under `eval/runs/` was edited, and no run was repeated.
+
+**Effect on earlier records**:
+- No recorded number changes. Every run summary, its numbers and its `git_commit` value are as they were.
+- The `git_commit` in every summary from before 2026-11-04 is an old hash and does not exist in this repository. The old-to-new mapping is `migration/commit-map` in the private repository.
+- Checking out a commit from before the rewrite gives `SOURCE_DOCUMENTS = []` in `scripts/seed.py`: the code of that commit, without its corpus. To re-run an earlier configuration, also restore `data/knowledge/v1/source_documents.json` from the private repository and seed from it. The earlier evaluation database tables are unaffected.
+- Pull request numbers in earlier commit messages do not match this repository's pull requests.
+
+---
 
 ### 2026-11-01 · true-sse-streaming · no evaluation run (delivery timing only)
 
