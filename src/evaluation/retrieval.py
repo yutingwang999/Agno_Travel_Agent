@@ -70,14 +70,6 @@ def workflow_destination(form: dict) -> str:
     return guard_request(TravelRequest.model_validate(form)).destination
 
 
-def workflow_destination(form: dict) -> str:
-    """The destination the workflow retrieves for: canonical, as POST /generate makes it."""
-    from app.workflow.input_guard import guard_request
-    from app.workflow.intake_model import TravelRequest
-
-    return guard_request(TravelRequest.model_validate(form)).destination
-
-
 def workflow_query_text(form: dict, session_id: str = "eval-retrieval") -> str:
     """Run intake and intent matching for *form* and build the query as ``rag_retrieve`` does.
 

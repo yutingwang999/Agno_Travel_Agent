@@ -19,6 +19,7 @@ Public API::
 """
 
 import logging
+import os
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -26,6 +27,7 @@ from agno.filters import IN
 from agno.knowledge.knowledge import Knowledge
 from sqlalchemy import create_engine, text
 
+from app.workflow.hybrid_search import hybrid_search
 from app.workflow.knowledge_base import build_knowledge, knowledge_table_name
 
 logger = logging.getLogger(__name__)
@@ -33,8 +35,11 @@ logger = logging.getLogger(__name__)
 DEFAULT_TOP_K = 5
 DESTINATION_KEY = "destination"
 AUSTRALIA_WIDE = "australia"
-DESTINATION_KEY = "destination"
-AUSTRALIA_WIDE = "australia"
+
+# How the knowledge base is searched (KNOWLEDGE_SEARCH_MODE): vector similarity, BM25 + vector
+# fused with RRF (app.workflow.hybrid_search), or Agno's own hybrid search.
+SEARCH_MODES = ("vector", "bm25_rrf", "agno_hybrid")
+DEFAULT_SEARCH_MODE = "vector"
 
 
 @dataclass
@@ -75,8 +80,6 @@ def retrieve_documents(
                          in ``scripts/seed.py`` so similarity scores are valid.
         destination:     When given, only chunks for this destination or the
                          Australia-wide documents are searched.
-        destination:     When given, only chunks for this destination or the
-                         Australia-wide documents are searched.
         top_k:           Maximum number of chunks to return (default 5).
 
     Returns:
@@ -112,19 +115,6 @@ def destination_in_knowledge_base(destination: str, db_url: str) -> bool:
         return False
 
 
-def destination_in_knowledge_base(destination: str, db_url: str) -> bool:
-    """Return whether the knowledge base holds chunks for *destination*; False if it cannot tell."""
-    query = text(
-        f'SELECT EXISTS (SELECT 1 FROM ai."{knowledge_table_name()}" WHERE meta_data->>:key = :destination)'
-    )
-    try:
-        with create_engine(db_url).connect() as connection:
-            return bool(connection.execute(query, {"key": DESTINATION_KEY, "destination": destination}).scalar())
-    except Exception as exc:  # noqa: BLE001
-        logger.error("rag_retrieve: could not check the knowledge base for a destination. Error: %s", exc)
-        return False
-
-
 def _search_knowledge(
     knowledge: Knowledge,
     query_text: str,
@@ -145,7 +135,15 @@ def _search_knowledge(
         List of :class:`RetrievedChunk` objects.
     """
     filters = [IN(DESTINATION_KEY, [destination, AUSTRALIA_WIDE])] if destination else None
-    docs = knowledge.search(query=query_text, max_results=top_k, filters=filters)
+    mode = os.environ.get("KNOWLEDGE_SEARCH_MODE") or DEFAULT_SEARCH_MODE
+    if mode == "bm25_rrf":
+        docs = hybrid_search(knowledge, query_text, top_k, filters, destination)
+    elif mode == "agno_hybrid":
+        docs = knowledge.search(query=query_text, max_results=top_k, filters=filters, search_type="hybrid")
+    elif mode == "vector":
+        docs = knowledge.search(query=query_text, max_results=top_k, filters=filters)
+    else:
+        raise ValueError(f"KNOWLEDGE_SEARCH_MODE must be one of {SEARCH_MODES}, got {mode!r}")
 
     return [
         RetrievedChunk(

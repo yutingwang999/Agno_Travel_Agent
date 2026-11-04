@@ -70,9 +70,8 @@ class RunConfig(BaseModel):
     # Restrict retrieval to the destination and the Australia-wide documents. Only the
     # harness's own retrieval reads this; the workflow always filters.
     destination_filter: bool = True
-    # Restrict retrieval to the destination and the Australia-wide documents. Only the
-    # harness's own retrieval reads this; the workflow always filters.
-    destination_filter: bool = True
+    # How the knowledge base is searched (app.workflow.retrieval_service.SEARCH_MODES).
+    search_mode: Literal["vector", "bm25_rrf", "agno_hybrid"] = "vector"
     retrieval_k: int = Field(default=5, ge=1)
     judge_concurrency: int = Field(default=4, ge=1)
     request_parser: bool = False
