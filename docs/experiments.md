@@ -32,6 +32,7 @@ This file records the effect of every change that affects quality, behaviour or 
 
 | Date | Change | What changed | Key result | Record |
 | --- | --- | --- | --- | --- |
+| 2026-11-04 | `rebuild-rag` | Step b: destination filtering | Recall@5 0.519 to 0.609, MRR@5 0.699 to 0.782; all of it from `national_only`, whose 0.969 is inflated by a pool of 9 documents; `city` unchanged at 0.457 / 0.730 | [Step b](#2026-11-04--rebuild-rag-step-b--filter-by-destination) |
 | 2026-11-04 | `rebuild-rag` | Step a: vector-only retrieval on corpus v2 | Recall@5 0.519, MRR@5 0.699 (`city` 0.457 / 0.730, `national_only` 0.667 / 0.625); not comparable with corpus v1 numbers | [Step a](#2026-11-04--rebuild-rag-step-a--vector-only-retrieval-on-corpus-v2) |
 | 2026-11-04 | `rebuild-rag` | Dataset v3: labels moved to corpus v2. Check before the switch that corpus v1 still gives the same retrieval after the corpus left the code and embedding task types became configurable | Recall@5 0.951 and MRR@5 0.884, unchanged from the final `harden-workflow-guardrails` runs; later v1 configs need a commit from before dataset v3 | [Labels v2](#2026-11-04--rebuild-rag--dataset-v3-labels-for-corpus-v2-and-the-check-before-the-switch) |
 | 2026-11-04 | Repository history rewrite | Corpus v1 text removed from all of git history; every commit hash changed | No numbers changed. `git_commit` in earlier run summaries refers to the old hashes | [History rewrite](#2026-11-04--repository-history-rewrite--git_commit-values-in-earlier-runs-use-old-hashes) |
@@ -82,6 +83,22 @@ Copy the template below, fill it in, and put it at the **top** of the "Records" 
 ---
 
 ## Records
+
+### 2026-11-04 · rebuild-rag step b · filter by destination
+
+Run `20261104T081045Z-rebuild-rag-b-retrieval` (commit `9663c0c`, retrieval only, dataset v3, table `travel_docs_v2_c800`). Only change from step a: candidates are restricted to the request's destination and the Australia-wide documents. 54 labelled entries, no errors.
+
+| Group | Entries | Recall@5 (a to b) | MRR@5 (a to b) |
+| --- | --- | --- | --- |
+| All | 54 | 0.519 to 0.609 | 0.699 to 0.782 |
+| `city` | 38 | 0.457 to 0.457 | 0.730 to 0.730 |
+| `national_only` | 16 | 0.667 to 0.969 | 0.625 to 0.906 |
+
+- The whole gain comes from `national_only`. Retrieval changed for 14 entries, none of them `city`, as step a predicted: no `city` entry had retrieved another city's chunks.
+- **The `national_only` numbers are inflated.** With the filter, these requests choose 5 chunks from only 9 Australia-wide documents, so most labels are found whatever the ranking. Read the rise as "chunks from other cities no longer take the places", not as ranking quality. Steps c and d should be judged on `city`.
+- Latency is unchanged: p50 624 ms, p95 652 ms.
+
+---
 
 ### 2026-11-04 · rebuild-rag step a · vector-only retrieval on corpus v2
 
@@ -406,7 +423,7 @@ Retrieval is unchanged. Latency is about 0.4 s higher in this single run; the ca
 | Configuration | Description | Run ID | Recall@5 | MRR@5 | Retrieval p50 / p95 | Memory usage |
 | --- | --- | --- | --- | --- | --- | --- |
 | a | Vector-only retrieval (baseline on the new corpus) | `20261104T075807Z-rebuild-rag-a-retrieval` | 0.519 | 0.699 | 633 / 677 ms | not measured |
-| b | a + destination filtering | | | | | |
+| b | a + destination filtering | `20261104T081045Z-rebuild-rag-b-retrieval` | 0.609 | 0.782 | 624 / 652 ms | not measured |
 | c | b + BM25 hybrid + RRF | | | | | |
 | c′ | b + Agno `SearchType.hybrid` (control group) | | | | | |
 | d | c + Cross-Encoder reranking | | | | | |
