@@ -32,11 +32,14 @@ TEST_DB_SUFFIX = "_test_db"
 # The evaluation database must be neither the development nor the test database.
 EVAL_DB_SUFFIX = "_eval_db"
 
-# Knowledge-base table for each corpus version in the evaluation database.
+# Knowledge-base tables of the evaluation database, one per corpus and chunking
+# configuration: table -> (corpus (KNOWLEDGE_CORPUS), embedding task types
+# (KNOWLEDGE_TASK_TYPES), (chunk size, overlap) to build it with, or None).
 # v1 = the 13 v0.1.0 documents in the private data/knowledge/v1/source_documents.json.
-EVAL_KNOWLEDGE_TABLES = {"v1": "travel_docs_v1"}
-# Embedding task types of each corpus version's table (KNOWLEDGE_TASK_TYPES).
-EVAL_KNOWLEDGE_TASK_TYPES = {"v1": "semantic"}
+EVAL_KNOWLEDGE_TABLES = {
+    "travel_docs_v1": ("v1", "semantic", None),
+    "travel_docs_v2_c800": ("data/knowledge/corpus_c800_o80.jsonl", "retrieval", (800, 80)),
+}
 
 DEFAULT_KNOWLEDGE_TABLE = "travel_docs"
 
@@ -194,21 +197,25 @@ def test_all():
 def eval_db_setup():
     """Create (if missing), migrate and seed the evaluation database. Safe to re-run.
 
-    Categories and templates go into the usual tables; each corpus version's
-    documents go into its own knowledge-base table (EVAL_KNOWLEDGE_TABLES).
+    Categories and templates go into the usual tables; each corpus and chunking
+    configuration goes into its own knowledge-base table (EVAL_KNOWLEDGE_TABLES).
     """
     url = required_database_url("EVAL_DATABASE_URL", EVAL_DB_SUFFIX)
     print("--- preparing evaluation database ---")
     create_database_if_missing(url)
     migrate_database(url)
-    for corpus, table in EVAL_KNOWLEDGE_TABLES.items():
-        print(f"--- running seed script against the evaluation database (corpus {corpus}) ---")
+    for table, (corpus, task_types, chunking) in EVAL_KNOWLEDGE_TABLES.items():
+        if chunking:
+            chunk_size, overlap = chunking
+            run([sys.executable, "scripts/build_corpus.py", "build",
+                 "--chunk-size", str(chunk_size), "--overlap", str(overlap)])
+        print(f"--- running seed script against the evaluation database (table {table}) ---")
         run(
             [sys.executable, "scripts/seed.py"],
             env={
                 "DATABASE_URL": url,
                 "KNOWLEDGE_TABLE_NAME": table,
-                "KNOWLEDGE_TASK_TYPES": EVAL_KNOWLEDGE_TASK_TYPES[corpus],
+                "KNOWLEDGE_TASK_TYPES": task_types,
                 "KNOWLEDGE_CORPUS": corpus,
             },
         )
@@ -280,9 +287,9 @@ def count_rows(database_url: str | None = None, knowledge_table: str | None = No
     from sqlalchemy import create_engine, make_url, text
 
     engine = create_engine(database_url)
-    tables = ["itinerary_categories", "prompt_templates", "source_documents", "trace_events"]
+    tables = ["itinerary_categories", "prompt_templates", "trace_events"]
 
-    embedded_tables = ["itinerary_categories", "source_documents"]
+    embedded_tables = ["itinerary_categories"]
 
     print(f"--- row counts ({make_url(database_url).database}) ---")
     with engine.connect() as conn:

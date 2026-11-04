@@ -17,7 +17,7 @@ Agno Workflow
   1. intake              — validate + normalise input fields
   2. cag_match           — embed intent, cosine match against itinerary_categories
   3. retrieval_decision  — confidence >= 0.85 → skip RAG, else retrieve
-  4. rag_retrieve        — pgvector top-5 similarity search on source_documents
+  4. rag_retrieve        — pgvector top-5 similarity search on the knowledge base
   5. generate            — resolve DB prompt template, call LLM
   6. validate_output     — Pydantic schema check, retry once on failure
       │
@@ -374,7 +374,7 @@ rag_retrieve_executor
                     └── knowledge.search(query, max_results=5)  →  List[Document]
 ```
 
-- **Table**: `travel_docs` in the `ai` schema — created and managed automatically by Agno's `PgVector`. Separate from the `source_documents` Alembic-managed table.
+- **Table**: `travel_docs` in the `ai` schema — created and managed automatically by Agno's `PgVector`.
 - **Embedder**: `GeminiEmbedder` — a custom Agno-compatible wrapper around `google-genai` using `gemini-embedding-001` (768 dims, `SEMANTIC_SIMILARITY`), matching the model used for CAG and seed embeddings.
 - **Search type**: vector (cosine distance).
 - **Top-k**: 5 chunks by default.
@@ -657,7 +657,6 @@ Commit before a run you want to cite: a run on uncommitted code is marked `git_d
 │       │   ├── base.py               # SQLAlchemy DeclarativeBase
 │       │   ├── itinerary_category.py # itinerary_categories table + Vector(768)
 │       │   ├── prompt_template.py    # prompt_templates table
-│       │   ├── source_document.py    # source_documents table + Vector(768)
 │       │   └── trace_event.py        # trace_events table
 │       └── workflow/
 │           ├── sse.py                # SSE event builder (build_sse_event, sse_event_to_json)
@@ -701,10 +700,11 @@ Commit before a run you want to cite: a run on uncommitted code is marked `git_d
 │       ├── 0003_create_source_documents.py
 │       ├── 0004_create_trace_events.py
 │       ├── 0005_add_token_usage_to_trace_events.py
-│       └── 0006_single_active_prompt_template.py
+│       ├── 0006_single_active_prompt_template.py
+│       └── 0007_drop_source_documents.py
 ├── scripts/
 │   ├── dev.py               # cross-platform task runner
-│   └── seed.py              # seed itinerary_categories, prompt_templates, source_documents
+│   └── seed.py              # seed itinerary_categories, prompt_templates, knowledge base
 ├── docs/
 │   ├── DESIGN.md            # original v0.1.0 design (OpenSpec specs/changes take precedence)
 │   ├── CLAUDE.md            # AI usage guidelines for this repo
