@@ -32,6 +32,7 @@ This file records the effect of every change that affects quality, behaviour or 
 
 | Date | Change | What changed | Key result | Record |
 | --- | --- | --- | --- | --- |
+| 2026-11-04 | `rebuild-rag` | Step c: BM25 + vector + RRF, and Agno hybrid as control | Not better than step b: `city` Recall@5 0.457 to 0.423, MRR@5 0.730 to 0.740. Agno hybrid returned the same chunks as step b for all 54 entries | [Step c](#2026-11-04--rebuild-rag-step-c--bm25-and-vector-fused-with-rrf-and-agno-hybrid-as-control) |
 | 2026-11-04 | `rebuild-rag` | Step b: destination filtering | Recall@5 0.519 to 0.609, MRR@5 0.699 to 0.782; all of it from `national_only`, whose 0.969 is inflated by a pool of 9 documents; `city` unchanged at 0.457 / 0.730 | [Step b](#2026-11-04--rebuild-rag-step-b--filter-by-destination) |
 | 2026-11-04 | `rebuild-rag` | Step a: vector-only retrieval on corpus v2 | Recall@5 0.519, MRR@5 0.699 (`city` 0.457 / 0.730, `national_only` 0.667 / 0.625); not comparable with corpus v1 numbers | [Step a](#2026-11-04--rebuild-rag-step-a--vector-only-retrieval-on-corpus-v2) |
 | 2026-11-04 | `rebuild-rag` | Dataset v3: labels moved to corpus v2. Check before the switch that corpus v1 still gives the same retrieval after the corpus left the code and embedding task types became configurable | Recall@5 0.951 and MRR@5 0.884, unchanged from the final `harden-workflow-guardrails` runs; later v1 configs need a commit from before dataset v3 | [Labels v2](#2026-11-04--rebuild-rag--dataset-v3-labels-for-corpus-v2-and-the-check-before-the-switch) |
@@ -83,6 +84,22 @@ Copy the template below, fill it in, and put it at the **top** of the "Records" 
 ---
 
 ## Records
+
+### 2026-11-04 · rebuild-rag step c · BM25 and vector fused with RRF, and Agno hybrid as control
+
+Runs `20261104T091258Z-rebuild-rag-c-retrieval` and `20261104T091415Z-rebuild-rag-c-agno-retrieval` (commit `d1da012`, retrieval only, dataset v3, table `travel_docs_v2_c800`). Only change from step b: how the filtered candidates are ranked. 54 labelled entries, no errors. The query is still the fixed concatenation without `notes` (task 4.6).
+
+| Group | Entries | Recall@5 b / c / c′ | MRR@5 b / c / c′ |
+| --- | --- | --- | --- |
+| All | 54 | 0.609 / 0.585 / 0.609 | 0.782 / 0.780 / 0.782 |
+| `city` | 38 | 0.457 / 0.423 / 0.457 | 0.730 / 0.740 / 0.730 |
+| `national_only` | 16 | 0.969 / 0.969 / 0.969 | 0.906 / 0.875 / 0.906 |
+
+- **BM25 + RRF did not improve on vector search here.** Of 38 `city` entries, Recall rose for 7, fell for 12 and stayed the same for 19. The share of `Sleep` chunks rose (21 to 32 of 190) and `Go next` fell (30 to 15). Why was not investigated beyond this; the query's filler words ("travel", "itinerary") and missing `notes` are candidate causes, not established ones.
+- **Agno hybrid returned exactly step b's chunks for all 54 entries.** Its keyword part uses `websearch_to_tsquery`, which requires every query term, and it matched no chunk for any of the 38 `city` queries, so the score reduces to vector similarity. This says nothing about Agno hybrid on short queries.
+- Latency p50 656 ms (c), 648 ms (c′), against 624 ms (b). The c run includes building the BM25 index on first use per destination.
+
+---
 
 ### 2026-11-04 · rebuild-rag step b · filter by destination
 
@@ -424,8 +441,8 @@ Retrieval is unchanged. Latency is about 0.4 s higher in this single run; the ca
 | --- | --- | --- | --- | --- | --- | --- |
 | a | Vector-only retrieval (baseline on the new corpus) | `20261104T075807Z-rebuild-rag-a-retrieval` | 0.519 | 0.699 | 633 / 677 ms | not measured |
 | b | a + destination filtering | `20261104T081045Z-rebuild-rag-b-retrieval` | 0.609 | 0.782 | 624 / 652 ms | not measured |
-| c | b + BM25 hybrid + RRF | | | | | |
-| c′ | b + Agno `SearchType.hybrid` (control group) | | | | | |
+| c | b + BM25 hybrid + RRF | `20261104T091258Z-rebuild-rag-c-retrieval` | 0.585 | 0.780 | 656 / 729 ms | not measured |
+| c′ | b + Agno `SearchType.hybrid` (control group) | `20261104T091415Z-rebuild-rag-c-agno-retrieval` | 0.609 | 0.782 | 648 / 729 ms | not measured |
 | d | c + Cross-Encoder reranking | | | | | |
 
 **Chunking configuration comparison** (retrieval configuration fixed to the best one chosen in the table above)
