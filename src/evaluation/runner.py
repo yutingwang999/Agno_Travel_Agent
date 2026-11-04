@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -64,6 +64,8 @@ class RunConfig(BaseModel):
     judge_model: str
     corpus_version: str
     knowledge_table: str
+    # Embedding task types of knowledge_table (app.workflow.knowledge_base.TASK_TYPE_PROFILES).
+    embedding_task_types: Literal["retrieval", "semantic"] = "retrieval"
     retrieval_k: int = Field(default=5, ge=1)
     judge_concurrency: int = Field(default=4, ge=1)
     request_parser: bool = False

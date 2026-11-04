@@ -580,6 +580,7 @@ ACTIVE_TEMPLATE_VERSIONS = {
 # ---------------------------------------------------------------------------
 
 SOURCE_DOCUMENTS_PATH = os.path.join(ROOT_DIR, "data", "knowledge", "v1", "source_documents.json")
+EMBEDDING_CACHE_DIR = os.path.join(ROOT_DIR, ".cache", "embeddings")
 
 
 def load_source_documents(path: str = SOURCE_DOCUMENTS_PATH) -> list[dict]:
@@ -672,6 +673,7 @@ def seed_source_documents() -> None:
         api_key=GEMINI_API_KEY,
         embedding_model=EMBEDDING_MODEL,
         table_name=table_name,
+        cache_dir=EMBEDDING_CACHE_DIR,
     )
 
     if not _travel_docs_has_embedding_column(DATABASE_URL, table_name):

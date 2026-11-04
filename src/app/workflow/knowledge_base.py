@@ -20,14 +20,29 @@ Public API::
 """
 
 import os
+from pathlib import Path
 
 from agno.knowledge.knowledge import Knowledge
 from agno.vectordb.pgvector import PgVector
 from agno.vectordb.search import SearchType
 
-from app.workflow.gemini_embedder import GeminiEmbedder
+from app.workflow.gemini_embedder import (
+    TASK_TYPE_DOCUMENT,
+    TASK_TYPE_QUERY,
+    TASK_TYPE_SEMANTIC,
+    GeminiEmbedder,
+)
 
 DEFAULT_KNOWLEDGE_TABLE_NAME = "travel_docs"
+
+# (query task type, document task type). A table is searched with the profile it
+# was embedded with: the corpus v1 tables keep "semantic" so the v0.1.0 baseline
+# can be re-run.
+TASK_TYPE_PROFILES = {
+    "retrieval": (TASK_TYPE_QUERY, TASK_TYPE_DOCUMENT),
+    "semantic": (TASK_TYPE_SEMANTIC, TASK_TYPE_SEMANTIC),
+}
+DEFAULT_TASK_TYPE_PROFILE = "retrieval"
 
 
 def knowledge_table_name() -> str:
@@ -35,11 +50,20 @@ def knowledge_table_name() -> str:
     return os.environ.get("KNOWLEDGE_TABLE_NAME") or DEFAULT_KNOWLEDGE_TABLE_NAME
 
 
+def knowledge_task_types() -> tuple[str, str]:
+    """Return the (query, document) task types selected by ``KNOWLEDGE_TASK_TYPES``."""
+    profile = os.environ.get("KNOWLEDGE_TASK_TYPES") or DEFAULT_TASK_TYPE_PROFILE
+    if profile not in TASK_TYPE_PROFILES:
+        raise ValueError(f"KNOWLEDGE_TASK_TYPES must be one of {sorted(TASK_TYPE_PROFILES)}, got {profile!r}")
+    return TASK_TYPE_PROFILES[profile]
+
+
 def build_knowledge(
     db_url: str,
     api_key: str,
     embedding_model: str = "gemini-embedding-001",
     table_name: str | None = None,
+    cache_dir: Path | None = None,
 ) -> Knowledge:
     """Construct the Agno Knowledge instance for the travel RAG knowledge base.
 
@@ -54,11 +78,19 @@ def build_knowledge(
         embedding_model: Gemini embedding model name.
         table_name:      Table in the ``ai`` schema; defaults to
                          :func:`knowledge_table_name`.
+        cache_dir:       Where to cache document embeddings; seeding sets it.
 
     Returns:
         A configured :class:`Knowledge` instance ready for insert and search.
     """
-    embedder = GeminiEmbedder(api_key=api_key, model=embedding_model)
+    query_task_type, document_task_type = knowledge_task_types()
+    embedder = GeminiEmbedder(
+        api_key=api_key,
+        model=embedding_model,
+        query_task_type=query_task_type,
+        document_task_type=document_task_type,
+        cache_dir=cache_dir,
+    )
 
     vector_db = PgVector(
         table_name=table_name or knowledge_table_name(),

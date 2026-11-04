@@ -60,6 +60,7 @@ def configure_environment(config) -> str:
     os.environ.update(
         DATABASE_URL=url,
         KNOWLEDGE_TABLE_NAME=config.knowledge_table,
+        KNOWLEDGE_TASK_TYPES=config.embedding_task_types,
         LLM_MODEL=config.generation_model,
         EMBEDDING_MODEL=config.embedding_model,
         JUDGE_MODEL=config.judge_model,
