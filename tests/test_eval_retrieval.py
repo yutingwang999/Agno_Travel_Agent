@@ -85,9 +85,17 @@ def test_v1_chunk_without_section_is_handwritten_title():
     assert chunk_section(chunk) == ("handwritten", "Family Adventure Travel in Australia")
 
 
-def test_chunk_with_source_and_section_uses_them():
-    chunk = _chunk("Sydney", source="wikivoyage:Sydney", section="See")
-    assert chunk_section(chunk) == ("wikivoyage:Sydney", "See")
+def test_page_chunk_is_identified_by_page_and_section():
+    """Spec scenario "Same section on two pages"."""
+    chunk = _chunk("Testville/Old Town", source="https://example.org/wiki/x", section="Eat")
+    other = _chunk("Testville/New Town", source="https://example.org/wiki/y", section="Eat")
+    assert chunk_section(chunk) == ("Testville/Old Town", "Eat")
+    assert chunk_section(chunk) != chunk_section(other)
+
+
+def test_handwritten_chunk_with_a_section_field_stays_handwritten():
+    chunk = _chunk("Made-up Topic", source="handwritten", section="Made-up Topic")
+    assert chunk_section(chunk) == ("handwritten", "Made-up Topic")
 
 
 # ---------------------------------------------------------------------------

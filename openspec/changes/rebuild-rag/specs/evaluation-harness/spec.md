@@ -1,3 +1,16 @@
+## MODIFIED Requirements
+
+### Requirement: Section-level relevance
+A retrieved chunk SHALL count as relevant to an entry when the pair identifying it appears in that entry's `relevant_sections`, where the label field `source` holds the first element of the pair. A chunk from a corpus page SHALL be identified as (page title, `section`); a handwritten document, with or without a `section` field, SHALL be identified as `source` = `"handwritten"` and `section` = the document title. Relevance labels SHALL be tied to a recorded corpus version.
+
+#### Scenario: v0.1.0 handwritten documents
+- **WHEN** the retrieval step returns the document titled "Family Adventure Travel in Australia"
+- **THEN** it is matched against labels as `("handwritten", "Family Adventure Travel in Australia")`
+
+#### Scenario: Same section on two pages
+- **WHEN** the retrieval step returns a chunk from section "Eat" of the page "Sydney/City Centre"
+- **THEN** it is matched against labels as `("Sydney/City Centre", "Eat")` and does not match a label for section "Eat" of another page
+
 ## ADDED Requirements
 
 ### Requirement: Stepwise retrieval comparison

@@ -37,12 +37,13 @@ class RetrievalResult:
 def chunk_section(chunk) -> Section:
     """Return the ``(source, section)`` a retrieved chunk is labelled by.
 
-    Chunks without a ``section`` field (the v0.1.0 handwritten documents) are
-    identified as ``("handwritten", <title>)``.
+    A chunk from a corpus page is identified by its page and section, so the same
+    section of two pages stays apart. Handwritten documents, which have no ``section``
+    field in corpus v1, are identified as ``("handwritten", <title>)``.
     """
     metadata = chunk.metadata or {}
-    if metadata.get("section"):
-        return (str(metadata.get("source", "")), str(metadata["section"]))
+    if metadata.get("section") and metadata.get("source") != HANDWRITTEN_SOURCE:
+        return (chunk.title, str(metadata["section"]))
     return (HANDWRITTEN_SOURCE, chunk.title)
 
 

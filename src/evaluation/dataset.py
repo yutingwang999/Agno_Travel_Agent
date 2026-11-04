@@ -77,6 +77,23 @@ CORPUS_SECTIONS: dict[str, set[tuple[str, str]]] = {
     },
 }
 
+# v2 is not listed here: its page names are private apart from those used as labels,
+# so its sections are read from the local corpus, when there is one.
+LOCAL_CORPUS_FILES = {"v2": ROOT_DIR / "data" / "knowledge" / "corpus_c800_o80.jsonl"}
+
+
+def known_corpus_sections(corpus_version: str) -> set[tuple[str, str]] | None:
+    """Sections labels may point at; None when they cannot be checked here (corpus not local)."""
+    path = LOCAL_CORPUS_FILES.get(corpus_version)
+    if path is None or not path.exists():
+        return CORPUS_SECTIONS.get(corpus_version)
+    sections = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        chunk = json.loads(line)
+        source = chunk["source"] if chunk["source"] == "handwritten" else chunk["title"]
+        sections.add((source, chunk["section"]))
+    return sections
+
 
 class DatasetError(Exception):
     """Raised when the dataset or its metadata cannot be loaded."""
@@ -233,8 +250,8 @@ def check_dataset(
     if not any("out_of_scope" in e.tags and e.expected_behavior == "refuse" for e in entries):
         problems.append("no out_of_scope entry expecting refuse (e.g. a non-Australian city)")
 
-    known_sections = CORPUS_SECTIONS.get(meta.corpus_version)
-    if known_sections is None:
+    known_sections = known_corpus_sections(meta.corpus_version)
+    if known_sections is None and meta.corpus_version not in LOCAL_CORPUS_FILES:
         problems.append(f"unknown corpus version {meta.corpus_version!r}")
 
     for entry in entries:
