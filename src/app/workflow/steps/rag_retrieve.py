@@ -23,7 +23,7 @@ import time
 
 from agno.workflow.types import StepInput, StepOutput
 
-from app.workflow.retrieval_service import retrieve_documents
+from app.workflow.retrieval_service import destination_in_knowledge_base, retrieve_documents
 from app.workflow.sse import build_sse_event, sse_event_to_json
 from app.workflow.trace_logger import write_trace
 
@@ -111,6 +111,7 @@ def rag_retrieve_executor(step_input: StepInput) -> StepOutput:
 
     start = time.monotonic()
     query_text = _build_query_text(step_input)
+    destination = _extract_field_from_step(step_input, "intake", "destination") or None
 
     try:
         chunks = retrieve_documents(
@@ -119,6 +120,7 @@ def rag_retrieve_executor(step_input: StepInput) -> StepOutput:
             api_key=api_key,
             embedding_model=embedding_model,
             top_k=DEFAULT_TOP_K,
+            destination=destination,
         )
     except Exception as exc:  # noqa: BLE001
         logger.error(
@@ -145,6 +147,7 @@ def rag_retrieve_executor(step_input: StepInput) -> StepOutput:
             "retrieved_context": retrieved_context,
             "chunks_retrieved": len(retrieved_context),
             "query_text": query_text,
+            "destination_matched": bool(destination) and destination_in_knowledge_base(destination, db_url),
         },
     )
 

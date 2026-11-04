@@ -94,14 +94,16 @@ def check_database(db_url: str, knowledge_table: str) -> None:
 def make_retrieve(config, db_url: str):
     from app.workflow.knowledge_base import build_knowledge
     from app.workflow.retrieval_service import _search_knowledge
+    from evaluation.retrieval import workflow_destination
 
     api_key = os.environ["GEMINI_API_KEY"]
 
-    def retrieve(query: str) -> list:
+    def retrieve(query: str, form: dict) -> list:
         # Not retrieve_documents(): it turns failures into an empty result,
         # which would read as Recall = 0 instead of an error.
         knowledge = build_knowledge(db_url=db_url, api_key=api_key, embedding_model=config.embedding_model)
-        return _search_knowledge(knowledge, query, config.retrieval_k)
+        destination = workflow_destination(form) if config.destination_filter else None
+        return _search_knowledge(knowledge, query, config.retrieval_k, destination)
 
     return retrieve
 

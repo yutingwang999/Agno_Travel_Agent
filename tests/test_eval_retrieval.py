@@ -108,7 +108,7 @@ def test_evaluate_entry_scores_retrieved_chunks():
     chunks = [_chunk("Guide to Melbourne"), _chunk("Guide to Sydney"), _chunk("Guide to Brisbane")]
     seen = {}
 
-    def retrieve(query_text):
+    def retrieve(query_text, form):
         seen["query"] = query_text
         return chunks
 
@@ -124,8 +124,16 @@ def test_evaluate_entry_passes_notes_to_query_fn():
     entry = _entry(["Guide to Sydney"])
     entry.form.notes = "kids are 6 and 9"
     forms = []
-    evaluate_entry(entry, query_fn=lambda form: forms.append(form) or "q", retrieve_fn=lambda q: [])
+    evaluate_entry(entry, query_fn=lambda form: forms.append(form) or "q", retrieve_fn=lambda q, form: [])
     assert forms[0]["notes"] == "kids are 6 and 9"
+
+
+def test_workflow_destination_is_the_canonical_name():
+    from evaluation.retrieval import workflow_destination
+
+    form = {"destination": "悉尼", "trip_length": 3, "budget": "moderate", "travel_style": "family"}
+
+    assert workflow_destination(form) == "sydney"
 
 
 def test_measurable_entries_skips_entries_without_labels():

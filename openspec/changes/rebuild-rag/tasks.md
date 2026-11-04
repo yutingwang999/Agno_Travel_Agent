@@ -22,7 +22,7 @@
 
 ## 4. Retrieval (run the evaluation harness after each step)
 
-- [ ] 4.1 First run a, vector-only retrieval, on the new corpus as the baseline; Verify: `docs/experiments.md` has the numbers for a
+- [x] 4.1 First run a, vector-only retrieval, on the new corpus as the baseline; Verify: `docs/experiments.md` has the numbers for a
 - [ ] 4.2 b: destination filtering (city + `australia`; cities not in the knowledge base retrieve only `australia`), adding `destination_matched` to the event; Verify: unit tests cover Known city / City not in the knowledge base; run the evaluation and record b
 - [ ] 4.3 c: BM25 + vector two-way candidates (Top-20 each) + RRF fusion; also use Agno `SearchType.hybrid` as a control group; Verify: a unit test asserts "a chunk that matches only on keywords can still be selected as a candidate"; run the evaluation and record c and the control group
 - [ ] 4.4 d: Cross-Encoder reranking, falling back to the pre-rerank order when model loading or inference fails; Verify: a unit test mocks a reranking failure; run the evaluation and record d along with memory usage

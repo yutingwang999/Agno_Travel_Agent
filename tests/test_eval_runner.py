@@ -87,7 +87,7 @@ def _services(responses):
     services = Services(
         send=send,
         query_text=lambda form: "family travel in sydney",
-        retrieve=lambda q: [RetrievedChunk(destination="Sydney", title="Guide to Sydney", chunk_text="x")],
+        retrieve=lambda q, form: [RetrievedChunk(destination="Sydney", title="Guide to Sydney", chunk_text="x")],
         trace_rows=lambda sid: [{"step_name": "generate", "status": "completed",
                                  "input_tokens": 1000, "output_tokens": 500}],
         intent_text=lambda form: "family trip to sydney with budget budget",
@@ -154,7 +154,7 @@ def test_step_latencies_average_over_requests_that_ran_the_step():
 
 def test_retrieval_error_is_recorded_not_raised():
     services, _ = _services([(200, _sse("s1", 2, with_rag=False))])
-    services.retrieve = lambda q: (_ for _ in ()).throw(RuntimeError("pgvector down"))
+    services.retrieve = lambda q, form: (_ for _ in ()).throw(RuntimeError("pgvector down"))
     result = run([_entry("e1")], CONFIG, services, PRICING)[0]
     assert result.retrieval is None
     assert "pgvector down" in result.retrieval_error
@@ -275,7 +275,7 @@ def test_retrieval_only_measures_labelled_entries_without_sending_anything():
     chunk = RetrievedChunk(destination="australia", title="Hit", chunk_text="...", metadata={})
     records = []
 
-    metrics = run_retrieval_only(entries, CONFIG, lambda form: "query", lambda query: [chunk], records.append)
+    metrics = run_retrieval_only(entries, CONFIG, lambda form: "query", lambda query, form: [chunk], records.append)
 
     retrieval = metrics["retrieval"]
     assert set(metrics) == {"retrieval"}
@@ -288,7 +288,7 @@ def test_retrieval_only_measures_labelled_entries_without_sending_anything():
 
 
 def test_retrieval_only_records_an_error_instead_of_a_zero_recall():
-    def failing(query):
+    def failing(query, form):
         raise RuntimeError("database down")
 
     records = []

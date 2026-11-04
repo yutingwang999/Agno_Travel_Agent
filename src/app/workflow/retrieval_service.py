@@ -22,13 +22,19 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+from agno.filters import IN
 from agno.knowledge.knowledge import Knowledge
+from sqlalchemy import create_engine, text
 
-from app.workflow.knowledge_base import build_knowledge
+from app.workflow.knowledge_base import build_knowledge, knowledge_table_name
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_TOP_K = 5
+DESTINATION_KEY = "destination"
+AUSTRALIA_WIDE = "australia"
+DESTINATION_KEY = "destination"
+AUSTRALIA_WIDE = "australia"
 
 
 @dataclass
@@ -47,6 +53,7 @@ def retrieve_documents(
     api_key: str,
     embedding_model: str = "gemini-embedding-001",
     top_k: int = DEFAULT_TOP_K,
+    destination: str | None = None,
 ) -> list[RetrievedChunk]:
     """Retrieve the top-k most relevant source document chunks for *query_text*.
 
@@ -66,6 +73,10 @@ def retrieve_documents(
         api_key:         Gemini API key.
         embedding_model: Gemini embedding model name — must match the model used
                          in ``scripts/seed.py`` so similarity scores are valid.
+        destination:     When given, only chunks for this destination or the
+                         Australia-wide documents are searched.
+        destination:     When given, only chunks for this destination or the
+                         Australia-wide documents are searched.
         top_k:           Maximum number of chunks to return (default 5).
 
     Returns:
@@ -78,7 +89,7 @@ def retrieve_documents(
             api_key=api_key,
             embedding_model=embedding_model,
         )
-        return _search_knowledge(knowledge, query_text, top_k)
+        return _search_knowledge(knowledge, query_text, top_k, destination)
     except Exception as exc:  # noqa: BLE001
         logger.error(
             "rag_retrieve: failed to retrieve documents — continuing with empty context. "
@@ -88,10 +99,37 @@ def retrieve_documents(
         return []
 
 
+def destination_in_knowledge_base(destination: str, db_url: str) -> bool:
+    """Return whether the knowledge base holds chunks for *destination*; False if it cannot tell."""
+    query = text(
+        f'SELECT EXISTS (SELECT 1 FROM ai."{knowledge_table_name()}" WHERE meta_data->>:key = :destination)'
+    )
+    try:
+        with create_engine(db_url).connect() as connection:
+            return bool(connection.execute(query, {"key": DESTINATION_KEY, "destination": destination}).scalar())
+    except Exception as exc:  # noqa: BLE001
+        logger.error("rag_retrieve: could not check the knowledge base for a destination. Error: %s", exc)
+        return False
+
+
+def destination_in_knowledge_base(destination: str, db_url: str) -> bool:
+    """Return whether the knowledge base holds chunks for *destination*; False if it cannot tell."""
+    query = text(
+        f'SELECT EXISTS (SELECT 1 FROM ai."{knowledge_table_name()}" WHERE meta_data->>:key = :destination)'
+    )
+    try:
+        with create_engine(db_url).connect() as connection:
+            return bool(connection.execute(query, {"key": DESTINATION_KEY, "destination": destination}).scalar())
+    except Exception as exc:  # noqa: BLE001
+        logger.error("rag_retrieve: could not check the knowledge base for a destination. Error: %s", exc)
+        return False
+
+
 def _search_knowledge(
     knowledge: Knowledge,
     query_text: str,
     top_k: int,
+    destination: str | None = None,
 ) -> list[RetrievedChunk]:
     """Execute the knowledge search and map Agno Documents to RetrievedChunk objects.
 
@@ -99,11 +137,15 @@ def _search_knowledge(
         knowledge:  Configured Agno Knowledge instance.
         query_text: Free-text query.
         top_k:      Maximum number of results.
+        destination: When given, restrict the search to this destination and the
+                    Australia-wide documents; for a city the knowledge base does
+                    not hold, that leaves the Australia-wide documents alone.
 
     Returns:
         List of :class:`RetrievedChunk` objects.
     """
-    docs = knowledge.search(query=query_text, max_results=top_k)
+    filters = [IN(DESTINATION_KEY, [destination, AUSTRALIA_WIDE])] if destination else None
+    docs = knowledge.search(query=query_text, max_results=top_k, filters=filters)
 
     return [
         RetrievedChunk(

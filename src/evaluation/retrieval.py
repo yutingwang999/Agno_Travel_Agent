@@ -62,6 +62,22 @@ def reciprocal_rank(ranked: list[Section], relevant: set[Section], k: int) -> fl
     return 0.0
 
 
+def workflow_destination(form: dict) -> str:
+    """The destination the workflow retrieves for: canonical, as POST /generate makes it."""
+    from app.workflow.input_guard import guard_request
+    from app.workflow.intake_model import TravelRequest
+
+    return guard_request(TravelRequest.model_validate(form)).destination
+
+
+def workflow_destination(form: dict) -> str:
+    """The destination the workflow retrieves for: canonical, as POST /generate makes it."""
+    from app.workflow.input_guard import guard_request
+    from app.workflow.intake_model import TravelRequest
+
+    return guard_request(TravelRequest.model_validate(form)).destination
+
+
 def workflow_query_text(form: dict, session_id: str = "eval-retrieval") -> str:
     """Run intake and intent matching for *form* and build the query as ``rag_retrieve`` does.
 
@@ -92,13 +108,14 @@ def workflow_query_text(form: dict, session_id: str = "eval-retrieval") -> str:
 def evaluate_entry(
     entry: DatasetEntry,
     query_fn: Callable[[dict], str],
-    retrieve_fn: Callable[[str], list],
+    retrieve_fn: Callable[[str, dict], list],
     k: int = DEFAULT_K,
 ) -> RetrievalResult:
     """Measure one entry: build its query, retrieve, and score against its labels."""
     relevant = {(s.source, s.section) for s in entry.relevant_sections}
-    query_text = query_fn(entry.form.model_dump(exclude_none=True))
-    ranked = [chunk_section(chunk) for chunk in retrieve_fn(query_text)]
+    form = entry.form.model_dump(exclude_none=True)
+    query_text = query_fn(form)
+    ranked = [chunk_section(chunk) for chunk in retrieve_fn(query_text, form)]
     return RetrievalResult(
         entry_id=entry.id,
         query_text=query_text,

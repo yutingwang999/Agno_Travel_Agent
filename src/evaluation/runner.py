@@ -67,6 +67,12 @@ class RunConfig(BaseModel):
     knowledge_table: str
     # Embedding task types of knowledge_table (app.workflow.knowledge_base.TASK_TYPE_PROFILES).
     embedding_task_types: Literal["retrieval", "semantic"] = "retrieval"
+    # Restrict retrieval to the destination and the Australia-wide documents. Only the
+    # harness's own retrieval reads this; the workflow always filters.
+    destination_filter: bool = True
+    # Restrict retrieval to the destination and the Australia-wide documents. Only the
+    # harness's own retrieval reads this; the workflow always filters.
+    destination_filter: bool = True
     retrieval_k: int = Field(default=5, ge=1)
     judge_concurrency: int = Field(default=4, ge=1)
     request_parser: bool = False
@@ -111,7 +117,7 @@ class Services:
 
     send: Callable[[dict], tuple[int, str]]
     query_text: Callable[[dict], str]
-    retrieve: Callable[[str], list]
+    retrieve: Callable[[str, dict], list]
     trace_rows: Callable[[str], list[dict]]
     intent_text: Callable[[dict], str | None]
     judge: Judge | None
@@ -177,7 +183,7 @@ def run_retrieval_only(
     entries: list[DatasetEntry],
     config: RunConfig,
     query_text: Callable[[dict], str],
-    retrieve: Callable[[str], list],
+    retrieve: Callable[[str, dict], list],
     on_result: Callable[[dict], None] | None = None,
 ) -> dict:
     """Measure retrieval alone: no request is sent, nothing is generated or judged.
@@ -189,9 +195,9 @@ def run_retrieval_only(
     errors = 0
     latencies: list[float] = []
 
-    def timed_retrieve(query: str) -> list:
+    def timed_retrieve(query: str, form: dict) -> list:
         start = time.perf_counter()
-        chunks = retrieve(query)
+        chunks = retrieve(query, form)
         latencies.append(_elapsed_ms(start))
         return chunks
 

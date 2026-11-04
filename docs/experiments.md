@@ -32,6 +32,7 @@ This file records the effect of every change that affects quality, behaviour or 
 
 | Date | Change | What changed | Key result | Record |
 | --- | --- | --- | --- | --- |
+| 2026-11-04 | `rebuild-rag` | Step a: vector-only retrieval on corpus v2 | Recall@5 0.519, MRR@5 0.699 (`city` 0.457 / 0.730, `national_only` 0.667 / 0.625); not comparable with corpus v1 numbers | [Step a](#2026-11-04--rebuild-rag-step-a--vector-only-retrieval-on-corpus-v2) |
 | 2026-11-04 | `rebuild-rag` | Dataset v3: labels moved to corpus v2. Check before the switch that corpus v1 still gives the same retrieval after the corpus left the code and embedding task types became configurable | Recall@5 0.951 and MRR@5 0.884, unchanged from the final `harden-workflow-guardrails` runs; later v1 configs need a commit from before dataset v3 | [Labels v2](#2026-11-04--rebuild-rag--dataset-v3-labels-for-corpus-v2-and-the-check-before-the-switch) |
 | 2026-11-04 | Repository history rewrite | Corpus v1 text removed from all of git history; every commit hash changed | No numbers changed. `git_commit` in earlier run summaries refers to the old hashes | [History rewrite](#2026-11-04--repository-history-rewrite--git_commit-values-in-earlier-runs-use-old-hashes) |
 | 2026-11-01 | `true-sse-streaming` | Events streamed as each step finishes; routing decision moved from a Condition evaluator to a plain Step | No evaluation run (not quality-affecting). Manual check: early panels appear quickly, then a visible pause at generate | [Streaming](#2026-11-01--true-sse-streaming--no-evaluation-run-delivery-timing-only) |
@@ -81,6 +82,26 @@ Copy the template below, fill it in, and put it at the **top** of the "Records" 
 ---
 
 ## Records
+
+### 2026-11-04 · rebuild-rag step a · vector-only retrieval on corpus v2
+
+Run `20261104T075807Z-rebuild-rag-a-retrieval` (commit `76a53dc`, retrieval only, dataset v3, table `travel_docs_v2_c800`, 800 characters with 80 overlap, `retrieval` task types). 54 labelled entries, no errors.
+
+| Group | Entries | Recall@5 | MRR@5 |
+| --- | --- | --- | --- |
+| All | 54 | 0.519 | 0.699 |
+| `city` | 38 | 0.457 | 0.730 |
+| `national_only` | 16 | 0.667 | 0.625 |
+
+- Retrieve latency p50 633 ms, p95 677 ms, including building the knowledge client on every query as the workflow does.
+- Six entries score 0: e010, e018, e020 (`national_only`), e034, e036, e038 (`city`). e036 and e038 are among the weak labels listed under dataset v3.
+- For `national_only` entries, 46 of 80 retrieved chunks came from other cities' pages, which step b removes. For `city` entries, none of the 190 page chunks came from another city.
+
+These numbers are not comparable with corpus v1: the corpus and the labels both changed.
+
+**Correction to earlier records**: from `harden-workflow-guardrails` on, the harness built retrieval queries without the destination guard, so the five Chinese-destination entries (e054, e055, e056, e057, e071) were measured with the untranslated name, a query the workflow never sends. This affects only the Recall and MRR of those five entries in those runs; generation and judging went through `POST /generate`. Fixed in `76a53dc`; the earlier numbers are left as recorded and were not recomputed.
+
+---
 
 ### 2026-11-04 · rebuild-rag · dataset v3: labels for corpus v2, and the check before the switch
 
@@ -384,7 +405,7 @@ Retrieval is unchanged. Latency is about 0.4 s higher in this single run; the ca
 
 | Configuration | Description | Run ID | Recall@5 | MRR@5 | Retrieval p50 / p95 | Memory usage |
 | --- | --- | --- | --- | --- | --- | --- |
-| a | Vector-only retrieval (baseline on the new corpus) | | | | | |
+| a | Vector-only retrieval (baseline on the new corpus) | `20261104T075807Z-rebuild-rag-a-retrieval` | 0.519 | 0.699 | 633 / 677 ms | not measured |
 | b | a + destination filtering | | | | | |
 | c | b + BM25 hybrid + RRF | | | | | |
 | c′ | b + Agno `SearchType.hybrid` (control group) | | | | | |

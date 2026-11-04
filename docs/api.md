@@ -217,7 +217,8 @@ Top-k source document chunks retrieved from PgVector.
       }
     ],
     "chunks_retrieved":  5,
-    "query_text":        "cultural travel in sydney cultural itinerary"
+    "query_text":        "cultural travel in sydney cultural itinerary",
+    "destination_matched": true
   },
   "error": null
 }
@@ -228,6 +229,7 @@ Top-k source document chunks retrieved from PgVector.
 | `retrieved_context` | array | List of chunk objects. Empty array if retrieval failed (graceful degradation). |
 | `chunks_retrieved` | integer | Number of chunks returned |
 | `query_text` | string | The query string sent to the vector search |
+| `destination_matched` | boolean | Whether the knowledge base holds chunks for the destination. Retrieval searches that destination plus the Australia-wide documents; when this is false, only the Australia-wide documents |
 
 #### `generate`
 
