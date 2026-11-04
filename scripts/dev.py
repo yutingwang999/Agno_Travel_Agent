@@ -33,7 +33,7 @@ TEST_DB_SUFFIX = "_test_db"
 EVAL_DB_SUFFIX = "_eval_db"
 
 # Knowledge-base table for each corpus version in the evaluation database.
-# v1 = the 13 handwritten v0.1.0 documents in scripts/seed.py.
+# v1 = the 13 v0.1.0 documents in the private data/knowledge/v1/source_documents.json.
 EVAL_KNOWLEDGE_TABLES = {"v1": "travel_docs_v1"}
 
 DEFAULT_KNOWLEDGE_TABLE = "travel_docs"

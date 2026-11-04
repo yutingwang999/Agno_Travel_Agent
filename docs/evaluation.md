@@ -35,6 +35,7 @@ Needs `EVAL_DATABASE_URL`, `GEMINI_API_KEY` and `OPENAI_API_KEY` in `.env` (see 
 | `eval/runs/<run id>/summary.json`, `eval/runs/<run id>/judge_prompts/`, `eval/runs/<run id>/generation_prompts/` | This repository. Every number in `docs/experiments.md` can be traced to a `summary.json` |
 | `eval/calibration/<run id>.agreement.json` (the agreement figures `score` prints: per-stratum counts and rates, no text) | This repository. The judge–human agreement in `docs/experiments.md` can be traced to it |
 | `eval/runs/<run id>/results.jsonl`, `eval/calibration/<run id>.jsonl` (sample, judge verdicts, human answers), `eval/calibration/<run id>.review.md` | Ignored by git here; copied by hand to a private repository, available on request |
+| `data/knowledge/v1/source_documents.json` (corpus v1, needed to re-run the v0.1.0 baseline) | Ignored by git here; copied by hand to the private repository at the same path. Corpus text is never committed to this repository |
 
 The private files hold model output — every itinerary and knowledge context in full, or claim texts taken from them — and the reviewer's item-by-item answers; nothing in them is secret, but they are large or personal. Only runs with `git_dirty = false` are kept; delete the others.
 

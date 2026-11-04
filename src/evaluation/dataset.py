@@ -54,7 +54,7 @@ _ENGLISH_PLACE_NAME = re.compile(r"^[A-Za-z][A-Za-z .'-]*$")
 _CHINESE_PLACE_NAME = re.compile(r"^[一-鿿]+$")
 
 # Sections that relevant_sections may point at, per corpus version.
-# v1: the 13 handwritten v0.1.0 documents in scripts/seed.py, source "handwritten",
+# v1: the 13 v0.1.0 documents in the private data/knowledge/v1/source_documents.json, source "handwritten",
 # section = document title.
 CORPUS_SECTIONS: dict[str, set[tuple[str, str]]] = {
     "v1": {

@@ -80,7 +80,7 @@ Decided with the user on 2026-11-01. **No corpus content is committed**: not the
 - **Committed**: `scripts/build_corpus.py` and the rule that selects the test fixture.
 - **Reproducibility** rests on the pinned revisions: building from scratch twice (deleting `raw/` and the JSONL in between) must give identical output. The comparison is made at build time; nothing is stored. Evaluation run summaries record the corpus version label (`v2`) and the chunking configuration name, as they already do for `v1`.
 - **No copied corpus text elsewhere in the repository**: unit tests of the pipeline use synthetic text, evaluation labels refer to a chunk by `destination` + `section` (not by source URL, which would expose the page list), and docs describe chunks without quoting them.
-- **The 9 handwritten Australia-wide documents are our own text** and stay committed (moved from `seed.py` into a file under `data/knowledge/`); `build_corpus.py` reads them into the JSONL.
+- **Corpus v1 is private too**, including the 9 handwritten Australia-wide documents (decided with the user 2026-11-01): all 13 live in the gitignored `data/knowledge/v1/source_documents.json` and were purged from git history; `build_corpus.py` reads the 9 from there into the JSONL. Their titles stay in the repository as evaluation labels; the text does not.
 - **Consequence**: a fresh clone must first copy `sources.yaml` from the private repository, then run `build_corpus.py` (network access) before seeding or running the integration tests; `test-db-setup` runs the build when the corpus is missing and stops with a clear message when `sources.yaml` is missing.
 
 ### Source citations

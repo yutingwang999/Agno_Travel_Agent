@@ -5,7 +5,8 @@ Inserts:
   - 3 itinerary_categories  (family, budget, adventure)
   - prompt_templates          (every version in TEMPLATE_DEFINITIONS; the version in
                                ACTIVE_TEMPLATE_VERSIONS is the only active one per key)
-  - 13 source documents into the Agno Knowledge base (travel_docs table via PgVector)
+  - the corpus v1 documents from a local private file into the Agno Knowledge base
+    (travel_docs table via PgVector); skipped with a warning when the file is missing
 
 Idempotent — safe to run multiple times; existing rows are skipped, not duplicated.
 
@@ -13,6 +14,7 @@ Usage:
     python scripts/seed.py
 """
 
+import json
 import os
 import sys
 import time
@@ -572,10 +574,27 @@ ACTIVE_TEMPLATE_VERSIONS = {
 }
 
 # ---- Source documents -------------------------------------------------------
-# Handwritten for v0.1.0; corpus v1 is replaced in rebuild-rag.
+# Corpus v1 (the 13 v0.1.0 documents) is kept out of the repository: a local
+# file, backed up to the private repository. Without it the knowledge base stays
+# empty and the app still runs, generating without retrieved context.
 # ---------------------------------------------------------------------------
 
-SOURCE_DOCUMENTS = []  # corpus kept private
+SOURCE_DOCUMENTS_PATH = os.path.join(ROOT_DIR, "data", "knowledge", "v1", "source_documents.json")
+
+
+def load_source_documents(path: str = SOURCE_DOCUMENTS_PATH) -> list[dict]:
+    """Return the corpus v1 documents, or an empty list when the local file is missing."""
+    try:
+        with open(path, encoding="utf-8") as file:
+            return json.load(file)
+    except FileNotFoundError:
+        print(
+            f"  [warn] corpus file not found: {path}\n"
+            "  [warn] the knowledge base stays empty; itineraries are generated without "
+            "retrieved context. The corpus is private: see docs/evaluation.md, "
+            '"What is published".'
+        )
+        return []
 
 
 # ---------------------------------------------------------------------------
@@ -667,7 +686,7 @@ def seed_source_documents() -> None:
     # the correct schema, and is required after a drop to recreate it.
     knowledge.vector_db.create()
 
-    for data in SOURCE_DOCUMENTS:
+    for data in load_source_documents():
         print(f"  [insert] title={data['title']!r}")
         knowledge.insert(
             name=data["title"],
