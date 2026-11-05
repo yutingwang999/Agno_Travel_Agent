@@ -32,6 +32,7 @@ This file records the effect of every change that affects quality, behaviour or 
 
 | Date | Change | What changed | Key result | Record |
 | --- | --- | --- | --- | --- |
+| 2026-11-05 | `rebuild-rag` | Step d: Cross-Encoder reranking on the chosen query | Not better: `city` Recall@5 0.514 to 0.501, MRR@5 0.788 to 0.772 with vector candidates (0.490 / 0.772 with BM25 candidates too); adds 286 ms p50 and about 890 MB of memory | [Step d](#2026-11-05--rebuild-rag-step-d--cross-encoder-reranking-on-the-chosen-query) |
 | 2026-11-05 | `rebuild-rag` | Query chosen: notes, style and destination, without the category | Group 11 of the comparison; search stays as in step b. The category still sets the generation prompt's tone and constraints | [Query chosen](#2026-11-05--rebuild-rag--query-chosen-notes-style-and-destination-without-the-category) |
 | 2026-11-05 | `rebuild-rag` | Query construction: 12 groups of notes, category and search | Best on `city`: notes, no category, vector search, Recall@5 0.457 to 0.514 and MRR@5 0.730 to 0.788 against step b; the gain depends partly on one weakly labelled entry. Notes with today's category lower MRR to 0.692. Decision pending | [Query groups](#2026-11-05--rebuild-rag--query-construction-12-groups-of-notes-category-and-search) |
 | 2026-11-04 | `rebuild-rag` | Step c: BM25 + vector + RRF, and Agno hybrid as control | Not better than step b: `city` Recall@5 0.457 to 0.423, MRR@5 0.730 to 0.740. Agno hybrid returned the same chunks as step b for all 54 entries | [Step c](#2026-11-04--rebuild-rag-step-c--bm25-and-vector-fused-with-rrf-and-agno-hybrid-as-control) |
@@ -86,6 +87,24 @@ Copy the template below, fill it in, and put it at the **top** of the "Records" 
 ---
 
 ## Records
+
+### 2026-11-05 · rebuild-rag step d · Cross-Encoder reranking on the chosen query
+
+Runs on commit `410c6d0` (retrieval only, dataset v3, table `travel_docs_v2_c800`, query as group 11, model `cross-encoder/ms-marco-MiniLM-L6-v2` without fine-tuning, on the CPU). The baseline is group 11 re-run on commit `6115846`. 54 labelled entries, no errors. Reranking ran: no entry kept group 11's result and no fallback was logged. Each cell is Recall@5 / MRR@5.
+
+| Configuration | `city` (38) | `city` with notes (14) | `city` without notes (24) | `national_only` (16) | All (54) | Retrieval p50 / p95 | Run ID |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Group 11, no reranking | 0.514 / 0.788 | 0.465 / 0.651 | 0.543 / 0.868 | 0.948 / 0.906 | 0.643 / 0.823 | 619 / 669 ms | `20261105T070231Z-rebuild-rag-q11-retrieval` |
+| d, vector candidates | 0.501 / 0.772 | 0.489 / 0.726 | 0.508 / 0.799 | 0.969 / 0.859 | 0.640 / 0.798 | 905 / 1007 ms | `20261105T080155Z-rebuild-rag-d-retrieval` |
+| d, vector + BM25 candidates | 0.490 / 0.772 | 0.477 / 0.750 | 0.498 / 0.785 | 0.969 / 0.859 | 0.632 / 0.798 | 1074 / 1248 ms | `20261105T080256Z-rebuild-rag-d-fused-retrieval` |
+
+- **Reranking did not meet the criteria.** On `city`, Recall@5 fell from 0.514 to 0.501 (vector candidates) and 0.490 (vector + BM25 candidates), and MRR@5 from 0.788 to 0.772 in both. Against group 11, Recall rose for 9 entries and fell for 9 with vector candidates, and rose for 10 and fell for 12 with both candidate sets.
+- **The result depended on the query.** On `city` entries with notes it improved (vector candidates: 0.465 / 0.651 to 0.489 / 0.726); on those without notes it got worse (0.543 / 0.868 to 0.508 / 0.799). The model was trained on web search questions, so short keyword-like queries are a candidate cause, not an established one.
+- **More candidates did not help.** Adding BM25's candidates lowered Recall further, although a separate local check showed the candidates cover more labelled sections (Recall@20 0.699 for vector, 0.789 for both). That check and the figures below are not evaluation runs.
+- **Cost.** Added p50 latency was 286 ms with vector candidates and 455 ms with both, within the 1 second limit. On made-up 800-character text in a fresh process on this machine, process memory was about 890 MB working set and 1.3 GB committed, the import took 6 seconds, and the first model load 24 seconds including the download.
+- **Environment.** This ran with torch 2.10.0 and transformers 5.17.0 from conda, not the versions pip would resolve for the pin in `pyproject.toml`.
+
+---
 
 ### 2026-11-05 · rebuild-rag · query chosen: notes, style and destination, without the category
 
@@ -528,7 +547,9 @@ Retrieval is unchanged. Latency is about 0.4 s higher in this single run; the ca
 | b | a + destination filtering | `20261104T081045Z-rebuild-rag-b-retrieval` | 0.609 | 0.782 | 624 / 652 ms | not measured |
 | c | b + BM25 hybrid + RRF | `20261104T091258Z-rebuild-rag-c-retrieval` | 0.585 | 0.780 | 656 / 729 ms | not measured |
 | c′ | b + Agno `SearchType.hybrid` (control group) | `20261104T091415Z-rebuild-rag-c-agno-retrieval` | 0.609 | 0.782 | 648 / 729 ms | not measured |
-| d | c + Cross-Encoder reranking | | | | | |
+| q11 | b + the query chosen in the 12-group comparison | `20261105T070231Z-rebuild-rag-q11-retrieval` | 0.643 | 0.823 | 619 / 669 ms | not measured |
+| d | q11 + Cross-Encoder reranking of the vector candidates | `20261105T080155Z-rebuild-rag-d-retrieval` | 0.640 | 0.798 | 905 / 1007 ms | about 890 MB, see step d |
+| d′ | q11 + Cross-Encoder reranking of the vector and BM25 candidates | `20261105T080256Z-rebuild-rag-d-fused-retrieval` | 0.632 | 0.798 | 1074 / 1248 ms | about 890 MB, see step d |
 
 **Chunking configuration comparison** (retrieval configuration fixed to the best one chosen in the table above)
 
