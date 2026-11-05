@@ -34,6 +34,7 @@
 | Reranking | A Cross-Encoder (e.g. the MiniLM family) reranks the candidates, keeping Top-5 | Whether fine-tuning is needed: see how it does without fine-tuning first |
 | Query construction | `notes` (if any) + travel_style + destination, without the matched category | Chosen from 12 groups in `docs/experiments.md` (task 4.7): adding the category, or the category matched without the budget phrase, retrieved no better |
 | Step-by-step comparison | Run in order a vector-only → b + destination filtering → c + BM25 hybrid → d + reranking, running the evaluation harness at each step and recording Recall@5, MRR and latency | Each step changes only one variable, so improvements can be attributed |
+| Final retrieval configuration | Chunks of 800 characters with 80 overlap, `retrieval` task types, destination filter, vector search, query of `notes`, `travel_style` and destination | Chosen by the comparisons in `docs/experiments.md`: BM25 with RRF, Agno hybrid, Cross-Encoder reranking, 500 and 1200 character chunks and `semantic` task types did not meet the criteria |
 
 ### Interim routing: always retrieve
 

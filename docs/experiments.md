@@ -32,6 +32,7 @@ This file records the effect of every change that affects quality, behaviour or 
 
 | Date | Change | What changed | Key result | Record |
 | --- | --- | --- | --- | --- |
+| 2026-11-05 | `rebuild-rag` | Chunk size and embedding task types | No chunk size met the criteria, so 800 / 80 stays. `retrieval` task types beat `semantic`: `city` Recall@5 0.514 against 0.438, MRR@5 0.788 against 0.751 | [Chunking](#2026-11-05--rebuild-rag--chunk-size-and-embedding-task-types) |
 | 2026-11-05 | `rebuild-rag` | Step d: Cross-Encoder reranking on the chosen query | Not better: `city` Recall@5 0.514 to 0.501, MRR@5 0.788 to 0.772 with vector candidates (0.490 / 0.772 with BM25 candidates too); adds 286 ms p50 and about 890 MB of memory | [Step d](#2026-11-05--rebuild-rag-step-d--cross-encoder-reranking-on-the-chosen-query) |
 | 2026-11-05 | `rebuild-rag` | Query chosen: notes, style and destination, without the category | Group 11 of the comparison; search stays as in step b. The category still sets the generation prompt's tone and constraints | [Query chosen](#2026-11-05--rebuild-rag--query-chosen-notes-style-and-destination-without-the-category) |
 | 2026-11-05 | `rebuild-rag` | Query construction: 12 groups of notes, category and search | Best on `city`: notes, no category, vector search, Recall@5 0.457 to 0.514 and MRR@5 0.730 to 0.788 against step b; the gain depends partly on one weakly labelled entry. Notes with today's category lower MRR to 0.692. Decision pending | [Query groups](#2026-11-05--rebuild-rag--query-construction-12-groups-of-notes-category-and-search) |
@@ -87,6 +88,33 @@ Copy the template below, fill it in, and put it at the **top** of the "Records" 
 ---
 
 ## Records
+
+### 2026-11-05 · rebuild-rag · chunk size and embedding task types
+
+Three new runs on commit `db904be` (retrieval only, dataset v3, chosen query, vector search, destination filter on), against group 11. 54 labelled entries, no errors. Labels name page and section, so they apply to every chunk size. Criteria as before: on `city`, Recall@5 at least 0.02 higher and MRR@5 not lower. Each cell is Recall@5 / MRR@5.
+
+| Chunks, task types | Chunk count | `city` (38) | `city` with notes (14) | `city` without notes (24) | `national_only` (16) | All (54) | Retrieval p50 / p95 | Run ID |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 800 / 80, `retrieval` (group 11) | 1602 | 0.514 / 0.788 | 0.465 / 0.651 | 0.543 / 0.868 | 0.948 / 0.906 | 0.643 / 0.823 | 619 / 669 ms | `20261105T070231Z-rebuild-rag-q11-retrieval` |
+| 500 / 50, `retrieval` | 2503 | 0.501 / 0.785 | 0.486 / 0.774 | 0.510 / 0.792 | 0.927 / 0.896 | 0.627 / 0.818 | 617 / 667 ms | `20261105T091845Z-rebuild-rag-c500-retrieval` |
+| 1200 / 120, `retrieval` | 1080 | 0.519 / 0.814 | 0.477 / 0.729 | 0.543 / 0.865 | 0.948 / 0.906 | 0.646 / 0.842 | 606 / 655 ms | `20261105T091923Z-rebuild-rag-c1200-retrieval` |
+| 800 / 80, `semantic` | 1602 | 0.438 / 0.751 | 0.401 / 0.669 | 0.459 / 0.799 | 0.979 / 0.875 | 0.598 / 0.788 | 605 / 651 ms | `20261105T092001Z-rebuild-rag-c800-semantic-retrieval` |
+
+Paired bootstrap on the 33 deduplicated `city` entries (10,000 samples, not part of the criteria), mean difference and 95% interval:
+
+| Comparison with 800 / 80, `retrieval` | Recall@5 | MRR@5 |
+| --- | --- | --- |
+| 1200 / 120 | 0.005 (−0.018 to 0.028) | 0.025 (−0.054 to 0.107) |
+| 500 / 50 | −0.023 (−0.071 to 0.023) | −0.024 (−0.111 to 0.065) |
+| `semantic` | −0.075 (−0.149 to −0.004) | −0.048 (−0.169 to 0.080) |
+
+- **No chunk size met the criteria.** 1200 / 120 raised `city` MRR@5 by 0.026 but Recall@5 by only 0.005; Recall changed for 3 of 38 entries. It would also put more text into the prompt: five chunks average about 4,340 characters against 2,950. 500 / 50 lowered both overall.
+- **The chunk size mattered less for section-level labels than it might for answers.** A label is met by any chunk of the section, so these numbers do not show whether a chunk holds the fact a claim needs. Faithfulness runs measure that.
+- **`RETRIEVAL_QUERY` / `RETRIEVAL_DOCUMENT` is better than `SEMANTIC_SIMILARITY` on the same text:** `city` Recall@5 0.514 against 0.438, MRR@5 0.788 against 0.751; Recall rose for 7 entries and fell for 16 under `semantic`. This is the first measurement of the task types on their own.
+- **Final retrieval configuration:** chunks of 800 characters with 80 overlap, `retrieval` task types, destination filter, vector search, the chosen query. On `city` it stands at 0.514 / 0.788 against step a's 0.457 / 0.730, and overall at 0.643 / 0.823 against 0.519 / 0.699, so both are higher than a as task 4.5 requires. No reranking, so its latency limit does not apply.
+- **BM25 and reranking were not re-run on other chunk sizes,** because no chunk size was clearly better.
+
+---
 
 ### 2026-11-05 · rebuild-rag step d · Cross-Encoder reranking on the chosen query
 
@@ -555,9 +583,12 @@ Retrieval is unchanged. Latency is about 0.4 s higher in this single run; the ca
 
 | Chunking configuration | Chunk count | Run ID | Recall@5 | MRR@5 |
 | --- | --- | --- | --- | --- |
-| | | | | |
+| 800 / 80, `retrieval` (group 11) | 1602 | `20261105T070231Z-rebuild-rag-q11-retrieval` | 0.643 | 0.823 |
+| 500 / 50, `retrieval` | 2503 | `20261105T091845Z-rebuild-rag-c500-retrieval` | 0.627 | 0.818 |
+| 1200 / 120, `retrieval` | 1080 | `20261105T091923Z-rebuild-rag-c1200-retrieval` | 0.646 | 0.842 |
+| 800 / 80, `semantic` | 1602 | `20261105T092001Z-rebuild-rag-c800-semantic-retrieval` | 0.598 | 0.788 |
 
-**Final choice**: — (fill in the configuration and the reasons, and sync it to `openspec/changes/rebuild-rag/design.md`)
+**Final choice**: chunks of 800 characters with 80 overlap, `retrieval` task types, destination filter, vector search, query of `notes`, `travel_style` and destination. No other configuration met the criteria; see the [query](#2026-11-05--rebuild-rag--query-construction-12-groups-of-notes-category-and-search), [reranking](#2026-11-05--rebuild-rag-step-d--cross-encoder-reranking-on-the-chosen-query) and [chunking](#2026-11-05--rebuild-rag--chunk-size-and-embedding-task-types) records.
 
 ---
 
