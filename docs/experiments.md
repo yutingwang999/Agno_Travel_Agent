@@ -32,6 +32,7 @@ This file records the effect of every change that affects quality, behaviour or 
 
 | Date | Change | What changed | Key result | Record |
 | --- | --- | --- | --- | --- |
+| 2026-11-05 | `rebuild-rag` | Query construction: 12 groups of notes, category and search | Best on `city`: notes, no category, vector search, Recall@5 0.457 to 0.514 and MRR@5 0.730 to 0.788 against step b; the gain depends partly on one weakly labelled entry. Notes with today's category lower MRR to 0.692. Decision pending | [Query groups](#2026-11-05--rebuild-rag--query-construction-12-groups-of-notes-category-and-search) |
 | 2026-11-04 | `rebuild-rag` | Step c: BM25 + vector + RRF, and Agno hybrid as control | Not better than step b: `city` Recall@5 0.457 to 0.423, MRR@5 0.730 to 0.740. Agno hybrid returned the same chunks as step b for all 54 entries | [Step c](#2026-11-04--rebuild-rag-step-c--bm25-and-vector-fused-with-rrf-and-agno-hybrid-as-control) |
 | 2026-11-04 | `rebuild-rag` | Step b: destination filtering | Recall@5 0.519 to 0.609, MRR@5 0.699 to 0.782; all of it from `national_only`, whose 0.969 is inflated by a pool of 9 documents; `city` unchanged at 0.457 / 0.730 | [Step b](#2026-11-04--rebuild-rag-step-b--filter-by-destination) |
 | 2026-11-04 | `rebuild-rag` | Step a: vector-only retrieval on corpus v2 | Recall@5 0.519, MRR@5 0.699 (`city` 0.457 / 0.730, `national_only` 0.667 / 0.625); not comparable with corpus v1 numbers | [Step a](#2026-11-04--rebuild-rag-step-a--vector-only-retrieval-on-corpus-v2) |
@@ -84,6 +85,80 @@ Copy the template below, fill it in, and put it at the **top** of the "Records" 
 ---
 
 ## Records
+
+### 2026-11-05 · rebuild-rag · query construction: 12 groups of notes, category and search
+
+Retrieval only, dataset v3, table `travel_docs_v2_c800`, destination filter on, 54 labelled entries, no errors. Groups 3 to 12 ran on commit `2d73f89` with `git_dirty` false; groups 1 and 2 are steps b and c. Exact vector scan and a deterministic BM25 order, so each group ran once rather than twice: groups 3 and 4 reproduced an earlier exploratory run's per-entry Recall, and the 30 entries without notes retrieved identical results across every pair of groups differing only in notes.
+
+Three variables: `notes` at the start of the query or not; the category as matched today, matched on an intent text without the budget phrase (`{style} trip to {destination}`), or left out with the word "itinerary"; and search as in step b or step c. The `no budget` and `none` variants exist only in the evaluation harness. Criteria set before the run: `city` Recall@5 and MRR@5 decide, `national_only` must not get worse; a group is better only with Recall at least 0.02 higher and MRR not lower; otherwise the simpler one wins. The 0.02 is a judgement, not a statistical test.
+
+Each cell is Recall@5 / MRR@5.
+
+| Group | Notes | Category | Search | `city` (38) | `national_only` (16) | All (54) |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | no | as matched | vector | 0.457 / 0.730 | 0.969 / 0.906 | 0.609 / 0.782 |
+| 2 | no | as matched | BM25 + RRF | 0.423 / 0.740 | 0.969 / 0.875 | 0.585 / 0.780 |
+| 3 | no | no budget | vector | 0.476 / 0.755 | 0.969 / 0.938 | 0.622 / 0.809 |
+| 4 | no | no budget | BM25 + RRF | 0.437 / 0.797 | 0.969 / 0.938 | 0.595 / 0.839 |
+| 5 | no | none | vector | 0.477 / 0.772 | 0.969 / 0.906 | 0.623 / 0.812 |
+| 6 | no | none | BM25 + RRF | 0.433 / 0.829 | 0.969 / 0.906 | 0.592 / 0.852 |
+| 7 | yes | as matched | vector | 0.464 / 0.692 | 0.969 / 0.906 | 0.614 / 0.755 |
+| 8 | yes | as matched | BM25 + RRF | 0.441 / 0.659 | 0.979 / 0.896 | 0.600 / 0.729 |
+| 9 | yes | no budget | vector | 0.496 / 0.747 | 0.969 / 0.938 | 0.636 / 0.804 |
+| 10 | yes | no budget | BM25 + RRF | 0.447 / 0.776 | 0.979 / 0.906 | 0.605 / 0.815 |
+| 11 | yes | none | vector | 0.514 / 0.788 | 0.948 / 0.906 | 0.643 / 0.823 |
+| 12 | yes | none | BM25 + RRF | 0.455 / 0.812 | 0.979 / 0.927 | 0.610 / 0.846 |
+
+| Group | `city` with notes (14) | `city` without notes (24) | `Sleep` chunks of 190 | Retrieval p50 | Run ID |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 0.314 / 0.681 | 0.540 / 0.758 | 21 | 624 ms | `20261104T081045Z-rebuild-rag-b-retrieval` |
+| 2 | 0.358 / 0.774 | 0.461 / 0.720 | 32 | 656 ms | `20261104T091258Z-rebuild-rag-c-retrieval` |
+| 3 | 0.326 / 0.657 | 0.563 / 0.812 | 6 | 641 ms | `20261105T063238Z-rebuild-rag-q3-retrieval` |
+| 4 | 0.379 / 0.756 | 0.472 / 0.821 | 8 | 633 ms | `20261105T063352Z-rebuild-rag-q4-retrieval` |
+| 5 | 0.364 / 0.607 | 0.543 / 0.868 | 5 | 617 ms | `20261105T063525Z-rebuild-rag-q5-retrieval` |
+| 6 | 0.370 / 0.711 | 0.469 / 0.897 | 7 | 639 ms | `20261105T063602Z-rebuild-rag-q6-retrieval` |
+| 7 | 0.335 / 0.577 | 0.540 / 0.758 | 17 | 624 ms | `20261105T063641Z-rebuild-rag-q7-retrieval` |
+| 8 | 0.406 / 0.554 | 0.461 / 0.720 | 21 | 634 ms | `20261105T063754Z-rebuild-rag-q8-retrieval` |
+| 9 | 0.382 / 0.636 | 0.563 / 0.812 | 6 | 606 ms | `20261105T063908Z-rebuild-rag-q9-retrieval` |
+| 10 | 0.406 / 0.699 | 0.472 / 0.821 | 5 | 622 ms | `20261105T064017Z-rebuild-rag-q10-retrieval` |
+| 11 | 0.465 / 0.651 | 0.543 / 0.868 | 5 | 604 ms | `20261105T064128Z-rebuild-rag-q11-retrieval` |
+| 12 | 0.430 / 0.667 | 0.469 / 0.897 | 4 | 618 ms | `20261105T064205Z-rebuild-rag-q12-retrieval` |
+
+Reading across rows of the split table is not meaningful: entries with and without notes are different entries.
+
+Sensitivity of the leading groups (weak labels: e006, e012, e025, e036, e037, e038, e062; deduplicated: entries with the same destination, style and notes count once):
+
+| Group | `city` deduplicated (33) | `city` without weak labels (31) | Both (26) |
+| --- | --- | --- | --- |
+| 1 | 0.438 / 0.689 | 0.503 / 0.775 | 0.488 / 0.732 |
+| 2 | 0.423 / 0.731 | 0.442 / 0.778 | 0.446 / 0.774 |
+| 7 | 0.455 / 0.660 | 0.501 / 0.743 | 0.496 / 0.713 |
+| 9 | 0.494 / 0.724 | 0.532 / 0.797 | 0.536 / 0.777 |
+| 5 | 0.487 / 0.768 | 0.472 / 0.809 | 0.483 / 0.811 |
+| 11 | 0.515 / 0.776 | 0.518 / 0.831 | 0.519 / 0.824 |
+| 12 | 0.449 / 0.819 | 0.453 / 0.834 | 0.446 / 0.847 |
+
+Paired bootstrap on the deduplicated `city` entries (10,000 samples, not part of the criteria), mean difference and 95% interval:
+
+| Comparison | Recall@5 | MRR@5 |
+| --- | --- | --- |
+| Group 11 − group 1 | 0.076 (−0.012 to 0.173) | 0.087 (−0.030 to 0.205) |
+| Group 11 − group 7 | 0.060 (−0.022 to 0.154) | 0.116 (0.020 to 0.217) |
+| Group 11 − group 5 | 0.028 (−0.014 to 0.073) | 0.009 (−0.037 to 0.056) |
+| Group 11 − group 9 | 0.021 (−0.045 to 0.102) | 0.052 (−0.019 to 0.128) |
+| Group 11 − group 12 | 0.065 (0.015 to 0.115) | −0.043 (−0.143 to 0.061) |
+
+- **Group 11 (notes, no category, vector) has the highest `city` Recall, and no group meets the criteria against it.** It meets them against groups 1, 2, 3, 5, 7, 8 and 10. Against group 9, Recall is 0.018 higher (under 0.02) and MRR 0.041 higher, and group 9 is the more complex one. Against groups 4, 6 and 12 (search as in step c), Recall is 0.077, 0.081 and 0.059 higher but MRR 0.009, 0.041 and 0.024 lower, so neither side meets the criteria and the simpler one wins. Against group 1, Recall rose for 15 entries, fell for 10 and stayed the same for 13.
+- **The evidence is moderate.** e038 (a weak label, one labelled section, Recall 0 to 1) is 46% of group 11's net Recall gain over group 1. Without weak labels the Recall gain over group 1 is 0.015, under the criterion, while the MRR gain stays at 0.056. The 95% intervals for group 11 − group 1 include zero.
+- **Group 7, which the workflow currently sends after task 4.6, has a lower `city` MRR than group 1:** 0.692 against 0.730, with Recall 0.464 against 0.457. Notes helped when the category was left out (group 5 to 11, entries with notes: Recall 0.364 to 0.465, MRR 0.607 to 0.651), and much less when it stayed (group 1 to 7: Recall 0.314 to 0.335, MRR 0.681 to 0.577).
+- **Search as in step c stayed behind on Recall for all three category settings,** with or without notes. Group 12 − group 11 on `city`: Recall −0.059, MRR +0.024. Its MRR lead does not survive as a clear difference in the bootstrap, and the Recall deficit does.
+- **The category words were part of the `Sleep` effect:** without today's matched category, `Sleep` chunks fell from 21 to 5 or 6 (b) and from 32 to between 4 and 8 (c), but Recall of c did not catch up with b.
+- **`national_only`:** group 11 Recall 0.948 against 0.969, from e042 (Recall 1.0 to 0.67); MRR unchanged at 0.906.
+- **Chinese notes hurt:** e029 and e079 (same request, notes in Chinese, not translated) fell from Recall 0.50 to 0.25 once their notes entered the query.
+- **Not measured:** generation. These groups say nothing about itinerary quality. Leaving the category out of the query does not change the tone and constraints the category gives the generation prompt.
+- **Decision pending.** The query in use stays as task 4.6 built it until the choice is made.
+
+---
 
 ### 2026-11-04 · rebuild-rag step c · BM25 and vector fused with RRF, and Agno hybrid as control
 
