@@ -27,8 +27,9 @@ from agno.filters import IN
 from agno.knowledge.knowledge import Knowledge
 from sqlalchemy import create_engine, text
 
-from app.workflow.hybrid_search import hybrid_search
+from app.workflow.hybrid_search import CANDIDATES_PER_SEARCH, fused_candidates, hybrid_search
 from app.workflow.knowledge_base import build_knowledge, knowledge_table_name
+from app.workflow.reranker import rerank
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +38,9 @@ DESTINATION_KEY = "destination"
 AUSTRALIA_WIDE = "australia"
 
 # How the knowledge base is searched (KNOWLEDGE_SEARCH_MODE): vector similarity, BM25 + vector
-# fused with RRF (app.workflow.hybrid_search), or Agno's own hybrid search.
-SEARCH_MODES = ("vector", "bm25_rrf", "agno_hybrid")
+# fused with RRF (app.workflow.hybrid_search), Agno's own hybrid search, or either of our two
+# candidate sets reranked by a Cross-Encoder (app.workflow.reranker).
+SEARCH_MODES = ("vector", "bm25_rrf", "agno_hybrid", "vector_rerank", "bm25_rrf_rerank")
 DEFAULT_SEARCH_MODE = "vector"
 
 
@@ -142,6 +144,11 @@ def _search_knowledge(
         docs = knowledge.search(query=query_text, max_results=top_k, filters=filters, search_type="hybrid")
     elif mode == "vector":
         docs = knowledge.search(query=query_text, max_results=top_k, filters=filters)
+    elif mode == "vector_rerank":
+        candidates = knowledge.search(query=query_text, max_results=CANDIDATES_PER_SEARCH, filters=filters)
+        docs = rerank(query_text, candidates, top_k)
+    elif mode == "bm25_rrf_rerank":
+        docs = rerank(query_text, fused_candidates(knowledge, query_text, filters, destination), top_k)
     else:
         raise ValueError(f"KNOWLEDGE_SEARCH_MODE must be one of {SEARCH_MODES}, got {mode!r}")
 

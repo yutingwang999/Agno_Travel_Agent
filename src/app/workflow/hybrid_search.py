@@ -80,10 +80,10 @@ def keyword_search(
     return [documents[position] for _, position in matching[:limit]]
 
 
-def hybrid_search(
-    knowledge: Knowledge, query: str, top_k: int, filters: list | None, destination: str | None
+def fused_candidates(
+    knowledge: Knowledge, query: str, filters: list | None, destination: str | None
 ) -> list[Document]:
-    """Fuse the top candidates of vector search and BM25, and return the best ``top_k``."""
+    """The top candidates of vector search and BM25, without duplicates, in RRF order."""
     vector_db = knowledge.vector_db
     vector = knowledge.search(query=query, max_results=CANDIDATES_PER_SEARCH, filters=filters)
     keyword = keyword_search(query, vector_db.db_url, vector_db.table_name, destination)
@@ -92,4 +92,11 @@ def hybrid_search(
     fused = reciprocal_rank_fusion(
         [[document.meta_data["chunk_id"] for document in ranking] for ranking in (vector, keyword)]
     )
-    return [by_id[chunk_id] for chunk_id in fused[:top_k]]
+    return [by_id[chunk_id] for chunk_id in fused]
+
+
+def hybrid_search(
+    knowledge: Knowledge, query: str, top_k: int, filters: list | None, destination: str | None
+) -> list[Document]:
+    """Fuse the top candidates of vector search and BM25, and return the best ``top_k``."""
+    return fused_candidates(knowledge, query, filters, destination)[:top_k]
