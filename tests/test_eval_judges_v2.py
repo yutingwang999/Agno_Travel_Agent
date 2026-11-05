@@ -107,12 +107,13 @@ def test_new_prompts_have_their_placeholders_and_kinds():
     assert "{knowledge_context}" in faithfulness and "{itinerary}" in faithfulness
     assert "{notes}" in load_prompt("destination", 2)
     assert "{notes}" in load_prompt("preference", 1)
-    preference = load_prompt("preference", 2)
+    assert "{notes}" in load_prompt("preference", 2)
+    preference = load_prompt("preference", 3)
     assert "{travel_style}" in preference and "{notes}" in preference and "{itinerary}" in preference
 
 
 def test_summary_records_the_versions_used():
-    assert Judge(FakeClient()).prompt_versions == {"faithfulness": 2, "destination": 2, "preference": 2}
+    assert Judge(FakeClient()).prompt_versions == {"faithfulness": 2, "destination": 2, "preference": 3}
 
 
 def test_destination_prompt_carries_the_notes():
@@ -194,7 +195,7 @@ def test_rejudging_can_keep_a_kind_as_stored():
 
     assert record["judge"]["faithfulness"]["version"] == 1
     assert record["judge"]["destination"]["version"] == 1
-    assert record["judge"]["preference"]["version"] == 2
+    assert record["judge"]["preference"]["version"] == 3
 
 
 def test_a_record_the_run_did_not_judge_stays_as_it_is():
@@ -406,5 +407,21 @@ def test_etiquette_and_what_the_traveller_stated_are_not_added_requirements(judg
 def test_an_assumed_diet_is_an_added_requirement(judge):
     plan = _plan("Lunch at a vegan cafe", "Every meal here is vegan because you do not eat animal products")
     verdict = judge.preference(plan, "food").verdict
+
+    assert verdict.added_requirements, verdict
+
+
+@pytest.mark.integration
+def test_a_demanding_activity_assumes_nothing_about_ability(judge):
+    plan = _plan("Morning ascent of Mount Marlow on a guided hike, then a beginner surf lesson", "Bring water")
+    verdict = judge.preference(plan, "art and fine dining").verdict
+
+    assert not verdict.added_requirements, verdict
+
+
+@pytest.mark.integration
+def test_a_restriction_on_movement_is_still_an_added_requirement(judge):
+    plan = _plan("Harbour walk on a step-free route", "Every venue here avoids stairs because you cannot manage steps")
+    verdict = judge.preference(plan, "art").verdict
 
     assert verdict.added_requirements, verdict

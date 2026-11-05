@@ -199,7 +199,7 @@ def test_result_record_keeps_judge_inputs_not_the_rendered_prompt():
     faith = record["judge"]["faithfulness"]
     assert (faith["prompt"], faith["version"]) == ("faithfulness", 2)
     fit = record["judge"]["preference"]
-    assert (fit["prompt"], fit["version"]) == ("preference", 2)
+    assert (fit["prompt"], fit["version"]) == ("preference", 3)
     assert fit["verdict"]["preferences"][0]["followed"] is True
     assert "[Guide to Sydney]" in faith["knowledge_context"]
     assert faith["itinerary_text"].startswith("Day 1")
@@ -213,7 +213,7 @@ def test_prompt_copies_written_once_per_run(tmp_path):
     write_prompt_copies(tmp_path, judge)
     assert sorted(p.name for p in (tmp_path / "judge_prompts").iterdir()) == ["destination_v2.md",
                                                                               "faithfulness_v2.md",
-                                                                              "preference_v2.md"]
+                                                                              "preference_v3.md"]
 
 
 def test_retry_only_transient_errors():
