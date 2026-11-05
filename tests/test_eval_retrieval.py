@@ -221,7 +221,7 @@ def test_query_text_is_built_even_for_high_confidence(monkeypatch):
     monkeypatch.setattr("app.workflow.steps.cag_match.match_category", lambda **kwargs: _match(0.95))
 
     form = {"destination": "Sydney", "trip_length": 3, "budget": "moderate", "travel_style": "family"}
-    assert workflow_query_text(form) == "family travel in sydney family itinerary"
+    assert workflow_query_text(form) == "family travel in sydney"
 
 
 # ---------------------------------------------------------------------------
@@ -261,17 +261,17 @@ def test_query_with_notes_matches_the_workflow(mocked_workflow):
 
     list(_run_workflow("sid-notes", TravelRequest.model_validate(_FORM_WITH_NOTES)))
 
-    assert mocked_workflow[0] == "kids love animals family travel in sydney family itinerary"
+    assert mocked_workflow[0] == "kids love animals family travel in sydney"
     assert workflow_query_text(_FORM_WITH_NOTES) == mocked_workflow[0]
 
 
 @pytest.mark.parametrize(
     ("include_notes", "category", "query"),
     [
-        (False, "current", "family travel in sydney family itinerary"),
+        (False, "matched", "family travel in sydney family itinerary"),
         (False, "no_budget", "family travel in sydney wildlife itinerary"),
         (False, "no_category", "family travel in sydney"),
-        (True, "current", "kids love animals family travel in sydney family itinerary"),
+        (True, "matched", "kids love animals family travel in sydney family itinerary"),
         (True, "no_budget", "kids love animals family travel in sydney wildlife itinerary"),
         (True, "no_category", "kids love animals family travel in sydney"),
     ],

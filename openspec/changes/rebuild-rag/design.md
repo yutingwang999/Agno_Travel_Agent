@@ -32,7 +32,7 @@
 | Retrieval | Two paths, keyword + vector, Top-20 candidates each | (a) Our own BM25 (e.g. `rank-bm25`; a thousand-plus chunks fit in memory) + RRF; (b) Agno's `SearchType.hybrid`. Both go into the evaluation comparison, and the numbers decide |
 | Fusion | RRF (reciprocal rank fusion) | Alternative: take the union of both paths directly and hand it to reranking |
 | Reranking | A Cross-Encoder (e.g. the MiniLM family) reranks the candidates, keeping Top-5 | Whether fine-tuning is needed: see how it does without fine-tuning first |
-| Query construction | `notes` (if any) + travel_style + destination + matched category | Compare with the current fixed concatenated query |
+| Query construction | `notes` (if any) + travel_style + destination, without the matched category | Chosen from 12 groups in `docs/experiments.md` (task 4.7): adding the category, or the category matched without the budget phrase, retrieved no better |
 | Step-by-step comparison | Run in order a vector-only → b + destination filtering → c + BM25 hybrid → d + reranking, running the evaluation harness at each step and recording Recall@5, MRR and latency | Each step changes only one variable, so improvements can be attributed |
 
 ### Interim routing: always retrieve

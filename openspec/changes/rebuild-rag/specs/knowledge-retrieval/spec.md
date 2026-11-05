@@ -7,11 +7,11 @@
 ## MODIFIED Requirements
 
 ### Requirement: Retrieval query construction
-The step SHALL build the query text by joining, with single spaces: the request `notes` (if present); the intake `travel_style` (if present); `"travel in {destination}"` using the intake destination, or `"travel in Australia"` when the destination is empty; and `"{matched_category} itinerary"` (if a category was matched).
+The step SHALL build the query text by joining, with single spaces: the request `notes` (if present); the intake `travel_style` (if present); and `"travel in {destination}"` using the intake destination, or `"travel in Australia"` when the destination is empty. The matched category SHALL NOT be part of the query.
 
 #### Scenario: Full query
 - **WHEN** intake has `travel_style` = `"family"`, `destination` = `"sydney"` and cag_match has `matched_category` = `"family"`
-- **THEN** the query text is `"family travel in sydney family itinerary"`
+- **THEN** the query text is `"family travel in sydney"`
 
 #### Scenario: Missing destination
 - **WHEN** the intake destination is empty and no other fields are available
@@ -19,7 +19,7 @@ The step SHALL build the query text by joining, with single spaces: the request 
 
 #### Scenario: Notes included
 - **WHEN** the request has `notes` = `"kids love animals"`, `travel_style` = `"family"`, `destination` = `"sydney"`, and `matched_category` = `"family"`
-- **THEN** the query text is `"kids love animals family travel in sydney family itinerary"`
+- **THEN** the query text is `"kids love animals family travel in sydney"`
 
 ### Requirement: Knowledge base search
 The step SHALL rank the destination-filtered chunks of the knowledge base by relevance to the query text and SHALL return at most 5 chunks (`top_k` = 5), most relevant first. The ranking method (search modes, fusion, and reranking) SHALL be the configuration selected by the stepwise retrieval comparison and recorded, with its evaluation results, in `docs/experiments.md`.

@@ -32,6 +32,7 @@ This file records the effect of every change that affects quality, behaviour or 
 
 | Date | Change | What changed | Key result | Record |
 | --- | --- | --- | --- | --- |
+| 2026-11-05 | `rebuild-rag` | Query chosen: notes, style and destination, without the category | Group 11 of the comparison; search stays as in step b. The category still sets the generation prompt's tone and constraints | [Query chosen](#2026-11-05--rebuild-rag--query-chosen-notes-style-and-destination-without-the-category) |
 | 2026-11-05 | `rebuild-rag` | Query construction: 12 groups of notes, category and search | Best on `city`: notes, no category, vector search, Recall@5 0.457 to 0.514 and MRR@5 0.730 to 0.788 against step b; the gain depends partly on one weakly labelled entry. Notes with today's category lower MRR to 0.692. Decision pending | [Query groups](#2026-11-05--rebuild-rag--query-construction-12-groups-of-notes-category-and-search) |
 | 2026-11-04 | `rebuild-rag` | Step c: BM25 + vector + RRF, and Agno hybrid as control | Not better than step b: `city` Recall@5 0.457 to 0.423, MRR@5 0.730 to 0.740. Agno hybrid returned the same chunks as step b for all 54 entries | [Step c](#2026-11-04--rebuild-rag-step-c--bm25-and-vector-fused-with-rrf-and-agno-hybrid-as-control) |
 | 2026-11-04 | `rebuild-rag` | Step b: destination filtering | Recall@5 0.519 to 0.609, MRR@5 0.699 to 0.782; all of it from `national_only`, whose 0.969 is inflated by a pool of 9 documents; `city` unchanged at 0.457 / 0.730 | [Step b](#2026-11-04--rebuild-rag-step-b--filter-by-destination) |
@@ -85,6 +86,15 @@ Copy the template below, fill it in, and put it at the **top** of the "Records" 
 ---
 
 ## Records
+
+### 2026-11-05 · rebuild-rag · query chosen: notes, style and destination, without the category
+
+- **Decision**: the workflow's query is group 11 of the [12-group comparison](#2026-11-05--rebuild-rag--query-construction-12-groups-of-notes-category-and-search): `notes` (if any), `travel_style` and `travel in <destination>`. Search stays as in step b.
+- **Why**: no group met the criteria against it, and it is the simplest. The evidence is moderate, as that record says.
+- **What this leaves open**: the category still sets the tone and constraints of the generation prompt, matched on the same intent text as before, so a `moderate` request can still get `budget` constraints. Measuring a change there needs generation runs. e042 and the untranslated Chinese notes of e029 and e079 stay as recorded.
+- **Naming**: the configuration value `query_category: current` in the summaries of groups 3 to 12 is now called `matched`, because the workflow no longer sends that query. The two mean the same query.
+
+---
 
 ### 2026-11-05 · rebuild-rag · query construction: 12 groups of notes, category and search
 

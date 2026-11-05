@@ -1,8 +1,8 @@
 """Retrieval metrics: Recall@k and MRR@k against section-level relevance labels.
 
 Every entry with ``relevant_sections`` is measured, whether or not the workflow
-would route it to retrieval: intake and intent matching run first, the query is
-built by the workflow's own code, and the retrieval component is called directly.
+would route it to retrieval: intake runs first, the query is built by the
+workflow's own code, and the retrieval component is called directly.
 
 Public API::
 
@@ -12,6 +12,7 @@ Public API::
     summary = summarize([result, ...])
 """
 
+import json
 import os
 from dataclasses import dataclass
 from typing import Callable, Literal
@@ -25,9 +26,10 @@ HANDWRITTEN_SOURCE = "handwritten"
 
 Section = tuple[str, str]
 
-# How the matched category enters a measured query. "current" is what the workflow does;
-# the others exist only to compare query constructions (rebuild-rag task 4.7).
-QueryCategory = Literal["current", "no_budget", "no_category"]
+# How a category enters a measured query. "no_category" is what the workflow does; the
+# others reproduce the query constructions compared in rebuild-rag task 4.7. "matched" is
+# the value those runs' summaries call "current".
+QueryCategory = Literal["matched", "no_budget", "no_category"]
 
 
 @dataclass(frozen=True)
@@ -100,15 +102,14 @@ def workflow_query_text(
     session_id: str = "eval-retrieval",
     *,
     include_notes: bool = True,
-    category: QueryCategory = "current",
+    category: QueryCategory = "no_category",
 ) -> str:
-    """Run intake and intent matching for *form* and build the query as ``rag_retrieve`` does.
-
-    Needs the database and Gemini API key the workflow itself uses (cag_match
-    embeds the request); intake and cag_match write their usual trace rows.
+    """Run intake for *form* and build the query as ``rag_retrieve`` does.
 
     With the defaults this is the workflow's query. *include_notes* and *category*
-    measure other query constructions, which the workflow never sends.
+    measure other query constructions, which the workflow never sends; the two
+    that add a category match one first, which needs the database and Gemini API key
+    the workflow itself uses. Intake and cag_match write their usual trace rows.
     """
     from app.main import build_additional_data
     from app.workflow.input_guard import guard_request
@@ -123,18 +124,18 @@ def workflow_query_text(
         request = request.model_copy(update={"notes": None})
     additional_data = build_additional_data(session_id, request)
     step_input = StepInput(additional_data=additional_data)
-    previous: dict[str, StepOutput] = {"intake": intake_executor(step_input)}
-    if category == "current":
-        previous["cag_match"] = cag_match_executor(step_input)
+    intake = intake_executor(step_input)
+    intake.step_name = "intake"
+    query = _build_query_text(StepInput(additional_data=additional_data, previous_step_outputs={"intake": intake}))
+    if category == "no_category":
+        return query
+    if category == "matched":
+        match = cag_match_executor(step_input)
     elif category == "no_budget":
-        previous["cag_match"] = _cag_match_without_budget(additional_data, session_id)
-    elif category != "no_category":
+        match = _cag_match_without_budget(additional_data, session_id)
+    else:
         raise ValueError(f"unknown query category {category!r}")
-    for name, output in previous.items():
-        output.step_name = name
-    return _build_query_text(
-        StepInput(additional_data=additional_data, previous_step_outputs=previous)
-    )
+    return f"{query} {json.loads(match.content)['data']['matched_category']} itinerary"
 
 
 def evaluate_entry(

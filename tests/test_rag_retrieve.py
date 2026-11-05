@@ -441,12 +441,12 @@ def test_extract_field_returns_empty_string_on_malformed_json():
         (  # Spec scenario "Full query"
             {"destination": "sydney", "travel_style": "family", "notes": None},
             {"matched_category": "family"},
-            "family travel in sydney family itinerary",
+            "family travel in sydney",
         ),
         (  # Spec scenario "Notes included"
             {"destination": "sydney", "travel_style": "family", "notes": "kids love animals"},
             {"matched_category": "family"},
-            "kids love animals family travel in sydney family itinerary",
+            "kids love animals family travel in sydney",
         ),
         (  # Spec scenario "Missing destination"
             {"destination": ""},

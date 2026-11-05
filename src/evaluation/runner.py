@@ -75,14 +75,14 @@ class RunConfig(BaseModel):
     # How the measured query is built. The defaults are the workflow's query; anything
     # else is a comparison the workflow does not run, so it needs --retrieval-only.
     query_notes: bool = True
-    query_category: Literal["current", "no_budget", "no_category"] = "current"
+    query_category: Literal["matched", "no_budget", "no_category"] = "no_category"
     retrieval_k: int = Field(default=5, ge=1)
     judge_concurrency: int = Field(default=4, ge=1)
     request_parser: bool = False
 
     @property
     def query_differs_from_workflow(self) -> bool:
-        return not self.query_notes or self.query_category != "current"
+        return not self.query_notes or self.query_category != "no_category"
 
 
 def load_config(name: str, configs_dir: Path = CONFIGS_DIR) -> RunConfig:

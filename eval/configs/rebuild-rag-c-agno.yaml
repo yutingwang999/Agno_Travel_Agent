@@ -11,6 +11,7 @@ embedding_task_types: retrieval
 destination_filter: true
 search_mode: agno_hybrid
 query_notes: false
+query_category: matched
 retrieval_k: 5
 judge_concurrency: 8
 request_parser: false

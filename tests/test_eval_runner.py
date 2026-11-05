@@ -310,7 +310,7 @@ def test_query_comparison_configs_cover_the_twelve_groups():
     assert groups == {
         (notes, category, search)
         for notes in (False, True)
-        for category in ("current", "no_budget", "no_category")
+        for category in ("matched", "no_budget", "no_category")
         for search in ("vector", "bm25_rrf")
     }
     assert {c.knowledge_table for c in configs} == {"travel_docs_v2_c800"}
@@ -322,8 +322,8 @@ def test_query_comparison_configs_cover_the_twelve_groups():
     [
         ({}, False),
         ({"query_notes": False}, True),
+        ({"query_category": "matched"}, True),
         ({"query_category": "no_budget"}, True),
-        ({"query_category": "no_category"}, True),
     ],
 )
 def test_a_query_the_workflow_does_not_send_is_flagged(fields, differs):
