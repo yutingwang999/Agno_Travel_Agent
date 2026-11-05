@@ -32,6 +32,7 @@ This file records the effect of every change that affects quality, behaviour or 
 
 | Date | Change | What changed | Key result | Record |
 | --- | --- | --- | --- | --- |
+| 2026-11-05 | `rebuild-rag` | Preference v2 narrows added requirements | Added requirements 94 and 86 → 21 and 18 on the two baselines; preferences followed stays about 81% to 82%; not calibrated yet | [Preference v2](#2026-11-05--rebuild-rag--preference-v2-narrows-added-requirements) |
 | 2026-11-05 | `rebuild-rag` | v0.1.0 baseline re-judged with faithfulness v2, destination v2 and preference v1 | Faithfulness with context 23.0% under v1, 20.5% under v2 (mean of two runs); not calibrated yet | [Re-judged baseline](#2026-11-05--rebuild-rag--v010-baseline-re-judged-with-faithfulness-v2-destination-v2-and-preference-v1) |
 | 2026-11-05 | `rebuild-rag` | BM25, Agno hybrid and reranking removed from the code | No numbers changed; commit `2901b5c` can re-run them | [Removal](#2026-11-05--rebuild-rag--bm25-agno-hybrid-and-reranking-removed-from-the-code) |
 | 2026-11-05 | `rebuild-rag` | Chunk size and embedding task types | No chunk size met the criteria, so 800 / 80 stays. `retrieval` task types beat `semantic`: `city` Recall@5 0.514 against 0.438, MRR@5 0.788 against 0.751 | [Chunking](#2026-11-05--rebuild-rag--chunk-size-and-embedding-task-types) |
@@ -90,6 +91,21 @@ Copy the template below, fill it in, and put it at the **top** of the "Records" 
 ---
 
 ## Records
+
+### 2026-11-05 · rebuild-rag · preference v2 narrows added requirements
+
+Preference verdicts of the two re-judged v0.1.0 baselines replaced on commit `efe4d6a`; faithfulness and destination verdicts carried over unchanged. All 146 itineraries judged, no errors. Not calibrated yet.
+
+| Source (preference v1) | Re-judged (preference v2) | Preferences followed, v1 → v2 | Added requirements, v1 → v2 | Itineraries with any, v1 → v2 | Judge cost |
+| --- | --- | --- | --- | --- | --- |
+| `20261105T101620Z-v010-baseline-rejudge` | `20261105T104907Z-v010-baseline-rejudge` | 82.0% → 82.2% | 94 → 21 | 48 → 15 | $0.025 |
+| `20261105T102424Z-v010-baseline-rejudge` | `20261105T105925Z-v010-baseline-rejudge` | 82.9% → 80.6% | 86 → 18 | 49 → 15 | $0.024 |
+
+- **Why**: in a look at 24 of the 180 requirements under v1, about a third were assumptions about the traveller; the rest were planned meals, etiquette or things the traveller had said. This count is a reading by hand, not a calibration result.
+- **Under v2**, the list fell by about four fifths while the share of preferences followed barely moved, as intended. e039's wheelchair and step-free assumption is still listed.
+- **What remains**: in a look at 24 of the 39 under v2, most are real assumptions, above all remote work and business trips, a pattern in several itineraries that the matched `bleisure` category may explain. About 7 of the 24 say only that the traveller can physically do a planned walk, hike or surf lesson, which the prompt meant to exclude.
+
+---
 
 ### 2026-11-05 · rebuild-rag · v0.1.0 baseline re-judged with faithfulness v2, destination v2 and preference v1
 
