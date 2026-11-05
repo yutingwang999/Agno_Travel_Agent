@@ -72,9 +72,17 @@ class RunConfig(BaseModel):
     destination_filter: bool = True
     # How the knowledge base is searched (app.workflow.retrieval_service.SEARCH_MODES).
     search_mode: Literal["vector", "bm25_rrf", "agno_hybrid"] = "vector"
+    # How the measured query is built. The defaults are the workflow's query; anything
+    # else is a comparison the workflow does not run, so it needs --retrieval-only.
+    query_notes: bool = True
+    query_category: Literal["current", "no_budget", "no_category"] = "current"
     retrieval_k: int = Field(default=5, ge=1)
     judge_concurrency: int = Field(default=4, ge=1)
     request_parser: bool = False
+
+    @property
+    def query_differs_from_workflow(self) -> bool:
+        return not self.query_notes or self.query_category != "current"
 
 
 def load_config(name: str, configs_dir: Path = CONFIGS_DIR) -> RunConfig:

@@ -109,6 +109,15 @@ def make_retrieve(config, db_url: str):
     return retrieve
 
 
+def make_query_text(config):
+    from evaluation.retrieval import workflow_query_text
+
+    def query_text(form: dict) -> str:
+        return workflow_query_text(form, include_notes=config.query_notes, category=config.query_category)
+
+    return query_text
+
+
 def retrieval_only(args, config, db_url: str, meta, entries) -> int:
     """A run that measures retrieval alone; see evaluation.runner.run_retrieval_only."""
     from evaluation.retrieval import workflow_query_text
@@ -122,7 +131,7 @@ def retrieval_only(args, config, db_url: str, meta, entries) -> int:
     run_dir.mkdir(parents=True)
     print(f"run {run_id}: retrieval only, git {commit[:7]}{' (dirty)' if dirty else ''}")
 
-    metrics = run_retrieval_only(entries, config, workflow_query_text, make_retrieve(config, db_url),
+    metrics = run_retrieval_only(entries, config, make_query_text(config), make_retrieve(config, db_url),
                                  on_result=lambda record: append_jsonl(run_dir / "results.jsonl", record))
     finished = utc_now()
     summary = {
@@ -194,6 +203,8 @@ def make_services(client, config, db_url: str):
 def main() -> int:
     args = parse_args()
     config = load_config(args.config)
+    if config.query_differs_from_workflow and not args.retrieval_only:
+        sys.exit(f"ERROR: config {config.name!r} measures a query the workflow does not send; use --retrieval-only")
     db_url = configure_environment(config)
 
     from fastapi.testclient import TestClient

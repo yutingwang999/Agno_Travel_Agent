@@ -25,10 +25,12 @@
 - [x] 4.1 First run a, vector-only retrieval, on the new corpus as the baseline; Verify: `docs/experiments.md` has the numbers for a
 - [x] 4.2 b: destination filtering (city + `australia`; cities not in the knowledge base retrieve only `australia`), adding `destination_matched` to the event; Verify: unit tests cover Known city / City not in the knowledge base; run the evaluation and record b
 - [x] 4.3 c: BM25 + vector two-way candidates (Top-20 each) + RRF fusion; also use Agno `SearchType.hybrid` as a control group; Verify: a unit test asserts "a chunk that matches only on keywords can still be selected as a candidate"; run the evaluation and record c and the control group
-- [ ] 4.4 d: Cross-Encoder reranking, falling back to the pre-rerank order when model loading or inference fails; Verify: a unit test mocks a reranking failure; run the evaluation and record d along with memory usage
+Tasks 4.6 and 4.7 run before 4.4 and 4.5: step c fell short of step b on a query without `notes`, so the query is settled before deciding on reranking or chunk sizes.
+
+- [x] 4.6 Text chunks output all fields; query construction includes `notes`; Verify: update `test_rag_retrieve.py`
+- [ ] 4.7 Compare 12 groups on the evaluation dataset, every combination of: `notes` in the query or not; the category as matched today, matched on an intent text without the budget phrase, or left out of the query; search as in b or as in c. Decide the query from the results, and update the query construction requirement if the choice departs from it; Verify: the `docs/experiments.md` entry shows Recall@5 and MRR for every group, overall, per `corpus_coverage`, and for entries with `form.notes` and without separately (without notes the groups that differ only in `notes` must retrieve identical results)
+- [ ] 4.4 d: Cross-Encoder reranking on the query chosen in 4.7, falling back to the pre-rerank order when model loading or inference fails; Verify: a unit test mocks a reranking failure; run the evaluation and record d along with memory usage
 - [ ] 4.5 Compare 2–3 chunk sizes and the embedding types before and after the change, decide the final configuration, and write it into design.md and `docs/experiments.md`; Verify: both Recall@5 and MRR of the final configuration are higher than a; if reranking is used, the added latency is ≤ 1 second
-- [ ] 4.6 Text chunks output all fields; query construction includes `notes`; Verify: update `test_rag_retrieve.py`
-- [ ] 4.7 Compare the query construction with `notes` against the fixed concatenation on the evaluation dataset, reporting entries with `form.notes` and entries without separately (without notes the two queries are identical); Verify: the `docs/experiments.md` entry shows Recall@5 and MRR for both groups
 
 ## 5. Interim routing and a single template
 
@@ -48,7 +50,8 @@
 
 ## 7. API
 
-- [ ] 7.1 `TravelRequest` gains a `notes` field (leading/trailing whitespace stripped, at most 500 characters, null when blank), and the frontend adds an optional input box; Verify: `test_intake.py` adds Blank notes / Notes too long; manually submit a request with notes and see it in `query_text` in the rag_retrieve panel; harden's injection guardrail applies to `notes` as well
+- [x] 7.1 `TravelRequest` gains a `notes` field (leading/trailing whitespace stripped, at most 500 characters, null when blank), and intake emits it; harden's injection guardrail applies to `notes` as well; Verify: `test_intake.py` adds Blank notes / Notes too long; `test_input_guard.py` covers injection in `notes`
+- [ ] 7.3 The frontend adds an optional `notes` input box; Verify: manually submit a request with notes and see it in `query_text` in the rag_retrieve panel
 - [ ] 7.2 Update the "Failure behaviour" diagrams and event-sequence table in `docs/api.md` (retrieval always runs; no template selection by confidence and no fallback template, so a missing `itinerary_with_context` is an error) and `docs/main-logic-diagram.png` (no confidence branch); Verify: code review
 
 ## 8. Evaluation and regression

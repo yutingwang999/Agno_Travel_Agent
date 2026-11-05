@@ -83,6 +83,7 @@ def build_additional_data(
         "budget": travel_request.budget,
         "travel_style": travel_request.travel_style,
         "max_daily_budget_aud": travel_request.max_daily_budget_aud,
+        "notes": travel_request.notes,
         "template_version": template_version,
     }
 

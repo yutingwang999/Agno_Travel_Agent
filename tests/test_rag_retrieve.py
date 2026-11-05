@@ -195,7 +195,7 @@ def test_retrieved_context_respects_top_k_limit():
 
 
 def test_retrieved_context_chunk_fields():
-    """Each item in retrieved_context must have destination, title, chunk_text."""
+    """Each item in retrieved_context has every field of the spec's chunk shape."""
     from app.workflow.steps.rag_retrieve import rag_retrieve_executor
 
     fake_chunks = _make_fake_chunks(2)
@@ -211,9 +211,7 @@ def test_retrieved_context_chunk_fields():
 
     event = json.loads(output.content)
     for item in event["data"]["retrieved_context"]:
-        assert "destination" in item
-        assert "title" in item
-        assert "chunk_text" in item
+        assert set(item) == {"chunk_id", "destination", "state", "title", "chunk_text", "source", "section"}
 
 
 # ---------------------------------------------------------------------------
@@ -430,3 +428,79 @@ def test_extract_field_returns_empty_string_on_malformed_json():
     result = _extract_field_from_step(step_input, "intake", "destination")
 
     assert result == ""
+
+
+# ---------------------------------------------------------------------------
+# Query construction and chunk shape (rebuild-rag task 4.6)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("intake", "cag", "query"),
+    [
+        (  # Spec scenario "Full query"
+            {"destination": "sydney", "travel_style": "family", "notes": None},
+            {"matched_category": "family"},
+            "family travel in sydney family itinerary",
+        ),
+        (  # Spec scenario "Notes included"
+            {"destination": "sydney", "travel_style": "family", "notes": "kids love animals"},
+            {"matched_category": "family"},
+            "kids love animals family travel in sydney family itinerary",
+        ),
+        (  # Spec scenario "Missing destination"
+            {"destination": ""},
+            None,
+            "travel in Australia",
+        ),
+    ],
+)
+def test_query_text_is_built_as_the_spec_says(intake, cag, query):
+    from app.workflow.steps.rag_retrieve import _build_query_text
+
+    assert _build_query_text(_make_step_input(intake_data=intake, cag_data=cag)) == query
+
+
+def test_extract_field_returns_empty_string_for_null():
+    """A null field must not turn into the text "None" inside the query."""
+    from app.workflow.steps.rag_retrieve import _extract_field_from_step
+
+    step_input = _make_step_input(intake_data={"notes": None})
+
+    assert _extract_field_from_step(step_input, "intake", "notes") == ""
+
+
+def test_chunk_fields_come_from_the_chunk_metadata():
+    """Spec scenario "Chunk fields"."""
+    from app.workflow.retrieval_service import RetrievedChunk
+    from app.workflow.steps.rag_retrieve import rag_retrieve_executor
+
+    chunk = RetrievedChunk(
+        destination="sydney",
+        title="Testville",
+        chunk_text="Made up text.",
+        metadata={
+            "chunk_id": "made-up-id",
+            "state": "New South Wales",
+            "source": "https://example.com/testville",
+            "section": "Eat",
+        },
+    )
+    with (
+        patch("app.workflow.steps.rag_retrieve.retrieve_documents", return_value=[chunk]),
+        patch("app.workflow.steps.rag_retrieve.destination_in_knowledge_base", return_value=True),
+        patch.dict("os.environ", {"DATABASE_URL": "postgresql://fake", "GEMINI_API_KEY": "fake-key"}),
+    ):
+        output = rag_retrieve_executor(_make_step_input(intake_data={"destination": "sydney"}))
+
+    assert json.loads(output.content)["data"]["retrieved_context"] == [
+        {
+            "chunk_id": "made-up-id",
+            "destination": "sydney",
+            "state": "New South Wales",
+            "title": "Testville",
+            "chunk_text": "Made up text.",
+            "source": "https://example.com/testville",
+            "section": "Eat",
+        }
+    ]

@@ -48,12 +48,13 @@ Executes the 6-step CAG + RAG travel itinerary workflow and streams one Server-S
 | `budget` | string | Yes | One of `"budget"`, `"moderate"`, `"luxury"` |
 | `travel_style` | string | Yes | Non-empty free text (e.g. `"family"`, `"adventure"`) |
 | `max_daily_budget_aud` | integer | No | Daily budget per person in whole AUD, excluding accommodation; at least 1, no upper bound. Sets the request's daily budget ceiling (see below). A fractional value is a 422 |
+| `notes` | string | No | Free text for details the other fields cannot express, added to the retrieval query. Surrounding whitespace is stripped, at most 500 characters (longer is a 422), and blank counts as absent |
 
 **Daily budget ceiling.** All costs in the itinerary are AUD per person, excluding accommodation. The ceiling is `max_daily_budget_aud` when given, otherwise the budget level's default: `budget` 70, `moderate` 200, `luxury` none. The amount wins over the level when they seem to disagree (`budget` with 500 a day is accepted, with a ceiling of 500); the level still describes the travel style. The generation prompt states the ceiling, and an itinerary whose total exceeds the ceiling times the number of days fails validation and gets one correction call. Whether an amount is realistic for the destination is not checked.
 
 **Input guards.** After field validation and before the workflow starts, two checks run; neither calls an external API, and a refused request runs no workflow step:
 
-1. **Prompt injection.** `destination` and `travel_style` are matched against a configurable list of patterns (English and Chinese, e.g. "ignore previous instructions", "system prompt", `<|im_start|>`, "忽略之前的指令"). A match is refused with reason `input_rejected`.
+1. **Prompt injection.** `destination`, `travel_style` and `notes` are matched against a configurable list of patterns (English and Chinese, e.g. "ignore previous instructions", "system prompt", `<|im_start|>`, "忽略之前的指令"). A match is refused with reason `input_rejected`.
 2. **Destination.** The destination must be in the Australian place list (`data/places/australia.tsv`: Australian places from GeoNames with at least 1,000 people, states and territories, major tourist destinations, and one Chinese name per major place in Simplified and Traditional script). Trailing state, territory or country qualifiers are ignored (`"Sydney, NSW"`, `"Perth, WA, Australia"`). Anything else is refused with reason `destination_out_of_scope`, including:
    - places outside Australia (`"Paris"`);
    - destinations too vague to look up (`"Australia"`, `"the east coast"`);
@@ -122,7 +123,7 @@ Every event shares the same outer shape:
 
 #### `intake`
 
-Input fields after normalisation, validation and the input guards: `destination` is the canonical name from the place list, and `max_daily_budget_aud` is `null` when the request has none.
+Input fields after normalisation, validation and the input guards: `destination` is the canonical name from the place list, and `max_daily_budget_aud` and `notes` are `null` when the request has none.
 
 ```json
 {
@@ -135,7 +136,8 @@ Input fields after normalisation, validation and the input guards: `destination`
     "trip_length":          3,
     "budget":               "moderate",
     "travel_style":         "cultural",
-    "max_daily_budget_aud": null
+    "max_daily_budget_aud": null,
+    "notes":                null
   },
   "error": null
 }
@@ -211,9 +213,13 @@ Top-k source document chunks retrieved from PgVector.
   "data": {
     "retrieved_context": [
       {
-        "destination": "Sydney",
+        "chunk_id":    "example-chunk-id",
+        "destination": "sydney",
+        "state":       "New South Wales",
         "title":       "Guide to Sydney",
-        "chunk_text":  "Example chunk text: a few sentences about the destination from the knowledge base..."
+        "chunk_text":  "Example chunk text: a few sentences about the destination from the knowledge base...",
+        "source":      "https://example.com/guide-to-sydney",
+        "section":     "See"
       }
     ],
     "chunks_retrieved":  5,
@@ -226,9 +232,9 @@ Top-k source document chunks retrieved from PgVector.
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `retrieved_context` | array | List of chunk objects. Empty array if retrieval failed (graceful degradation). |
+| `retrieved_context` | array | List of chunk objects. Empty array if retrieval failed (graceful degradation). `state` is `null` for Australia-wide documents, and `source` is a URL or `"handwritten"`. |
 | `chunks_retrieved` | integer | Number of chunks returned |
-| `query_text` | string | The query string sent to the vector search |
+| `query_text` | string | The query string sent to the search: the request's `notes` (if any), `travel_style`, `travel in <destination>`, and `<matched category> itinerary` |
 | `destination_matched` | boolean | Whether the knowledge base holds chunks for the destination. Retrieval searches that destination plus the Australia-wide documents; when this is false, only the Australia-wide documents |
 
 #### `generate`

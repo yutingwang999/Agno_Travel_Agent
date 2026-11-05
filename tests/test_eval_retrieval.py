@@ -222,3 +222,95 @@ def test_query_text_is_built_even_for_high_confidence(monkeypatch):
 
     form = {"destination": "Sydney", "trip_length": 3, "budget": "moderate", "travel_style": "family"}
     assert workflow_query_text(form) == "family travel in sydney family itinerary"
+
+
+# ---------------------------------------------------------------------------
+# Query constructions compared by rebuild-rag task 4.7
+# ---------------------------------------------------------------------------
+
+_FORM_WITH_NOTES = {
+    "destination": "Sydney",
+    "trip_length": 3,
+    "budget": "moderate",
+    "travel_style": "family",
+    "notes": "kids love animals",
+}
+
+
+def _variant_workflow(monkeypatch):
+    """Today's matcher returns "family"; the one in the harness records its intent and returns "wildlife"."""
+    from app.workflow.cag_matcher import MatchResult
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://test:test@localhost/test")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr("app.workflow.steps.cag_match.match_category", lambda **kwargs: _match(0.5))
+    intents: list[str] = []
+
+    def match_without_budget(intent_text, **kwargs):
+        intents.append(intent_text)
+        return MatchResult("wildlife", 0.5, "friendly", "", False)
+
+    monkeypatch.setattr("app.workflow.cag_matcher.match_category", match_without_budget)
+    return intents
+
+
+def test_query_with_notes_matches_the_workflow(mocked_workflow):
+    """Notes travel from the request through intake into the query rag_retrieve sends."""
+    from app.main import _run_workflow
+    from app.workflow.intake_model import TravelRequest
+
+    list(_run_workflow("sid-notes", TravelRequest.model_validate(_FORM_WITH_NOTES)))
+
+    assert mocked_workflow[0] == "kids love animals family travel in sydney family itinerary"
+    assert workflow_query_text(_FORM_WITH_NOTES) == mocked_workflow[0]
+
+
+@pytest.mark.parametrize(
+    ("include_notes", "category", "query"),
+    [
+        (False, "current", "family travel in sydney family itinerary"),
+        (False, "no_budget", "family travel in sydney wildlife itinerary"),
+        (False, "no_category", "family travel in sydney"),
+        (True, "current", "kids love animals family travel in sydney family itinerary"),
+        (True, "no_budget", "kids love animals family travel in sydney wildlife itinerary"),
+        (True, "no_category", "kids love animals family travel in sydney"),
+    ],
+)
+def test_every_query_construction(monkeypatch, include_notes, category, query):
+    _variant_workflow(monkeypatch)
+
+    assert workflow_query_text(_FORM_WITH_NOTES, include_notes=include_notes, category=category) == query
+
+
+def test_no_budget_matches_on_an_intent_text_without_the_budget(monkeypatch):
+    intents = _variant_workflow(monkeypatch)
+
+    workflow_query_text(_FORM_WITH_NOTES, category="no_budget")
+
+    assert intents == ["family trip to sydney"]
+
+
+def test_no_category_does_not_match_a_category(monkeypatch):
+    intents = _variant_workflow(monkeypatch)
+    monkeypatch.setattr(
+        "app.workflow.steps.cag_match.match_category",
+        lambda **kwargs: pytest.fail("no_category must not match a category"),
+    )
+
+    workflow_query_text(_FORM_WITH_NOTES, category="no_category")
+
+    assert intents == []
+
+
+def test_an_entry_without_notes_has_the_same_query_either_way(monkeypatch):
+    _variant_workflow(monkeypatch)
+    form = {key: value for key, value in _FORM_WITH_NOTES.items() if key != "notes"}
+
+    assert workflow_query_text(form, include_notes=True) == workflow_query_text(form, include_notes=False)
+
+
+def test_unknown_query_category_is_rejected(monkeypatch):
+    _variant_workflow(monkeypatch)
+
+    with pytest.raises(ValueError, match="unknown query category"):
+        workflow_query_text(_FORM_WITH_NOTES, category="nonsense")

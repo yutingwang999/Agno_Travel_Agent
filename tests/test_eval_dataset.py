@@ -214,13 +214,12 @@ def test_notes_are_optional_and_bounded():
         DatasetEntry.model_validate(raw[0])
 
 
-def test_v010_request_model_ignores_notes():
-    """The baseline sends form.notes too; v0.1.0's TravelRequest must drop it."""
+def test_request_model_keeps_notes():
+    """Entries send form.notes; rebuild-rag's TravelRequest keeps them (v0.1.0 dropped them)."""
     from app.workflow.intake_model import TravelRequest
 
     form = _entry(0)["form"] | {"notes": "kids are 6 and 9"}
-    request = TravelRequest.model_validate(form)
-    assert "notes" not in request.model_dump()
+    assert TravelRequest.model_validate(form).notes == "kids are 6 and 9"
 
 
 def test_prompt_injection_must_expect_refuse():

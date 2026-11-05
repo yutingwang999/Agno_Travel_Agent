@@ -35,10 +35,10 @@ DEFAULT_TOP_K = 5
 def _build_query_text(step_input: StepInput) -> str:
     """Construct a retrieval query from intake and cag_match step outputs.
 
-    Reads ``destination`` and ``travel_style`` from the intake SSE event and
-    ``matched_category`` from the cag_match SSE event to form a targeted
-    retrieval query.  Falls back to using just the destination if earlier step
-    outputs are unavailable.
+    Reads ``notes``, ``travel_style`` and ``destination`` from the intake SSE
+    event and ``matched_category`` from the cag_match SSE event to form a
+    targeted retrieval query.  Falls back to using just the destination if
+    earlier step outputs are unavailable.
 
     Args:
         step_input: Agno step input carrying previous step outputs.
@@ -46,11 +46,14 @@ def _build_query_text(step_input: StepInput) -> str:
     Returns:
         A free-text query string for the knowledge-base search.
     """
+    notes = _extract_field_from_step(step_input, "intake", "notes")
     destination = _extract_field_from_step(step_input, "intake", "destination")
     travel_style = _extract_field_from_step(step_input, "intake", "travel_style")
     matched_category = _extract_field_from_step(step_input, "cag_match", "matched_category")
 
     parts = []
+    if notes:
+        parts.append(notes)
     if travel_style:
         parts.append(travel_style)
     parts.append(f"travel in {destination}" if destination else "travel in Australia")
@@ -69,14 +72,15 @@ def _extract_field_from_step(step_input: StepInput, step_name: str, field: str) 
         field:      Key to extract from the SSE event ``data`` dict.
 
     Returns:
-        The string value, or an empty string if unavailable or malformed.
+        The string value, or an empty string if unavailable, null or malformed.
     """
     content = step_input.get_step_content(step_name)
     if content is None:
         return ""
     try:
         event = json.loads(content)
-        return str(event.get("data", {}).get(field, ""))
+        value = event.get("data", {}).get(field)
+        return "" if value is None else str(value)
     except (json.JSONDecodeError, TypeError):
         return ""
 
@@ -132,9 +136,13 @@ def rag_retrieve_executor(step_input: StepInput) -> StepOutput:
 
     retrieved_context = [
         {
+            "chunk_id": chunk.metadata.get("chunk_id"),
             "destination": chunk.destination,
+            "state": chunk.metadata.get("state"),
             "title": chunk.title,
             "chunk_text": chunk.chunk_text,
+            "source": chunk.metadata.get("source"),
+            "section": chunk.metadata.get("section"),
         }
         for chunk in chunks
     ]

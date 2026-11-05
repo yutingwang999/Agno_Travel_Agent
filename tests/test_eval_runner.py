@@ -298,3 +298,33 @@ def test_retrieval_only_records_an_error_instead_of_a_zero_recall():
     assert metrics["retrieval"]["errors"] == 1
     assert metrics["retrieval"]["recall_at_k"] is None
     assert "retrieval_error" in records[0]
+
+
+def test_query_comparison_configs_cover_the_twelve_groups():
+    """Groups 1 and 2 are steps b and c, which ran before notes reached the query."""
+    configs = [load_config("rebuild-rag-b"), load_config("rebuild-rag-c")]
+    configs += [load_config(f"rebuild-rag-q{number}") for number in range(3, 13)]
+
+    groups = {(c.query_notes, c.query_category, c.search_mode) for c in configs}
+
+    assert groups == {
+        (notes, category, search)
+        for notes in (False, True)
+        for category in ("current", "no_budget", "no_category")
+        for search in ("vector", "bm25_rrf")
+    }
+    assert {c.knowledge_table for c in configs} == {"travel_docs_v2_c800"}
+    assert all(c.destination_filter and c.retrieval_k == 5 for c in configs)
+
+
+@pytest.mark.parametrize(
+    ("fields", "differs"),
+    [
+        ({}, False),
+        ({"query_notes": False}, True),
+        ({"query_category": "no_budget"}, True),
+        ({"query_category": "no_category"}, True),
+    ],
+)
+def test_a_query_the_workflow_does_not_send_is_flagged(fields, differs):
+    assert CONFIG.model_copy(update=fields).query_differs_from_workflow is differs
