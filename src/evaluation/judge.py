@@ -30,7 +30,7 @@ PROMPTS_DIR = ROOT_DIR / "eval" / "judge_prompts"
 DEFAULT_JUDGE_MODEL = "gpt-6-luna"
 FAITHFULNESS_PROMPT = ("faithfulness", 2)
 DESTINATION_PROMPT = ("destination", 2)
-PREFERENCE_PROMPT = ("preference", 1)
+PREFERENCE_PROMPT = ("preference", 2)
 NO_NOTES = "(none)"
 
 # The last two exist from faithfulness v2 on; verdicts stored from v1 use the first four.

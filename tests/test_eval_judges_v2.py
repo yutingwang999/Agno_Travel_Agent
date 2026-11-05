@@ -106,12 +106,13 @@ def test_new_prompts_have_their_placeholders_and_kinds():
     assert "`activity`" in faithfulness and "`season`" in faithfulness
     assert "{knowledge_context}" in faithfulness and "{itinerary}" in faithfulness
     assert "{notes}" in load_prompt("destination", 2)
-    preference = load_prompt("preference", 1)
+    assert "{notes}" in load_prompt("preference", 1)
+    preference = load_prompt("preference", 2)
     assert "{travel_style}" in preference and "{notes}" in preference and "{itinerary}" in preference
 
 
 def test_summary_records_the_versions_used():
-    assert Judge(FakeClient()).prompt_versions == {"faithfulness": 2, "destination": 2, "preference": 1}
+    assert Judge(FakeClient()).prompt_versions == {"faithfulness": 2, "destination": 2, "preference": 2}
 
 
 def test_destination_prompt_carries_the_notes():
@@ -193,7 +194,7 @@ def test_rejudging_can_keep_a_kind_as_stored():
 
     assert record["judge"]["faithfulness"]["version"] == 1
     assert record["judge"]["destination"]["version"] == 1
-    assert record["judge"]["preference"]["version"] == 1
+    assert record["judge"]["preference"]["version"] == 2
 
 
 def test_a_record_the_run_did_not_judge_stays_as_it_is():
@@ -383,3 +384,27 @@ def test_an_added_requirement(judge):
 
     assert verdict.added_requirements, verdict
     assert json.dumps(verdict.model_dump())
+
+
+@pytest.mark.integration
+def test_a_planned_meal_is_not_an_added_requirement(judge):
+    plan = _plan("Fish and chips by the harbour, then a vegetarian dinner at a garden cafe", "Eat seafood at the pier")
+    verdict = judge.preference(plan, "beaches").verdict
+
+    assert not verdict.added_requirements, verdict
+
+
+@pytest.mark.integration
+def test_etiquette_and_what_the_traveller_stated_are_not_added_requirements(judge):
+    plan = _plan("Family morning at the zoo with the children", "Follow the rules at sacred sites and wear a hat")
+    verdict = judge.preference(plan, "family").verdict
+
+    assert not verdict.added_requirements, verdict
+
+
+@pytest.mark.integration
+def test_an_assumed_diet_is_an_added_requirement(judge):
+    plan = _plan("Lunch at a vegan cafe", "Every meal here is vegan because you do not eat animal products")
+    verdict = judge.preference(plan, "food").verdict
+
+    assert verdict.added_requirements, verdict
