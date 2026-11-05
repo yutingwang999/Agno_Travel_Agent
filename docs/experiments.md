@@ -32,6 +32,7 @@ This file records the effect of every change that affects quality, behaviour or 
 
 | Date | Change | What changed | Key result | Record |
 | --- | --- | --- | --- | --- |
+| 2026-11-05 | `rebuild-rag` | v0.1.0 baseline re-judged with faithfulness v2, destination v2 and preference v1 | Faithfulness with context 23.0% under v1, 20.5% under v2 (mean of two runs); not calibrated yet | [Re-judged baseline](#2026-11-05--rebuild-rag--v010-baseline-re-judged-with-faithfulness-v2-destination-v2-and-preference-v1) |
 | 2026-11-05 | `rebuild-rag` | BM25, Agno hybrid and reranking removed from the code | No numbers changed; commit `2901b5c` can re-run them | [Removal](#2026-11-05--rebuild-rag--bm25-agno-hybrid-and-reranking-removed-from-the-code) |
 | 2026-11-05 | `rebuild-rag` | Chunk size and embedding task types | No chunk size met the criteria, so 800 / 80 stays. `retrieval` task types beat `semantic`: `city` Recall@5 0.514 against 0.438, MRR@5 0.788 against 0.751 | [Chunking](#2026-11-05--rebuild-rag--chunk-size-and-embedding-task-types) |
 | 2026-11-05 | `rebuild-rag` | Step d: Cross-Encoder reranking on the chosen query | Not better: `city` Recall@5 0.514 to 0.501, MRR@5 0.788 to 0.772 with vector candidates (0.490 / 0.772 with BM25 candidates too); adds 286 ms p50 and about 890 MB of memory | [Step d](#2026-11-05--rebuild-rag-step-d--cross-encoder-reranking-on-the-chosen-query) |
@@ -89,6 +90,22 @@ Copy the template below, fill it in, and put it at the **top** of the "Records" 
 ---
 
 ## Records
+
+### 2026-11-05 · rebuild-rag · v0.1.0 baseline re-judged with faithfulness v2, destination v2 and preference v1
+
+The two full v0.1.0 baseline runs, re-judged on commit `ccbcdf4` with no regeneration, so later runs can be compared with them on the same prompts. All 146 itineraries judged, no errors. These prompts are **not calibrated yet**.
+
+| Source run | Re-judged run | Faithfulness with context, v1 → v2 | Claims v1 → v2 | Destination rate v1 → v2 | Preferences followed | Added requirements (itineraries) | Judge cost |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `20261026T111928Z-v010-baseline` | `20261105T101620Z-v010-baseline-rejudge` | 22.2% → 20.3% | 962 → 1359 | 91.8% → 94.5% | 82.0% of 128 | 94 (48) | $0.219 |
+| `20261026T113131Z-v010-baseline` | `20261105T102424Z-v010-baseline-rejudge` | 23.8% → 20.7% | 919 → 1365 | 90.4% → 91.8% | 82.9% of 129 | 86 (49) | $0.223 |
+
+- **The faithfulness baseline to beat under v2 is 20.5% with context** (mean of the two runs), against 23.0% under v1. The fall comes from the new kinds: claims rose by more than a third, and `activity` claims, about 28% of them, are supported about 14% of the time. Without context every claim stays unsupported.
+- **`activity` catches what v1 could not.** In e065 the private tours and charters v1 passed over are now extracted and unsupported, as design decision 4 expected.
+- **Destination rate moved for reasons other than notes.** The verdict changed for e017 and e070 in one run, and for e019, e037 and e046 in the other; only e037 has notes, and they name no place. This is judge variation between prompts on the same itineraries, about 2 to 3 entries in 73.
+- **Preference numbers are provisional.** Added requirements look over-listed, with suggestions of what to do counted as requirements. Calibration has not measured this yet.
+
+---
 
 ### 2026-11-05 · rebuild-rag · BM25, Agno hybrid and reranking removed from the code
 
