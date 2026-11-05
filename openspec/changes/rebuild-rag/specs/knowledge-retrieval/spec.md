@@ -22,7 +22,7 @@ The step SHALL build the query text by joining, with single spaces: the request 
 - **THEN** the query text is `"kids love animals family travel in sydney"`
 
 ### Requirement: Knowledge base search
-The step SHALL rank the destination-filtered chunks of the knowledge base by relevance to the query text and SHALL return at most 5 chunks (`top_k` = 5), most relevant first. The ranking method (search modes, fusion, and reranking) SHALL be the configuration selected by the stepwise retrieval comparison and recorded, with its evaluation results, in `docs/experiments.md`.
+The step SHALL rank the destination-filtered chunks of the knowledge base by relevance to the query text and SHALL return at most 5 chunks (`top_k` = 5), most relevant first, ranked by vector similarity. This ranking SHALL be the configuration selected by the stepwise retrieval comparison and recorded, with its evaluation results, in `docs/experiments.md`.
 
 #### Scenario: Top-k limit
 - **WHEN** more than 5 chunks pass the destination filter

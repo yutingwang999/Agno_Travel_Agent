@@ -54,7 +54,7 @@ A complete redesign of routing (LLM request parsing, whether to introduce true C
 - Tests: the two high-confidence cases in `test_golden.py` assert "no `rag_retrieve`" and must change to assert that retrieval happens and citations are valid; cases related to the threshold and template selection in `test_retrieval_decision.py` and `test_generate.py` need updating
 - Database: `ai.travel_docs` must be rebuilt and re-embedded; a new migration drops `source_documents`
 - Evaluation: after the corpus changes, the evaluation dataset's `relevant_sections` must be re-labelled for the new corpus and the corpus version bumped to v2; the evaluation database uses one table per corpus and chunking configuration (`travel_docs_v2_<config>`), and `travel_docs_v1` is kept for re-running the baseline
-- Dependencies: a BM25 implementation (e.g. `rank-bm25`); the Cross-Encoder needs `sentence-transformers` (which brings in torch)
+- Dependencies: none in the end. `rank-bm25` and `sentence-transformers` (with torch) were needed for the comparison and removed when neither approach was adopted
 - **Paid API**: re-embedding several hundred to a thousand-plus chunks, and again for every chunking configuration tried — embeddings must be cached by "text hash + model + task type"
 - **Out of scope**: frontend redesign, changing the generation model, a complete routing redesign, streaming output, Graph RAG, multilingual support
 - **Dependencies** (must be archived in this order, otherwise this change's deltas cannot be applied):
@@ -66,4 +66,4 @@ A complete redesign of routing (LLM request parsing, whether to introduce true C
 
 - Retrieval: the Recall@5 and MRR of every step a → b → c → d are written into `docs/experiments.md`; both metrics of the final configuration are higher than the vector-only baseline on **the same new corpus**.
 - Generation: faithfulness is higher than both the v0.1.0 baseline and the final result of `harden-workflow-guardrails` (which lowered it from 23.0% to 19.6% on corpus v1 and handed this criterion on), comparing all three with the same judge prompt version (re-judge the stored harden runs with faithfulness v2, as task 2.3 does for the baseline), with the requests that used to take the high-confidence path (no knowledge context) reported separately; citation validity is 100% (invalid citations are stopped by validation).
-- System: reranking adds no more than 1 second of retrieval latency; the golden tests still pass.
+- System: if reranking is adopted, it adds no more than 1 second of retrieval latency; the golden tests still pass.

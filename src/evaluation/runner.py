@@ -70,8 +70,6 @@ class RunConfig(BaseModel):
     # Restrict retrieval to the destination and the Australia-wide documents. Only the
     # harness's own retrieval reads this; the workflow always filters.
     destination_filter: bool = True
-    # How the knowledge base is searched (app.workflow.retrieval_service.SEARCH_MODES).
-    search_mode: Literal["vector", "bm25_rrf", "agno_hybrid", "vector_rerank", "bm25_rrf_rerank"] = "vector"
     # How the measured query is built. The defaults are the workflow's query; anything
     # else is a comparison the workflow does not run, so it needs --retrieval-only.
     query_notes: bool = True

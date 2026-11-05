@@ -32,6 +32,7 @@ This file records the effect of every change that affects quality, behaviour or 
 
 | Date | Change | What changed | Key result | Record |
 | --- | --- | --- | --- | --- |
+| 2026-11-05 | `rebuild-rag` | BM25, Agno hybrid and reranking removed from the code | No numbers changed; commit `2901b5c` can re-run them | [Removal](#2026-11-05--rebuild-rag--bm25-agno-hybrid-and-reranking-removed-from-the-code) |
 | 2026-11-05 | `rebuild-rag` | Chunk size and embedding task types | No chunk size met the criteria, so 800 / 80 stays. `retrieval` task types beat `semantic`: `city` Recall@5 0.514 against 0.438, MRR@5 0.788 against 0.751 | [Chunking](#2026-11-05--rebuild-rag--chunk-size-and-embedding-task-types) |
 | 2026-11-05 | `rebuild-rag` | Step d: Cross-Encoder reranking on the chosen query | Not better: `city` Recall@5 0.514 to 0.501, MRR@5 0.788 to 0.772 with vector candidates (0.490 / 0.772 with BM25 candidates too); adds 286 ms p50 and about 890 MB of memory | [Step d](#2026-11-05--rebuild-rag-step-d--cross-encoder-reranking-on-the-chosen-query) |
 | 2026-11-05 | `rebuild-rag` | Query chosen: notes, style and destination, without the category | Group 11 of the comparison; search stays as in step b. The category still sets the generation prompt's tone and constraints | [Query chosen](#2026-11-05--rebuild-rag--query-chosen-notes-style-and-destination-without-the-category) |
@@ -88,6 +89,15 @@ Copy the template below, fill it in, and put it at the **top** of the "Records" 
 ---
 
 ## Records
+
+### 2026-11-05 · rebuild-rag · BM25, Agno hybrid and reranking removed from the code
+
+- **What changed**: `hybrid_search.py`, `reranker.py`, their tests, the `search_mode` configuration, `KNOWLEDGE_SEARCH_MODE`, the configurations using those searches (`rebuild-rag-c`, `-c-agno`, `-d`, `-d-fused`, `-q4`, `-q6`, `-q8`, `-q10`, `-q12`), and the `rank-bm25` and `sentence-transformers` dependencies.
+- **Why**: none of them met the criteria, and the retrieval they would serve is vector search alone. Reranking also needed torch and about 890 MB of process memory.
+- **How to re-run them**: commit `2901b5c` has the code and configurations. Earlier records keep their numbers, run IDs and these configuration names; the run summaries stay in the repository.
+- **Effect on results**: none intended. The search used by the final configuration is unchanged.
+
+---
 
 ### 2026-11-05 · rebuild-rag · chunk size and embedding task types
 

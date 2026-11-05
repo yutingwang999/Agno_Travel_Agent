@@ -300,18 +300,17 @@ def test_retrieval_only_records_an_error_instead_of_a_zero_recall():
     assert "retrieval_error" in records[0]
 
 
-def test_query_comparison_configs_cover_the_twelve_groups():
-    """Groups 1 and 2 are steps b and c, which ran before notes reached the query."""
-    configs = [load_config("rebuild-rag-b"), load_config("rebuild-rag-c")]
-    configs += [load_config(f"rebuild-rag-q{number}") for number in range(3, 13)]
+def test_query_comparison_configs_cover_every_query_construction():
+    """The odd groups of the 12-group comparison; group 1 is step b, which ran before notes reached the query."""
+    configs = [load_config("rebuild-rag-b")]
+    configs += [load_config(f"rebuild-rag-q{number}") for number in (3, 5, 7, 9, 11)]
 
-    groups = {(c.query_notes, c.query_category, c.search_mode) for c in configs}
+    groups = {(c.query_notes, c.query_category) for c in configs}
 
     assert groups == {
-        (notes, category, search)
+        (notes, category)
         for notes in (False, True)
         for category in ("matched", "no_budget", "no_category")
-        for search in ("vector", "bm25_rrf")
     }
     assert {c.knowledge_table for c in configs} == {"travel_docs_v2_c800"}
     assert all(c.destination_filter and c.retrieval_k == 5 for c in configs)
@@ -343,4 +342,4 @@ def test_chunking_configs_search_the_table_built_for_them(name):
     config = load_config(name)
     _, task_types, _ = dev.EVAL_KNOWLEDGE_TABLES[config.knowledge_table]
     assert config.embedding_task_types == task_types
-    assert config.search_mode == "vector" and not config.query_differs_from_workflow
+    assert not config.query_differs_from_workflow

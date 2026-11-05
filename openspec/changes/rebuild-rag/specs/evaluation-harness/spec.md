@@ -25,11 +25,18 @@ Plan entries of a corpus-versioned dataset SHALL carry `corpus_coverage`: `"city
 - **THEN** its summary has `metrics.faithfulness.by_corpus_coverage` with `itineraries`, `claims` and `supported_share` per group
 
 ### Requirement: Stepwise retrieval comparison
-The harness SHALL support evaluating these retrieval configurations on the same corpus version, each adding one change to the previous: (a) vector-only, (b) vector with destination filtering, (c) hybrid lexical and vector search with fusion and destination filtering, (d) configuration (c) with reranking; and the comparison report SHALL list Recall@5, MRR@5, and retrieval latency p50/p95 for each.
+These retrieval configurations SHALL have been evaluated on the same corpus version, each adding one change to the previous: (a) vector-only, (b) vector with destination filtering, (c) hybrid lexical and vector search with fusion and destination filtering, (d) configuration (c) with reranking; and the comparison report SHALL list Recall@5, MRR@5, and retrieval latency p50/p95 for each.
 
 #### Scenario: All four steps reported
 - **WHEN** the stepwise comparison is run on corpus version v2
 - **THEN** `docs/experiments.md` has one row for each of configurations (a) to (d), all on corpus version v2
+
+### Requirement: Configurations not adopted
+The harness SHALL keep supporting configurations (a) and (b). A configuration that was not adopted MAY be removed if `docs/experiments.md` names the commit that can re-run it.
+
+#### Scenario: Removed configuration
+- **WHEN** the code for configuration (d) is removed after it was not adopted
+- **THEN** `docs/experiments.md` keeps its results and names a commit that still has that code
 
 ### Requirement: Citation accuracy metric
 For itineraries that contain citations, the judge model SHALL decide whether each cited chunk supports the content of the day that cites it, and the harness SHALL report the share of supported citations and the share of days that have at least one citation when knowledge context was provided.

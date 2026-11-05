@@ -9,7 +9,6 @@ corpus_version: v2
 knowledge_table: travel_docs_v2_c1200
 embedding_task_types: retrieval
 destination_filter: true
-search_mode: vector
 retrieval_k: 5
 judge_concurrency: 8
 request_parser: false

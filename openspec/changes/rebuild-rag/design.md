@@ -29,12 +29,12 @@
 | Embedding cache | Cache locally by "text hash + model + task type", so comparing several chunking configurations does not repeat paid API calls | — |
 | Destination filtering | `destination IN (requested destination, 'australia')`; cities not in the knowledge base retrieve only `australia` | Filtering strictly by city would mean the Australia-wide documents are never retrieved, so it is not used |
 | Embedding | gemini-embedding-001; queries use `RETRIEVAL_QUERY`, documents use `RETRIEVAL_DOCUMENT`. `GeminiEmbedder` gains a task type parameter; **intent classification keeps using `SEMANTIC_SIMILARITY`**, so the 50 categories do not need re-embedding. A table is searched with the task types it was embedded with: `KNOWLEDGE_TASK_TYPES` selects `retrieval` (default) or `semantic`, and the corpus v1 tables stay `semantic` so the v0.1.0 baseline can be re-run | Compare the effect before and after the change |
-| Retrieval | Two paths, keyword + vector, Top-20 candidates each | (a) Our own BM25 (e.g. `rank-bm25`; a thousand-plus chunks fit in memory) + RRF; (b) Agno's `SearchType.hybrid`. Both go into the evaluation comparison, and the numbers decide |
-| Fusion | RRF (reciprocal rank fusion) | Alternative: take the union of both paths directly and hand it to reranking |
-| Reranking | A Cross-Encoder (e.g. the MiniLM family) reranks the candidates, keeping Top-5 | Whether fine-tuning is needed: see how it does without fine-tuning first |
+| Retrieval | Two paths, keyword + vector, Top-20 candidates each | (a) Our own BM25 (e.g. `rank-bm25`; a thousand-plus chunks fit in memory) + RRF; (b) Agno's `SearchType.hybrid`. Both go into the evaluation comparison, and the numbers decide. Not adopted: see Final retrieval configuration |
+| Fusion | RRF (reciprocal rank fusion) | Alternative: take the union of both paths directly and hand it to reranking. Not adopted: see Final retrieval configuration |
+| Reranking | A Cross-Encoder (e.g. the MiniLM family) reranks the candidates, keeping Top-5 | Whether fine-tuning is needed: see how it does without fine-tuning first. Not adopted: see Final retrieval configuration |
 | Query construction | `notes` (if any) + travel_style + destination, without the matched category | Chosen from 12 groups in `docs/experiments.md` (task 4.7): adding the category, or the category matched without the budget phrase, retrieved no better |
 | Step-by-step comparison | Run in order a vector-only → b + destination filtering → c + BM25 hybrid → d + reranking, running the evaluation harness at each step and recording Recall@5, MRR and latency | Each step changes only one variable, so improvements can be attributed |
-| Final retrieval configuration | Chunks of 800 characters with 80 overlap, `retrieval` task types, destination filter, vector search, query of `notes`, `travel_style` and destination | Chosen by the comparisons in `docs/experiments.md`: BM25 with RRF, Agno hybrid, Cross-Encoder reranking, 500 and 1200 character chunks and `semantic` task types did not meet the criteria |
+| Final retrieval configuration | Chunks of 800 characters with 80 overlap, `retrieval` task types, destination filter, vector search, query of `notes`, `travel_style` and destination | Chosen by the comparisons in `docs/experiments.md`: BM25 with RRF, Agno hybrid, Cross-Encoder reranking, 500 and 1200 character chunks and `semantic` task types did not meet the criteria. The BM25, Agno hybrid and reranking code and dependencies were then removed; commit `2901b5c` still has them |
 
 ### Interim routing: always retrieve
 
@@ -95,15 +95,15 @@ Decided with the user on 2026-11-01. **No corpus content is committed**: not the
 
 ## Risks / Trade-offs
 
-- [`sentence-transformers` brings in torch; the dependency is several hundred MB and CPU inference adds latency] → Load the reranking model once at process start; the success criteria set a latency cap; if it is exceeded, fall back to "fusion without reranking" or switch to a smaller model.
+- [`sentence-transformers` brings in torch; the dependency is several hundred MB and CPU inference adds latency] → Resolved: reranking was measured and not adopted, so the dependency was removed.
 - [Wikivoyage is CC BY-SA, requiring attribution and share-alike] → Every chunk stores `source`; the frontend shows sources; the README states the licence in general terms and `data/knowledge/SOURCES.md` (private) holds the per-page attribution; the corpus text itself is not committed (see "Corpus not in git").
 - [A fresh clone cannot run the integration tests offline or without the private repository, because the test fixture is built from a downloaded corpus whose page list is private] → `test-db-setup` builds it automatically once `sources.yaml` is in place; accepted as the price of not committing corpus text or its sources.
 - [`sources.yaml` lost locally and not copied to the private repository] → The corpus cannot be rebuilt exactly and evaluation numbers cannot be reproduced; copying it to the private repository is part of task 1.1.
 - [A pinned Wikivoyage revision later becomes unavailable (deleted or suppressed)] → The download fails for that page instead of silently fetching a newer revision; the source is then replaced in `sources.yaml` as a recorded corpus change.
 - [The cost of re-embedding a thousand-plus chunks] → Embedding cache; seed stays idempotent; tables are rebuilt only when the chunking configuration changes.
 - [The model may fill in citation ids arbitrarily] → The validity check stops ids that do not exist; citation accuracy is measured by the evaluation.
-- [The reranking model fails to download or inference errors] → Fall back to the pre-rerank order (see Reranking failure fallback in the spec).
-- [A local Cross-Encoder conflicts with roadmap item 8 (deployment): torch plus the model needs several hundred MB to over 1GB of memory, which very likely does not fit in the free tiers of Cloud Run / Render] → Record memory usage in the experiment report; at deployment time, choose between "smaller model / hosted reranking service / no reranking", justifying the trade-off with evaluation numbers.
+- [The reranking model fails to download or inference errors] → Resolved: reranking was not adopted.
+- [A local Cross-Encoder conflicts with roadmap item 8 (deployment): torch plus the model needs several hundred MB to over 1GB of memory] → Resolved: reranking was not adopted. The measured memory is in `docs/experiments.md`.
 - [Always retrieving adds one embedding call and retrieval latency to the former high-confidence requests] → List the latency and cost changes of these requests separately in the evaluation report.
 - [The new corpus requires re-labelling the evaluation dataset, which is a lot of work] → Label down to "page + section"; how many chunks a section is split into does not affect the labels.
 

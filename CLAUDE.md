@@ -16,7 +16,7 @@ Where an OpenSpec change contradicts DESIGN.md or the "Mandatory Architecture Co
 
 - `retrieval_decision` becomes a plain Step instead of an Agno Condition (`true-sse-streaming`).
 - Retrieval runs for every request and the two generation templates merge into one (`rebuild-rag`).
-- Custom retrieval code (BM25 + RRF, reranking) is allowed where the evaluation justifies it, despite "avoid custom vector search logic" (`rebuild-rag`).
+- Custom retrieval code is allowed where the evaluation justifies it, despite "avoid custom vector search logic" (`rebuild-rag`). BM25 + RRF, Agno hybrid and reranking were measured and not adopted, and were removed; `docs/experiments.md` records why.
 - The `source_documents` table is dropped (`rebuild-rag`, migration 0007).
 
 The non-structural rules in `docs/CLAUDE.md` still apply: plan before non-trivial changes, prompts live in the DB with versions, every step emits an SSE event and writes a trace, outputs are validated with Pydantic, and schema / public API changes need confirmation.

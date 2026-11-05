@@ -63,7 +63,6 @@ def configure_environment(config) -> str:
         DATABASE_URL=url,
         KNOWLEDGE_TABLE_NAME=config.knowledge_table,
         KNOWLEDGE_TASK_TYPES=config.embedding_task_types,
-        KNOWLEDGE_SEARCH_MODE=config.search_mode,
         LLM_MODEL=config.generation_model,
         EMBEDDING_MODEL=config.embedding_model,
         JUDGE_MODEL=config.judge_model,
