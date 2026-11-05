@@ -39,6 +39,9 @@ EVAL_DB_SUFFIX = "_eval_db"
 EVAL_KNOWLEDGE_TABLES = {
     "travel_docs_v1": ("v1", "semantic", None),
     "travel_docs_v2_c800": ("data/knowledge/corpus_c800_o80.jsonl", "retrieval", (800, 80)),
+    "travel_docs_v2_c500": ("data/knowledge/corpus_c500_o50.jsonl", "retrieval", (500, 50)),
+    "travel_docs_v2_c1200": ("data/knowledge/corpus_c1200_o120.jsonl", "retrieval", (1200, 120)),
+    "travel_docs_v2_c800_semantic": ("data/knowledge/corpus_c800_o80.jsonl", "semantic", (800, 80)),
 }
 
 DEFAULT_KNOWLEDGE_TABLE = "travel_docs"

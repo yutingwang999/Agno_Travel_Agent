@@ -328,3 +328,19 @@ def test_query_comparison_configs_cover_the_twelve_groups():
 )
 def test_a_query_the_workflow_does_not_send_is_flagged(fields, differs):
     assert CONFIG.model_copy(update=fields).query_differs_from_workflow is differs
+
+
+@pytest.mark.parametrize("name", ["rebuild-rag-q11", "rebuild-rag-c500", "rebuild-rag-c1200", "rebuild-rag-c800-semantic"])
+def test_chunking_configs_search_the_table_built_for_them(name):
+    """A table must be searched with the task types it was embedded with."""
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location("dev", Path(__file__).resolve().parents[1] / "scripts" / "dev.py")
+    dev = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(dev)
+
+    config = load_config(name)
+    _, task_types, _ = dev.EVAL_KNOWLEDGE_TABLES[config.knowledge_table]
+    assert config.embedding_task_types == task_types
+    assert config.search_mode == "vector" and not config.query_differs_from_workflow
