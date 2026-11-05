@@ -12,6 +12,7 @@ python scripts/eval_run.py --config v010-baseline --subset smoke     # smoke sub
 python scripts/eval_run.py --config <name> --subset dataset-v1      # the 73 dataset-v1 entries, to compare with the v0.1.0 baseline
 python scripts/eval_run.py --config <name> --retrieval-only          # retrieval alone (Recall, MRR, retrieve latency): nothing generated or judged; for comparing retrieval configurations
 python scripts/eval_run.py --config <name> --subset budget-amount   # the dataset-v2 entries with a budget amount (e074-e079)
+python scripts/eval_rejudge.py <run id>                              # re-judge a stored run with the current judge prompts, nothing regenerated
 python scripts/eval_compare.py <run id> <run id>                     # Markdown comparison table
 python scripts/eval_gate.py                                          # smoke run + thresholds; non-zero exit on failure
 ```
@@ -51,6 +52,10 @@ The private files hold model output — every itinerary and knowledge context in
 **Giving someone access**: add them to the private repository as a read-only collaborator and remove them afterwards, or send the files of the runs they asked for. Do not make the repository public temporarily: once public, it can be cloned and forked, and making it private again does not take that back.
 
 **Runs made before `generation_prompts/` existed** (the v0.1.0 baseline runs and `harden-workflow-guardrails` step (a)) were given the directory afterwards with `python scripts/eval_generation_prompts.py <run id> --correction-version N`, which copies the texts from the evaluation database and leaves `summary.json` unchanged; the correction template version is the one active at the run's commit.
+
+### Re-judging a stored run
+
+`python scripts/eval_rejudge.py <run id>` applies the current judge prompts to a run's stored itineraries and knowledge context. Nothing is regenerated, so before and after can use the same prompts. It needs the run's local `results.jsonl`, and writes a new run directory named `<UTC time>-<source config>-rejudge`. Its summary is the source's with the judge's metrics replaced, `rejudged_from` naming the source, and `metrics.rejudge` holding the count, errors and judge cost; `conditions.git_commit` is the commit that re-judged and `conditions.source_git_commit` the one that generated. `--kinds` limits which judge calls run, and `--entries` limits the entries, for checking a prompt by hand.
 
 ## Reading `summary.json`
 
@@ -130,7 +135,9 @@ Observed behaviour is `plan` (a validated itinerary), `refuse` (422 with a guard
 | `destination_rate` | Share whose every named place the judge considers in the destination or within a reasonable day trip (departure and return points are not counted) |
 | `destination_judged` | Itineraries the judge checked |
 
-**`faithfulness`** — The judge extracts specific claims (opening hours, prices, named places, transport routes and durations) and decides whether the knowledge context the generator was given supports each one; a matching name with a different location is unsupported.
+**`faithfulness`** — The judge extracts specific claims (opening hours, prices, named places, transport routes and durations, and from prompt v2 activities at a place and seasons) and decides whether the knowledge context the generator was given supports each one; a matching name with a different location is unsupported. Numbers from different prompt versions are not comparable: `conditions.judge_prompts` says which one a run used.
+
+**`preference`** — From judge prompt `preference_v1`. The judge lists what the traveller's `travel_style` and `notes` ask of the trip and decides whether the itinerary follows each (`followed_share`). It also lists requirements the itinerary imposes that the traveller did not state (`added_requirements`, `itineraries_with_added_requirements`), such as wheelchair access for "seniors, slow pace"; these are counted, not treated as failures, since some defaults are reasonable.
 
 | Field | Meaning |
 | --- | --- |
@@ -211,13 +218,17 @@ Replace each `?` with `y` or `n`; `supported` is `-` when the item is not a clai
 
 | Field | Set to `true` when | Set to `false` when |
 | --- | --- | --- |
-| `is_claim` | The text is one of the four kinds: an opening-hours statement about a place; a specific price of a specific thing (including "free entry" to a named place); a specific named venue, attraction, tour, event, business or named transport service; a specific transport route or duration between places | It is a general description ("enjoy the views", "cheap eats", "a free way to spend the morning"), traveller scheduling ("leave at 9am"), or the itinerary's own cost estimate |
+| `is_claim` | The text is one of the judge prompt's kinds (four in v1; v2 adds an activity at a place and a season): an opening-hours statement about a place; a specific price of a specific thing (including "free entry" to a named place); a specific named venue, attraction, tour, event, business or named transport service; a specific transport route or duration between places | It is a general description ("enjoy the views", "cheap eats", "a free way to spend the morning"), traveller scheduling ("leave at 9am"), or the itinerary's own cost estimate |
 | `supported` (only when `is_claim` is `true`) | The knowledge context states it, or something that directly implies it, **consistently with the itinerary** — the same place, in the same location | The context does not contain it, even if it is true in reality; or the context ties it to a different place (a Sydney tour placed in a Darwin itinerary). With no context, always `false` |
 | `in_destination` | The place is in the destination or a reasonable day trip from it for this trip length | It is too far to visit from the destination within this trip. Departure and return points should not appear; if one does, mark it `true` and note it |
 
+**Activities and seasons in judge prompt v2.** An `activity` is a specific thing a place has to offer ("swim with seals at Kangaroo Island"), not something anyone can do anywhere (walking around, having lunch, taking photos). It is supported only when the context offers that activity at that place. A `season` says certain months suit a place or activity; it is supported only when the context gives the same months for the same place or activity, and overlapping months are unsupported. When a place or service operates stays `opening_hours`. The two paragraphs below describe v1 and apply when reviewing a v1 run.
+
+**Preferences and added requirements.** `followed`: `y` when the itinerary visibly does what was asked: a specific request is planned at least once, a single-interest style shapes most of the trip, and each interest of a style with several has a real part of the plan, though not on every day; a passing mention in a tip does not count. Decide fit only, not whether the places are real. `added`: `y` when the itinerary imposes or assumes a requirement the traveller did not state; `n` when the traveller did state it, or when it is ordinary planning advice, a choice of places, what a planned activity obviously involves, or a cost choice rather than a requirement. Both are decided from the request and the itinerary, without the knowledge context.
+
 **Activities at a place are not claims in judge prompt v1.** In "spot wild koalas at Kennett River", the named place (Kennett River) is a claim; the activity (spotting koalas there) is not. When the judge extracts such a sentence as a `named_place` claim, decide `supported` on the place alone — is it in the context, in the same location — and ignore the activity. This keeps the review consistent with what faithfulness v1 measures. It also means an invented activity at a real place ("swim with dolphins at Bondi") is not caught; a later judge prompt adds an `activity` kind (see `rebuild-rag`).
 
-Also list after `missed:` any claim of the four kinds that the judge did not extract, as short quotes separated by `;`. Under each itinerary's sampled claims, the sheet lists the judge's other (unsampled) claims for reference: a claim in the itinerary that appears in neither list is a missed one. Missed claims are noted when seen while reading, not found by a line-by-line search, so the count is a lower bound; say so when reporting it.
+Also list after `missed:` any claim of the prompt's kinds that the judge did not extract, as short quotes separated by `;`. Under each itinerary's sampled claims, the sheet lists the judge's other (unsampled) claims for reference: a claim in the itinerary that appears in neither list is a missed one. Missed claims are noted when seen while reading, not found by a line-by-line search, so the count is a lower bound; say so when reporting it.
 
 ### Review questions and the reasoning behind the answers
 
@@ -290,6 +301,7 @@ If the judge extracts the *same* text twice — the route as `transport` and "Ma
 
 `score` prints, per stratum, how many items were compared and the agreement:
 
+- `preference.judge_followed` and `preference.judge_not_followed` — of the preferences the judge called followed or not followed, the share the reviewer agrees with; `preference.judge_added` — of the requirements the judge called added, the share the reviewer agrees really are.
 - `faithfulness.judge_supported` — of the claims the judge called supported, the share the reviewer also calls supported; low values mean faithfulness is **overstated**.
 - `faithfulness.judge_unsupported` — the same for unsupported; low values mean faithfulness is **understated**.
 - `extraction_precision` and `missed_claims` — how well the judge picks out claims.
@@ -314,7 +326,7 @@ Source: run `20261026T105704Z-v010-baseline-smoke` (10 entries, commit `88e5ad0`
 | Retrieval measurement, per labelled entry (harness side) | 1.36 s | ≈ 0 (embeddings) |
 | One judge call (`gpt-6-luna`, ≈ 1,230 input / 1,680 output tokens) | 19.2 s | 0.00096 |
 
-Each planned itinerary gets two judge calls (faithfulness and destination). v0.1.0 produces an itinerary for every request, including the ones it should refuse; once `harden-workflow-guardrails` rejects them with 422, those entries need neither generation nor judging and a run gets cheaper.
+Each planned itinerary gets three judge calls from `rebuild-rag` on (faithfulness, destination and preference); the measurements above are from a run with two. v0.1.0 produces an itinerary for every request, including the ones it should refuse; once `harden-workflow-guardrails` rejects them with 422, those entries need neither generation nor judging and a run gets cheaper.
 
 ### Formulas
 

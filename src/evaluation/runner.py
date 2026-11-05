@@ -41,6 +41,8 @@ from evaluation.judge import (
     faithfulness_summary,
     itinerary_text,
     knowledge_context,
+    preference_summary,
+    PreferenceVerdict,
 )
 from evaluation.metrics import constraint_rates, percentile, system_metrics
 from evaluation.retrieval import RetrievalResult, evaluate_entry, summarize
@@ -139,6 +141,7 @@ class EntryRun:
     trace_rows: list[dict] | None = None
     faithfulness: dict | None = None
     destination: dict | None = None
+    preference: dict | None = None
     judge_error: str | None = None
 
 
@@ -237,33 +240,39 @@ def run_retrieval_only(
     }
 
 
+def judge_call_record(kind: str, judge: Judge, call, latency_ms: float, **inputs) -> dict:
+    """What is stored for one judge call: its inputs, the verdict, and its usage."""
+    return {"prompt": kind, "version": judge.prompt_versions[kind], **inputs,
+            "verdict": call.verdict.model_dump(), "model": judge.model,
+            "input_tokens": call.input_tokens, "output_tokens": call.output_tokens, "latency_ms": latency_ms}
+
+
 def judge_entry(result: EntryRun, judge: Judge) -> None:
     """Fill in the judge's verdicts for a planned itinerary (mutates *result*)."""
     itinerary = result.outcome.itinerary
     context = knowledge_context(result.outcome.events)
+    form = result.entry.form
     try:
         start = time.perf_counter()
         faith = retry(lambda: judge.faithfulness(itinerary, context))
         faith_ms = _elapsed_ms(start)
         start = time.perf_counter()
-        place = retry(lambda: judge.destination(itinerary, result.entry.form.destination,
-                                                result.entry.form.trip_length))
+        place = retry(lambda: judge.destination(itinerary, form.destination, form.trip_length, form.notes))
         place_ms = _elapsed_ms(start)
+        start = time.perf_counter()
+        fit = retry(lambda: judge.preference(itinerary, form.travel_style, form.notes))
+        fit_ms = _elapsed_ms(start)
     except Exception as exc:  # noqa: BLE001
         result.judge_error = describe_exception(exc)
         return
     text = itinerary_text(itinerary)
-    result.faithfulness = {"prompt": "faithfulness", "version": judge.prompt_versions["faithfulness"],
-                           "itinerary_text": text, "knowledge_context": context, "had_context": bool(context),
-                           "verdict": faith.verdict.model_dump(), "model": judge.model,
-                           "input_tokens": faith.input_tokens, "output_tokens": faith.output_tokens,
-                           "latency_ms": faith_ms}
-    result.destination = {"prompt": "destination", "version": judge.prompt_versions["destination"],
-                          "itinerary_text": text, "destination": result.entry.form.destination,
-                          "trip_length": result.entry.form.trip_length,
-                          "verdict": place.verdict.model_dump(), "model": judge.model,
-                          "input_tokens": place.input_tokens, "output_tokens": place.output_tokens,
-                          "latency_ms": place_ms}
+    result.faithfulness = judge_call_record("faithfulness", judge, faith, faith_ms, itinerary_text=text,
+                                            knowledge_context=context, had_context=bool(context))
+    result.destination = judge_call_record("destination", judge, place, place_ms, itinerary_text=text,
+                                           destination=form.destination, trip_length=form.trip_length,
+                                           notes=form.notes)
+    result.preference = judge_call_record("preference", judge, fit, fit_ms, itinerary_text=text,
+                                          travel_style=form.travel_style, notes=form.notes)
 
 
 def run(entries: list[DatasetEntry], config: RunConfig, services: Services, pricing: Pricing,
@@ -302,7 +311,7 @@ def phase_breakdown(results: list[EntryRun], sending_seconds: float, judging_sec
     """
     requests = sum(r.outcome.latency_ms or 0 for r in results) / 1000
     retrieval = sum(r.retrieval_ms or 0 for r in results) / 1000
-    judge_calls = sum(d["latency_ms"] for r in results for d in (r.faithfulness, r.destination) if d) / 1000
+    judge_calls = sum(d["latency_ms"] for r in results for d in (r.faithfulness, r.destination, r.preference) if d) / 1000
     return {
         "requests": round(requests, 2),
         "retrieval_measurement": round(retrieval, 2),
@@ -338,7 +347,7 @@ def result_record(result: EntryRun) -> dict:
         "trace_rows": result.trace_rows,
         "cost": {**asdict(result.cost), "total_usd": result.cost.total_usd} if result.cost else None,
         "judge": {"faithfulness": result.faithfulness, "destination": result.destination,
-                  "error": result.judge_error},
+                  "preference": result.preference, "error": result.judge_error},
     }
 
 
@@ -376,8 +385,9 @@ def summarise(results: list[EntryRun], config: RunConfig, pricing: Pricing) -> d
     by_coverage = [(FaithfulnessVerdict.model_validate(r.faithfulness["verdict"]), r.entry.corpus_coverage)
                    for r in results if r.faithfulness and r.entry.corpus_coverage]
     places = [DestinationVerdict.model_validate(r.destination["verdict"]) for r in results if r.destination]
+    fits = [PreferenceVerdict.model_validate(r.preference["verdict"]) for r in results if r.preference]
     judge_usage = [(d["input_tokens"], d["output_tokens"])
-                   for r in results for d in (r.faithfulness, r.destination) if d]
+                   for r in results for d in (r.faithfulness, r.destination, r.preference) if d]
     templates = sorted({(e["data"]["prompt_template_key"], e["data"]["prompt_template_version"])
                         for r in results for e in r.outcome.events
                         if e.get("step") == "generate" and e.get("status") == "completed"})
@@ -397,6 +407,7 @@ def summarise(results: list[EntryRun], config: RunConfig, pricing: Pricing) -> d
             "faithfulness": {**faithfulness_summary(faith),
                              "by_corpus_coverage": faithfulness_by_coverage(by_coverage),
                              "judge_errors": sum(1 for r in results if r.judge_error)},
+            "preference": preference_summary(fits),
             "system": {**system_metrics([r.outcome for r in results]),
                        "step_latency_ms": step_latencies(results)},
             "cost": summarize_costs([r.cost for r in results if r.cost], judge_usage,

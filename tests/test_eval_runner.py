@@ -8,7 +8,15 @@ import pytest
 from app.workflow.retrieval_service import RetrievedChunk
 from evaluation.cost import Pricing
 from evaluation.dataset import DatasetEntry
-from evaluation.judge import Claim, DestinationVerdict, FaithfulnessVerdict, Judge, PlaceCheck
+from evaluation.judge import (
+    Claim,
+    DestinationVerdict,
+    FaithfulnessVerdict,
+    Judge,
+    PlaceCheck,
+    PreferenceCheck,
+    PreferenceVerdict,
+)
 from evaluation.runner import (
     RunConfig,
     Services,
@@ -70,6 +78,9 @@ class FakeJudgeClient:
     def parse(self, model, input, text_format):
         verdict = (FaithfulnessVerdict(claims=[Claim(category="named_place", text="Bondi", supported=True)])
                    if text_format is FaithfulnessVerdict
+                   else PreferenceVerdict(preferences=[PreferenceCheck(preference="beach", followed=True, reason="r")],
+                                          added_requirements=[])
+                   if text_format is PreferenceVerdict
                    else DestinationVerdict(places=[PlaceCheck(name="Bondi", in_destination=True, reason="r")]))
         return SimpleNamespace(output_parsed=verdict, usage=SimpleNamespace(input_tokens=100, output_tokens=20))
 
@@ -176,7 +187,8 @@ def test_summary_has_every_metric_and_template():
     assert metrics["faithfulness"]["with_context"]["itineraries"] == 1
     assert metrics["faithfulness"]["without_context"]["itineraries"] == 1
     assert metrics["system"]["error_rate"] == 0.0
-    assert metrics["cost"]["judge_calls"] == 4
+    assert metrics["cost"]["judge_calls"] == 6
+    assert metrics["preference"]["followed_share"] == 1.0
     assert metrics["cost"]["price_table_date"] == "2026-10-25"
 
 
@@ -185,7 +197,10 @@ def test_result_record_keeps_judge_inputs_not_the_rendered_prompt():
     record = result_record(run([_entry("e1")], CONFIG, services, PRICING)[0])
 
     faith = record["judge"]["faithfulness"]
-    assert (faith["prompt"], faith["version"]) == ("faithfulness", 1)
+    assert (faith["prompt"], faith["version"]) == ("faithfulness", 2)
+    fit = record["judge"]["preference"]
+    assert (fit["prompt"], fit["version"]) == ("preference", 1)
+    assert fit["verdict"]["preferences"][0]["followed"] is True
     assert "[Guide to Sydney]" in faith["knowledge_context"]
     assert faith["itinerary_text"].startswith("Day 1")
     assert "Extract every specific claim" not in json.dumps(record)  # template text is not repeated
@@ -196,8 +211,9 @@ def test_result_record_keeps_judge_inputs_not_the_rendered_prompt():
 def test_prompt_copies_written_once_per_run(tmp_path):
     judge = Judge(FakeJudgeClient())
     write_prompt_copies(tmp_path, judge)
-    assert sorted(p.name for p in (tmp_path / "judge_prompts").iterdir()) == ["destination_v1.md",
-                                                                              "faithfulness_v1.md"]
+    assert sorted(p.name for p in (tmp_path / "judge_prompts").iterdir()) == ["destination_v2.md",
+                                                                              "faithfulness_v2.md",
+                                                                              "preference_v1.md"]
 
 
 def test_retry_only_transient_errors():

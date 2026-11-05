@@ -1,4 +1,4 @@
-"""LLM judge: faithfulness of specific claims, and whether attractions are in the destination.
+"""LLM judge: faithfulness of specific claims, whether attractions are in the destination, and preference adherence.
 
 The judge model is configured separately from the generation model
 (``JUDGE_MODEL``, default ``gpt-6-luna``, called through the ``openai`` SDK with
@@ -11,7 +11,8 @@ Public API::
 
     judge = Judge.from_env()
     verdict = judge.faithfulness(itinerary, knowledge_context(outcome.events))
-    places = judge.destination(itinerary, destination="sydney", trip_length=3)
+    places = judge.destination(itinerary, destination="sydney", trip_length=3, notes=None)
+    fit = judge.preference(itinerary, travel_style="family", notes=None)
 """
 
 import json
@@ -27,10 +28,13 @@ from evaluation.dataset import ROOT_DIR
 
 PROMPTS_DIR = ROOT_DIR / "eval" / "judge_prompts"
 DEFAULT_JUDGE_MODEL = "gpt-6-luna"
-FAITHFULNESS_PROMPT = ("faithfulness", 1)
-DESTINATION_PROMPT = ("destination", 1)
+FAITHFULNESS_PROMPT = ("faithfulness", 2)
+DESTINATION_PROMPT = ("destination", 2)
+PREFERENCE_PROMPT = ("preference", 1)
+NO_NOTES = "(none)"
 
-ClaimCategory = Literal["opening_hours", "price", "named_place", "transport"]
+# The last two exist from faithfulness v2 on; verdicts stored from v1 use the first four.
+ClaimCategory = Literal["opening_hours", "price", "named_place", "transport", "activity", "season"]
 
 
 class Claim(BaseModel):
@@ -55,6 +59,22 @@ class DestinationVerdict(BaseModel):
     @property
     def all_in_destination(self) -> bool:
         return all(place.in_destination for place in self.places)
+
+
+class PreferenceCheck(BaseModel):
+    preference: str = Field(description="What the traveller's words ask of the trip")
+    followed: bool
+    reason: str
+
+
+class AddedRequirement(BaseModel):
+    requirement: str
+    quote: str = Field(description="The itinerary's words that impose or assume it")
+
+
+class PreferenceVerdict(BaseModel):
+    preferences: list[PreferenceCheck]
+    added_requirements: list[AddedRequirement]
 
 
 @dataclass(frozen=True)
@@ -123,7 +143,7 @@ class Judge:
     @property
     def prompt_versions(self) -> dict[str, int]:
         """Prompt name → version, for the run summary."""
-        return dict([FAITHFULNESS_PROMPT, DESTINATION_PROMPT])
+        return dict([FAITHFULNESS_PROMPT, DESTINATION_PROMPT, PREFERENCE_PROMPT])
 
     def faithfulness(self, itinerary: dict, context: str) -> JudgeCall:
         prompt = render(
@@ -133,14 +153,24 @@ class Judge:
         )
         return self._ask(prompt, FaithfulnessVerdict)
 
-    def destination(self, itinerary: dict, destination: str, trip_length: int) -> JudgeCall:
+    def destination(self, itinerary: dict, destination: str, trip_length: int, notes: str | None = None) -> JudgeCall:
         prompt = render(
             load_prompt(*DESTINATION_PROMPT, self.prompts_dir),
             destination=destination,
             trip_length=str(trip_length),
+            notes=notes or NO_NOTES,
             itinerary=itinerary_text(itinerary),
         )
         return self._ask(prompt, DestinationVerdict)
+
+    def preference(self, itinerary: dict, travel_style: str, notes: str | None = None) -> JudgeCall:
+        prompt = render(
+            load_prompt(*PREFERENCE_PROMPT, self.prompts_dir),
+            travel_style=travel_style,
+            notes=notes or NO_NOTES,
+            itinerary=itinerary_text(itinerary),
+        )
+        return self._ask(prompt, PreferenceVerdict)
 
     def _ask(self, prompt: str, schema: type[BaseModel]) -> JudgeCall:
         response = self._client.responses.parse(model=self.model, input=prompt, text_format=schema)
@@ -177,6 +207,18 @@ def faithfulness_by_coverage(verdicts: list[tuple[FaithfulnessVerdict, str]]) ->
     for verdict, coverage in verdicts:
         groups.setdefault(coverage, []).append(verdict)
     return {coverage: _claim_share(group) for coverage, group in sorted(groups.items())}
+
+
+def preference_summary(verdicts: list[PreferenceVerdict]) -> dict:
+    """Share of stated preferences the itineraries follow, and the requirements they add (counted, not scored)."""
+    checks = [check for verdict in verdicts for check in verdict.preferences]
+    return {
+        "itineraries": len(verdicts),
+        "preferences": len(checks),
+        "followed_share": sum(check.followed for check in checks) / len(checks) if checks else None,
+        "added_requirements": sum(len(verdict.added_requirements) for verdict in verdicts),
+        "itineraries_with_added_requirements": sum(bool(verdict.added_requirements) for verdict in verdicts),
+    }
 
 
 def destination_rate(verdicts: list[DestinationVerdict]) -> float | None:

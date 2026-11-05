@@ -8,12 +8,15 @@ re-extracting everything from scratch (see docs/evaluation.md, "Judge calibratio
   ``PLACES_PER_ITINERARY`` places;
 - plus every itinerary of the run with a place the judge put outside the destination,
   for the destination check only (``destination_only``), so both of the judge's
-  answers get reviewed.
+  answers get reviewed;
+- every preference check and added requirement of the sampled itineraries, when the
+  run has the preference judge.
 
-The reviewer marks each item: for a claim, is it one of the four claim kinds
+The reviewer marks each item: for a claim, is it one of the judge's claim kinds
 (``is_claim``) and is it supported by the knowledge context (``supported``); for a
-place, is it in the destination (``in_destination``); claims the judge missed go in
-``missed_claims``. The answers are written in a Markdown review sheet
+place, is it in the destination (``in_destination``); for a preference, does the
+itinerary follow it (``followed``); for an added requirement, is it really one the
+traveller did not state (``added``); claims the judge missed go in ``missed_claims``. The answers are written in a Markdown review sheet
 (``eval/calibration/<run id>.review.md``, see :func:`render_review`) and stored as one
 JSON object per itinerary in ``eval/calibration/<run id>.jsonl``.
 
@@ -57,6 +60,22 @@ class PlaceScore(BaseModel):
     in_destination: bool | None = None  # None until reviewed
 
 
+class PreferenceScore(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    preference: str
+    judge_followed: bool
+    followed: bool | None = None  # None until reviewed
+
+
+class AddedRequirementScore(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    requirement: str
+    quote: str
+    added: bool | None = None  # None until reviewed
+
+
 class ItineraryScore(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -66,6 +85,8 @@ class ItineraryScore(BaseModel):
     claims: list[ClaimScore] = Field(default_factory=list)
     missed_claims: list[str] = Field(default_factory=list)
     places: list[PlaceScore] = Field(default_factory=list)
+    preferences: list[PreferenceScore] = Field(default_factory=list)
+    added_requirements: list[AddedRequirementScore] = Field(default_factory=list)
 
 
 def load_scores(path: Path) -> list[ItineraryScore]:
@@ -80,7 +101,7 @@ def load_scores(path: Path) -> list[ItineraryScore]:
 
 
 def stratified_template(entry_id: str, faithfulness_verdict: dict, destination_verdict: dict,
-                        rng: random.Random) -> ItineraryScore:
+                        rng: random.Random, preference_verdict: dict | None = None) -> ItineraryScore:
     """A blank score record for one sampled itinerary, pre-filled with the judge's verdicts."""
     claims = faithfulness_verdict.get("claims", [])
     supported = [c for c in claims if c["supported"]]
@@ -96,6 +117,10 @@ def stratified_template(entry_id: str, faithfulness_verdict: dict, destination_v
                 for c in claims if id(c) in keep_claims],  # original order
         places=[PlaceScore(name=p["name"], judge_in_destination=p["in_destination"])
                 for p in places if id(p) in keep_places],
+        preferences=[PreferenceScore(preference=p["preference"], judge_followed=p["followed"])
+                     for p in (preference_verdict or {}).get("preferences", [])],
+        added_requirements=[AddedRequirementScore(requirement=a["requirement"], quote=a["quote"])
+                            for a in (preference_verdict or {}).get("added_requirements", [])],
     )
 
 
@@ -117,6 +142,10 @@ def unreviewed_items(scores: list[ItineraryScore]) -> list[str]:
                     if c.is_claim is None or (c.is_claim and c.supported is None)]
         missing += [f"{itinerary.entry_id} place {i}" for i, p in enumerate(itinerary.places, 1)
                     if p.in_destination is None]
+        missing += [f"{itinerary.entry_id} preference {i}" for i, p in enumerate(itinerary.preferences, 1)
+                    if p.followed is None]
+        missing += [f"{itinerary.entry_id} added requirement {i}" for i, a in enumerate(itinerary.added_requirements, 1)
+                    if a.added is None]
     return missing
 
 
@@ -132,6 +161,8 @@ def agreement(scores: list[ItineraryScore]) -> dict:
     claims = [c for s in scores for c in s.claims]
     accepted = [c for c in claims if c.is_claim]
     places = [p for s in scores for p in s.places]
+    preferences = [p for s in scores for p in s.preferences]
+    added = [a for s in scores for a in s.added_requirements]
     faithfulness_scores = [s for s in scores if not s.destination_only]
     return {
         "sample_size": len(faithfulness_scores),
@@ -150,6 +181,11 @@ def agreement(scores: list[ItineraryScore]) -> dict:
             "judge_in": _stratum([p.in_destination for p in places if p.judge_in_destination], True),
             "judge_out": _stratum([p.in_destination for p in places if not p.judge_in_destination], False),
         },
+        "preference": {
+            "judge_followed": _stratum([p.followed for p in preferences if p.judge_followed], True),
+            "judge_not_followed": _stratum([p.followed for p in preferences if not p.judge_followed], False),
+            "judge_added": _stratum([a.added for a in added], True),
+        },
         "min_agreement": MIN_AGREEMENT,
     }
 
@@ -159,6 +195,8 @@ def agreement(scores: list[ItineraryScore]) -> dict:
 _YES, _NO, _SKIP, _OPEN = "y", "n", "-", "?"
 _CLAIM_LINE = re.compile(r"^c(\d+)\s+\[claim:\s*(\S)\]\s+\[supported:\s*(\S)\]")
 _PLACE_LINE = re.compile(r"^p(\d+)\s+\[in:\s*(\S)\]")
+_PREFERENCE_LINE = re.compile(r"^pr(\d+)\s+\[followed:\s*(\S)\]")
+_ADDED_LINE = re.compile(r"^ar(\d+)\s+\[added:\s*(\S)\]")
 _ENTRY_LINE = re.compile(r"^## (\S+)")
 _MISSED_LINE = re.compile(r"^missed:(.*)$")
 
@@ -216,6 +254,18 @@ def render_review(run_id: str, scores: list[ItineraryScore], records: dict[str, 
             lines.append(f"p{i}  [in: {_mark(p.in_destination)}]   judge: {verdict} · {p.name} — "
                          f"{reasons.get(p.name, '')}")
         lines.append("")
+        if score.preferences or score.added_requirements:
+            fit = record["judge"]["preference"]["verdict"]
+            why = {p["preference"]: p["reason"] for p in fit["preferences"]}
+            lines += ["**Preferences** (does the itinerary follow it?)", ""]
+            for i, p in enumerate(score.preferences, 1):
+                verdict = "followed" if p.judge_followed else "NOT followed"
+                lines.append(f"pr{i}  [followed: {_mark(p.followed)}]   judge: {verdict} · {p.preference} — "
+                             f"{why.get(p.preference, '')}")
+            lines += ["", "**Added requirements** (is it one the traveller did not state?)", ""]
+            for i, a in enumerate(score.added_requirements, 1):
+                lines.append(f"ar{i}  [added: {_mark(a.added)}]   {a.requirement} — \"{a.quote}\"")
+            lines.append("")
     return "\n".join(lines)
 
 
@@ -253,6 +303,12 @@ def parse_review(text: str, scores: list[ItineraryScore]) -> list[ItineraryScore
         elif match := _PLACE_LINE.match(line):
             place = _item(current.places, int(match.group(1)), number)
             place.in_destination = _answer(match.group(2), number, allow_skip=False)
+        elif match := _PREFERENCE_LINE.match(line):
+            preference = _item(current.preferences, int(match.group(1)), number)
+            preference.followed = _answer(match.group(2), number, allow_skip=False)
+        elif match := _ADDED_LINE.match(line):
+            requirement = _item(current.added_requirements, int(match.group(1)), number)
+            requirement.added = _answer(match.group(2), number, allow_skip=False)
         elif match := _MISSED_LINE.match(line):
             current.missed_claims = [m.strip() for m in match.group(1).split(";") if m.strip()]
     return [by_id[s.entry_id] for s in scores]

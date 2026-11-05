@@ -77,7 +77,8 @@ def sample(run_id: str, n: int, seed: int) -> int:
     chosen = sorted(rng.sample(sorted(records.values(), key=lambda r: r["entry_id"]), n),
                     key=lambda r: r["entry_id"])
     scores = [stratified_template(r["entry_id"], r["judge"]["faithfulness"]["verdict"],
-                                  r["judge"]["destination"]["verdict"], rng) for r in chosen]
+                                  r["judge"]["destination"]["verdict"], rng,
+                                  (r["judge"].get("preference") or {}).get("verdict")) for r in chosen]
     chosen_ids = {r["entry_id"] for r in chosen}
     scores += [destination_only_template(entry_id, r["judge"]["destination"]["verdict"])
                for entry_id, r in sorted(records.items())
@@ -87,8 +88,11 @@ def sample(run_id: str, n: int, seed: int) -> int:
     write_review(run_id, scores, records)
     claims = sum(len(s.claims) for s in scores)
     places = sum(len(s.places) for s in scores)
+    preferences = sum(len(s.preferences) for s in scores)
+    added = sum(len(s.added_requirements) for s in scores)
     print(f"wrote eval/calibration/{run_id}.review.md and .jsonl: {n} itineraries "
-          f"(+{len(scores) - n} destination only), {claims} claims and {places} places to review")
+          f"(+{len(scores) - n} destination only), {claims} claims, {places} places, "
+          f"{preferences} preferences and {added} added requirements to review")
     return 0
 
 
@@ -119,7 +123,7 @@ def score(run_id: str) -> int:
     print(json.dumps(result, indent=2))
     if not result["sample_meets_minimum"]:
         print(f"WARNING: fewer than {MIN_SAMPLE} itineraries scored")
-    low = [f"{group}.{name}" for group in ("faithfulness", "destination")
+    low = [f"{group}.{name}" for group in ("faithfulness", "destination", "preference")
            for name, stratum in result[group].items()
            if stratum["agreement"] is not None and stratum["agreement"] < MIN_AGREEMENT]
     if low:
