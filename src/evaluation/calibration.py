@@ -5,12 +5,12 @@ re-extracting everything from scratch (see docs/evaluation.md, "Judge calibratio
 
 - at least 20 itineraries; in each, every claim the judge called supported, up to
   ``UNSUPPORTED_PER_ITINERARY`` of the claims it called unsupported, and up to
-  ``PLACES_PER_ITINERARY`` places;
-- plus every itinerary of the run with a place the judge put outside the destination,
-  for the destination check only (``destination_only``), so both of the judge's
-  answers get reviewed;
-- every preference check and added requirement of the sampled itineraries, when the
-  run has the preference judge.
+  ``PLACES_PER_ITINERARY`` places, and every preference check and added requirement
+  when the run has the preference judge;
+- plus every other itinerary of the run with a place the judge put outside the
+  destination, a preference it called not followed, or an added requirement, for those
+  items only (``destination_only``), since a random sample holds too few of them for
+  the judge's less common answers to get reviewed.
 
 The reviewer marks each item: for a claim, is it one of the judge's claim kinds
 (``is_claim``) and is it supported by the knowledge context (``supported``); for a
@@ -80,7 +80,8 @@ class ItineraryScore(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     entry_id: str
-    # True for itineraries added only to review the judge's "outside the destination" answers.
+    # True for itineraries added only to review the judge's less common answers: outside the
+    # destination, a preference not followed, an added requirement. No claims are reviewed.
     destination_only: bool = False
     claims: list[ClaimScore] = Field(default_factory=list)
     missed_claims: list[str] = Field(default_factory=list)
@@ -124,13 +125,19 @@ def stratified_template(entry_id: str, faithfulness_verdict: dict, destination_v
     )
 
 
-def destination_only_template(entry_id: str, destination_verdict: dict) -> ItineraryScore:
-    """A record reviewing every place the judge put outside the destination."""
+def destination_only_template(entry_id: str, destination_verdict: dict,
+                              preference_verdict: dict | None = None) -> ItineraryScore:
+    """A record reviewing every place outside the destination, preference not followed and added requirement."""
+    fit = preference_verdict or {}
     return ItineraryScore(
         entry_id=entry_id,
         destination_only=True,
         places=[PlaceScore(name=p["name"], judge_in_destination=False)
                 for p in destination_verdict.get("places", []) if not p["in_destination"]],
+        preferences=[PreferenceScore(preference=p["preference"], judge_followed=False)
+                     for p in fit.get("preferences", []) if not p["followed"]],
+        added_requirements=[AddedRequirementScore(requirement=a["requirement"], quote=a["quote"])
+                            for a in fit.get("added_requirements", [])],
     )
 
 
@@ -224,7 +231,7 @@ def render_review(run_id: str, scores: list[ItineraryScore], records: dict[str, 
         faith, place = record["judge"]["faithfulness"], record["judge"]["destination"]
         form = record["form"]
         reasons = {p["name"]: p["reason"] for p in place["verdict"]["places"]}
-        suffix = " (destination check only)" if score.destination_only else ""
+        suffix = " (only the judge's less common answers)" if score.destination_only else ""
         lines += [f"## {score.entry_id}{suffix}", "",
                   f"Request: {form['destination']}, {form['trip_length']} days, {form['budget']}, "
                   f"\"{form['travel_style']}\"" + (f" · notes: {form['notes']}" if form.get("notes") else ""), ""]
@@ -248,7 +255,7 @@ def render_review(run_id: str, scores: list[ItineraryScore], records: dict[str, 
                           "a claim in neither list is a missed claim):*", ""]
                 lines += [f"- {c['category']} · {c['text']}" for c in others]
             lines += ["", "missed: " + "; ".join(score.missed_claims), ""]
-        lines += ["**Places**", ""]
+        lines += ["**Places**", ""] if score.places or not score.destination_only else []
         for i, p in enumerate(score.places, 1):
             verdict = "in" if p.judge_in_destination else "OUTSIDE"
             lines.append(f"p{i}  [in: {_mark(p.in_destination)}]   judge: {verdict} · {p.name} — "

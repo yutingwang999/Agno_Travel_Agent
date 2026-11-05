@@ -80,10 +80,10 @@ def sample(run_id: str, n: int, seed: int) -> int:
                                   r["judge"]["destination"]["verdict"], rng,
                                   (r["judge"].get("preference") or {}).get("verdict")) for r in chosen]
     chosen_ids = {r["entry_id"] for r in chosen}
-    scores += [destination_only_template(entry_id, r["judge"]["destination"]["verdict"])
-               for entry_id, r in sorted(records.items())
-               if entry_id not in chosen_ids
-               and any(not p["in_destination"] for p in r["judge"]["destination"]["verdict"]["places"])]
+    extras = [destination_only_template(entry_id, r["judge"]["destination"]["verdict"],
+                                        (r["judge"].get("preference") or {}).get("verdict"))
+              for entry_id, r in sorted(records.items()) if entry_id not in chosen_ids]
+    scores += [e for e in extras if e.places or e.preferences or e.added_requirements]
     write_scores(run_id, scores)
     write_review(run_id, scores, records)
     claims = sum(len(s.claims) for s in scores)
@@ -91,7 +91,7 @@ def sample(run_id: str, n: int, seed: int) -> int:
     preferences = sum(len(s.preferences) for s in scores)
     added = sum(len(s.added_requirements) for s in scores)
     print(f"wrote eval/calibration/{run_id}.review.md and .jsonl: {n} itineraries "
-          f"(+{len(scores) - n} destination only), {claims} claims, {places} places, "
+          f"(+{len(scores) - n} for the less common answers only), {claims} claims, {places} places, "
           f"{preferences} preferences and {added} added requirements to review")
     return 0
 

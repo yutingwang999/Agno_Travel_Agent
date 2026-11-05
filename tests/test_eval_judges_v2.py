@@ -13,6 +13,7 @@ import pytest
 
 from evaluation.calibration import (
     agreement,
+    destination_only_template,
     parse_review,
     render_review,
     stratified_template,
@@ -284,6 +285,23 @@ def test_preference_answers_round_trip_through_the_review_sheet():
     assert result["judge_followed"] == {"compared": 1, "agreement": 1.0}
     assert result["judge_not_followed"] == {"compared": 1, "agreement": 0.0}
     assert result["judge_added"] == {"compared": 1, "agreement": 0.0}
+
+
+def test_less_common_preference_answers_are_reviewed_outside_the_sample():
+    verdict = {
+        "preferences": [{"preference": "animals", "followed": True, "reason": "r"},
+                        {"preference": "quiet", "followed": False, "reason": "busy"}],
+        "added_requirements": [{"requirement": "step-free routes", "quote": "step-free"}],
+    }
+    score = destination_only_template("e1", {"places": []}, verdict)
+
+    assert score.destination_only and score.claims == [] and score.places == []
+    assert [(p.preference, p.judge_followed) for p in score.preferences] == [("quiet", False)]
+    assert [a.requirement for a in score.added_requirements] == ["step-free routes"]
+
+    sheet = render_review("run", [score], {"e1": _record(preference={"verdict": verdict})})
+    assert "pr1  [followed: ?]" in sheet and "ar1  [added: ?]" in sheet
+    assert "**Places**" not in sheet and "**Claims**" not in sheet
 
 
 # --- the real judge -------------------------------------------------------------------------------

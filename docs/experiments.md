@@ -32,6 +32,7 @@ This file records the effect of every change that affects quality, behaviour or 
 
 | Date | Change | What changed | Key result | Record |
 | --- | --- | --- | --- | --- |
+| 2026-11-05 | `rebuild-rag` | Preference v3: being able to do a planned activity is not an added requirement | Added requirements 21 and 18 → 13 and 17; preferences followed about 82% and 83%; to be calibrated | [Preference v3](#2026-11-05--rebuild-rag--preference-v3-being-able-to-do-a-planned-activity-is-not-an-added-requirement) |
 | 2026-11-05 | `rebuild-rag` | Preference v2 narrows added requirements | Added requirements 94 and 86 → 21 and 18 on the two baselines; preferences followed stays about 81% to 82%; not calibrated yet | [Preference v2](#2026-11-05--rebuild-rag--preference-v2-narrows-added-requirements) |
 | 2026-11-05 | `rebuild-rag` | v0.1.0 baseline re-judged with faithfulness v2, destination v2 and preference v1 | Faithfulness with context 23.0% under v1, 20.5% under v2 (mean of two runs); not calibrated yet | [Re-judged baseline](#2026-11-05--rebuild-rag--v010-baseline-re-judged-with-faithfulness-v2-destination-v2-and-preference-v1) |
 | 2026-11-05 | `rebuild-rag` | BM25, Agno hybrid and reranking removed from the code | No numbers changed; commit `2901b5c` can re-run them | [Removal](#2026-11-05--rebuild-rag--bm25-agno-hybrid-and-reranking-removed-from-the-code) |
@@ -91,6 +92,20 @@ Copy the template below, fill it in, and put it at the **top** of the "Records" 
 ---
 
 ## Records
+
+### 2026-11-05 · rebuild-rag · preference v3: being able to do a planned activity is not an added requirement
+
+Preference verdicts of the two re-judged v0.1.0 baselines replaced on commit `d3671f4`; faithfulness v2 and destination v2 verdicts carried over unchanged. All 146 itineraries judged, no errors. These are the verdicts to calibrate; the prompt is not changed again before calibration.
+
+| Source (preference v2) | Re-judged (preference v3) | Preferences followed, v2 → v3 | Added requirements, v2 → v3 | Itineraries with any, v2 → v3 | Judge cost |
+| --- | --- | --- | --- | --- | --- |
+| `20261105T104907Z-v010-baseline-rejudge` | `20261105T111852Z-v010-baseline-rejudge` | 82.2% → 82.0% | 21 → 13 | 15 → 12 | $0.021 |
+| `20261105T105925Z-v010-baseline-rejudge` | `20261105T111942Z-v010-baseline-rejudge` | 80.6% → 82.7% | 18 → 17 | 15 → 14 | $0.023 |
+
+- In a look at 24 of the 30 under v3, none only says the traveller can physically do a planned activity. Most are assumptions about the traveller: business trips or remote work, accessibility needs, a celebration. Some are borderline, such as "an accessible space" written as a description. Calibration measures this; the look does not.
+- The run-to-run spread of added requirements is wide at these counts: 13 and 17 on the two baseline runs, which have different itineraries.
+
+---
 
 ### 2026-11-05 · rebuild-rag · preference v2 narrows added requirements
 

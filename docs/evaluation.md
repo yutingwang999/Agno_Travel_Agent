@@ -200,7 +200,7 @@ The sample is stratified, so that the judge's likely mistakes get reviewed witho
 
 - 20 itineraries drawn at random (fixed seed) from a clean full run;
 - in each: **every** claim the judge called supported (where a judge is most likely to be wrong, e.g. a name matched in the wrong city), up to 5 of the claims it called unsupported, and up to 4 places;
-- plus every other itinerary of the run with a place the judge put **outside** the destination, reviewed for the destination check only, so both of the judge's answers are checked.
+- plus every other itinerary of the run with a place the judge put **outside** the destination, a preference it called not followed, or an added requirement, reviewed for those items only, so the judge's less common answers are checked too.
 
 Agreement is reported per stratum (per judge answer), never as one pooled rate, because the strata are not sampled in proportion.
 
