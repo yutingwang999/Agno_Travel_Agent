@@ -359,3 +359,23 @@ def test_chunking_configs_search_the_table_built_for_them(name):
     _, task_types, _ = dev.EVAL_KNOWLEDGE_TABLES[config.knowledge_table]
     assert config.embedding_task_types == task_types
     assert not config.query_differs_from_workflow
+
+
+
+def test_template_version_defaults_to_the_active_version():
+    assert CONFIG.template_version is None
+    assert CONFIG.generate_params == {}
+    assert CONFIG.model_copy(update={"template_version": 2}).generate_params == {"template_version": 2}
+
+
+@pytest.mark.parametrize(("letter", "version"), [("a", 1), ("b", 2), ("c", 3)])
+def test_generation_variant_configs_pin_their_template(letter, version):
+    """Task 5.4: the three variants differ only in the template version they pin."""
+    config = load_config(f"rebuild-rag-gen-{letter}")
+    reference = load_config("rebuild-rag-q11")
+
+    assert config.template_version == version
+    assert not config.query_differs_from_workflow
+    ignored = {"name", "description", "template_version"}
+    assert config.model_dump(exclude=ignored) == reference.model_dump(exclude=ignored)
+

@@ -175,7 +175,7 @@ def make_services(client, config, db_url: str):
     engine = create_engine(db_url)
 
     def send(form: dict) -> tuple[int, str]:
-        response = client.post("/generate", json=form)
+        response = client.post("/generate", json=form, params=config.generate_params)
         return response.status_code, response.text
 
     def trace_rows(session_id: str) -> list[dict]:

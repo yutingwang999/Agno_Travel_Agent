@@ -79,10 +79,18 @@ class RunConfig(BaseModel):
     retrieval_k: int = Field(default=5, ge=1)
     judge_concurrency: int = Field(default=4, ge=1)
     request_parser: bool = False
+    # Version of the generation template (itinerary_with_context) every request pins
+    # with ?template_version=N; None uses the active version.
+    template_version: int | None = Field(default=None, ge=1)
 
     @property
     def query_differs_from_workflow(self) -> bool:
         return not self.query_notes or self.query_category != "no_category"
+
+    @property
+    def generate_params(self) -> dict:
+        """Query parameters of each POST /generate the run sends."""
+        return {} if self.template_version is None else {"template_version": self.template_version}
 
 
 def load_config(name: str, configs_dir: Path = CONFIGS_DIR) -> RunConfig:

@@ -1,0 +1,18 @@
+# rebuild-rag task 5.4: generation template variant B (itinerary_with_context v2).
+# Retrieval as chosen in task 4.7 (group 11). The three variants differ only in how the
+# template describes the request (design decision 3).
+name: rebuild-rag-gen-b
+description: itinerary_with_context v2 (variant B, the traveller's own travel_style and notes, no preset); retrieval with notes, no category, vector search, destination filter, corpus v2, chunks 800/80
+generation_model: gemini-3.1-flash-lite
+embedding_model: gemini-embedding-001
+judge_model: gpt-6-luna
+corpus_version: v2
+knowledge_table: travel_docs_v2_c800
+embedding_task_types: retrieval
+destination_filter: true
+query_notes: true
+query_category: no_category
+retrieval_k: 5
+judge_concurrency: 8
+request_parser: false
+template_version: 2
