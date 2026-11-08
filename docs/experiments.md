@@ -32,6 +32,8 @@ This file records the effect of every change that affects quality, behaviour or 
 
 | Date | Change | What changed | Key result | Record |
 | --- | --- | --- | --- | --- |
+| 2026-11-09 | `rebuild-rag` | Request description in the template: variants A, B, C (task 5.4) | C chosen: preferences followed 85.6% (A) / 92.4% (B) / 97.7% (C), faithfulness with context 41.8% / 52.4% / 48.0%, within budget 100% for all; C's destination rate is lower (89.0% against 93.2% for A) | [Variants](#2026-11-09--rebuild-rag--request-description-in-the-template-variants-a-b-and-c-c-chosen) |
+| 2026-11-09 | `rebuild-rag` | Control: corpus v2 and the chosen retrieval on the old workflow | Faithfulness with context 17.2% → 34.1% on the same 43 itineraries (means of two runs) | [Control](#2026-11-09--rebuild-rag--control-corpus-v2-and-the-chosen-retrieval-on-the-old-workflow) |
 | 2026-11-08 | `rebuild-rag` | Judge calibration of the re-judged baseline, and preference v4 | Faithfulness v2 and destination v2 pass every stratum; preferences followed passes (83.3% (20 / 24) for "not followed"); added requirements fail (66.7% (6 / 9)) and are reported as a count only | [Calibration](#2026-11-08--rebuild-rag--judge-calibration-of-the-re-judged-baseline-and-preference-v4) |
 | 2026-11-05 | `rebuild-rag` | Preference v3: being able to do a planned activity is not an added requirement | Added requirements 21 and 18 → 13 and 17; preferences followed about 82% and 83%; to be calibrated | [Preference v3](#2026-11-05--rebuild-rag--preference-v3-being-able-to-do-a-planned-activity-is-not-an-added-requirement) |
 | 2026-11-05 | `rebuild-rag` | Preference v2 narrows added requirements | Added requirements 94 and 86 → 21 and 18 on the two baselines; preferences followed stays about 81% to 82%; not calibrated yet | [Preference v2](#2026-11-05--rebuild-rag--preference-v2-narrows-added-requirements) |
@@ -93,6 +95,101 @@ Copy the template below, fill it in, and put it at the **top** of the "Records" 
 ---
 
 ## Records
+
+### 2026-11-09 · rebuild-rag · request description in the template: variants A, B and C, C chosen
+
+- **What changed**: only the request description in `itinerary_with_context` (design decision 3): A describes the style by the matched category's preset tone and constraints, B by the traveller's own `travel_style`, C gives both and says the preset applies only where the traveller's words say nothing. All three carry notes, the numbered knowledge chunks and the citation instruction.
+- **Why**: in v0.1.0 the traveller's words never reach the generator, and a preset can bring constraints nobody asked for (baseline e039).
+- **Criteria, set before the runs** (means of two runs): a variant replaces A only if preferences followed rises by at least 3 points, faithfulness with context falls by no more than 2 points, and within budget does not fall; if B and C both qualify, the higher preferences followed wins. Added requirements are reference only (not calibrated); cost is recorded.
+- **Runs**: commit `46ecfb2`, configs `rebuild-rag-gen-a`, `-b`, `-c` (the group 11 retrieval plus `template_version` 1, 2, 3), `dataset-v1` subset (73 entries, dataset v3), corpus v2 / `travel_docs_v2_c800`, generation `gemini-3.1-flash-lite`, judge `gpt-6-luna` (faithfulness v2, destination v2, preference v4), correction template v3, price table 2026-10-25. Run in the order A, B, C, A, B, C: A `20261108T123232Z-rebuild-rag-gen-a-dataset-v1`, `20261108T130747Z-rebuild-rag-gen-a-dataset-v1`; B `20261108T124333Z-rebuild-rag-gen-b-dataset-v1`, `20261108T132042Z-rebuild-rag-gen-b-dataset-v1`; C `20261108T125508Z-rebuild-rag-gen-c-dataset-v1`, `20261108T133245Z-rebuild-rag-gen-c-dataset-v1`. Every run: no uncommitted changes, error rate 0, no judge errors.
+- **Results** (each cell: run 1 / run 2):
+
+| Metric | A: preset + notes (v1) | B: own words + notes (v2) | C: both, own words first (v3) |
+| --- | --- | --- | --- |
+| Preferences followed (primary) | 85.5% / 85.7% (mean 85.6%) | 93.6% / 91.2% (mean 92.4%) | 97.2% / 98.2% (mean 97.7%) |
+| Faithfulness with context | 42.1% / 41.5% (mean 41.8%) | 52.5% / 52.2% (mean 52.4%) | 48.1% / 48.0% (mean 48.0%) |
+| Within budget | 100.0% / 100.0% (mean 100.0%) | 100.0% / 100.0% (mean 100.0%) | 100.0% / 100.0% (mean 100.0%) |
+| Added requirements (count, reference only) | 6 / 6 | 1 / 2 | 3 / 3 |
+| Destination rate | 91.5% / 94.9% (mean 93.2%) | 93.2% / 93.2% (mean 93.2%) | 89.8% / 88.1% (mean 89.0%) |
+| Behaviour correct | 89.0% / 89.0% (mean 89.0%) | 89.0% / 89.0% (mean 89.0%) | 89.0% / 89.0% (mean 89.0%) |
+| Retry rate | 0.0% / 0.0% (mean 0.0%) | 1.7% / 1.7% (mean 1.7%) | 1.7% / 0.0% (mean 0.8%) |
+| Latency p50 | 4.46 s / 5.02 s | 4.29 s / 4.93 s | 4.65 s / 4.92 s |
+| Mean cost per request | $0.00101 / $0.00101 | $0.00099 / $0.00098 | $0.00104 / $0.00102 |
+| Days that cite a source | 205 of 246 / 208 of 246 | 223 of 246 / 210 of 246 | 211 of 246 / 215 of 246 |
+
+- **Decision: C** (`itinerary_with_context` v3 is now the active version). Against A, preferences followed rises +6.8 points for B and +12.1 for C, faithfulness with context +10.6 and +6.2 points, and within budget stays 100.0%; both qualify, and C follows more preferences (97.7% against 92.4%).
+- **What C gives up against B**: faithfulness with context 48.0% against 52.4%, and destination rate 89.0% against 93.2% (A 93.2%). Neither was a criterion. The destination misses found in both C runs and in neither A run (e007, e008, e065) come from following the traveller beyond the city: a Perth trip for wine goes to Margaret River (e007), koalas and seals in the wild from Adelaide go to Kangaroo Island (e008), and wildlife and seafood from Adelaide go to Coffin Bay (e065). "Drive the whole coast from Perth to Darwin" in two days (e050) leaves Perth in both C runs and in one A run. Whether a trip beyond the destination city should be planned, and how a request like e050 should be answered, belongs to request parsing (roadmap item 3).
+- **Effect of the workflow changes (tasks 5.1 to 5.3), from the control**: retrieving on every request, the single template with notes, and numbered chunks with citations. The breakdown below compares the same entries. On the entries that retrieved before, variant A reaches 42.6% against 34.1% on the old workflow with the same corpus; this mixes the citation instruction with notes now reaching the template, which these runs cannot separate. The entries that used to skip retrieval go from 0% to 40.1% for A.
+
+| Runs | Faithfulness on the 43 entries that retrieved before | On the 16 that retrieve only now |
+| --- | --- | --- |
+| Corpus v1, old workflow (control, before) | 17.4% / 17.1% (mean 17.2%) | 0.0% / 0.0% (mean 0.0%) |
+| Corpus v2, old workflow (control, after) | 33.8% / 34.4% (mean 34.1%) | 0.0% / 0.0% (mean 0.0%) |
+| Variant A | 43.8% / 41.5% (mean 42.6%) | 38.4% / 41.7% (mean 40.1%) |
+| Variant B | 54.1% / 54.3% (mean 54.2%) | 48.9% / 47.0% (mean 47.9%) |
+| Variant C | 49.1% / 49.3% (mean 49.2%) | 45.9% / 44.6% (mean 45.2%) |
+
+- **Step by step on the same 43 entries** (the entries that retrieved in every run, old workflow included, so each step compares the same requests; means of two runs). Step 1 to 2 is the knowledge base and retrieval; step 2 to 3 mixes the citation instruction with notes reaching the template, which these runs cannot separate; step 3 to 4 is the request description alone.
+
+| Step | What it is | Runs | Faithfulness on the 43 entries | Change from the previous step |
+| --- | --- | --- | --- | --- |
+| 1. Old workflow, old retrieval | The final `harden-workflow-guardrails` code (re-judged): high-confidence requests skip retrieval; two templates (`high_confidence_minimal_context` v3, `low_confidence_with_retrieval` v3) that describe the request by the matched category's preset tone and constraints and have no place for `travel_style` or notes; no citations; corpus v1 with the v0.1.0 retrieval | `20261108T115256Z`, `20261108T115919Z` | 17.2% | — |
+| 2. Old workflow, new retrieval | Same workflow and templates (commit `cca44de`); corpus v2 with the final retrieval configuration: chunks 800 / 80, `retrieval` task types, destination filter, vector search, query of notes, style and destination | `20261108T120935Z`, `20261108T122045Z` | 34.1% | +16.9 points |
+| 3. Tasks 5.1 to 5.3, variant A | Same retrieval; every request retrieves (5.1); one template, `itinerary_with_context`, which adds notes (5.2); chunks numbered `[S1]`, `[S2]`, ... and each day lists the ids it relies on, checked by a business rule (5.3). Variant A (v1) still describes the style by the category preset | `20261108T123232Z`, `20261108T130747Z` | 42.6% | +8.5 points |
+| 4. Variant C | As step 3, but the request is described by the traveller's own `travel_style` and notes first, with the category preset only as a default where they say nothing (`itinerary_with_context` v3, the chosen version) | `20261108T125508Z`, `20261108T133245Z` | 49.2% | +6.6 points |
+
+- **Faithfulness with context is now measured over every planned itinerary** (59), against 43 on the old workflow, because every request retrieves; compare like with like through the breakdown above.
+- **By corpus coverage** (the dataset's `corpus_coverage` label: `city` has sections about the city itself, `national_only` only the Australia-wide handwritten documents, `none` nothing relevant; means of two runs; 5 planned entries without the label, which expect a refusal or a question, are left out). Destinations: `city` Sydney 7, Melbourne 5, Brisbane 5, Hobart 5, Perth 4, Cairns 3, 悉尼 1, 墨尔本 1, 霍巴特 1, 凯恩斯 1; `national_only` Darwin 4, Adelaide 3, Canberra 3, Uluru 2, Kangaroo Island 1, Byron Bay 1, Great Ocean Road 1, Blue Mountains 1; `none` Gold Coast 4, 黄金海岸 1.
+
+| Metric (variant C unless named) | `city` (33) | `national_only` (16) | `none` (5) |
+| --- | --- | --- | --- |
+| Faithfulness, old workflow with corpus v2 (includes the requests that skipped retrieval) | 30.1% | 9.4% | 0.0% |
+| Faithfulness, A | 54.9% | 15.8% | 3.5% |
+| Faithfulness, B | 68.7% | 19.2% | 2.3% |
+| Faithfulness, C | 63.1% | 17.7% | 1.4% |
+| Claims supported: named places (both runs pooled) | 83% (687 / 830) | 28% (82 / 295) | 1% (2 / 136) |
+| Claims supported: activities (both runs pooled) | 39% (191 / 492) | 8% (16 / 204) | 1% (1 / 72) |
+| Claims supported: transport (both runs pooled) | 36% (54 / 152) | 0% (0 / 41) | 0% (0 / 7) |
+| Preferences followed | 99.2% | 100.0% | 100.0% |
+| Destination rate | 93.9% | 81.2% | 90.0% |
+| Days that cite a source | 96.7% | 91.7% | 21.7% |
+| Recall@5 | 0.515 | 0.948 | — |
+
+  - **Faithfulness follows coverage**: 63.1%, 17.7% and 1.4% for C. The gain over the old workflow is mostly in `city` (30.1% → 63.1%); `national_only` goes 9.4% → 17.7% and `none` stays near zero. More coverage, not the template, is what would lift the other two.
+  - **Preferences followed does not depend on coverage**: it is close to 100% in every group, so what the knowledge base decides is whether claims have a source, not whether the plan fits the request.
+  - **Destination rate is lowest in `national_only`** (81.2%): with no city sections to plan from, C more often goes beyond the city (e008 and e065, Adelaide).
+  - **A citation does not mean support**: in `national_only` 91.7% of days cite a source while 17.7% of claims are supported; the cited Australia-wide documents do not contain the places named. The citation rule checks only that the ids exist. In `none` only 21.7% of days cite anything. Followed up in task 5.6.
+  - **`national_only` Recall@5 is inflated** by a pool of 9 documents, as in step b.
+
+- **Added requirements** fall from 6 and 6 (A) to 3 and 3 (C), in line with the preset no longer imposing constraints, but this count is not calibrated.
+- **Cost**: per request about the same for all three (the request description is a few lines); judge cost about $0.16 per run.
+
+---
+
+### 2026-11-09 · rebuild-rag · control: corpus v2 and the chosen retrieval on the old workflow
+
+- **What changed**: only the knowledge base and how it is searched: corpus v1 → v2, with the final retrieval configuration (chunks 800 / 80, `retrieval` task types, destination filter, query of notes, style and destination). The workflow is the one before tasks 5.1 to 5.3: high-confidence requests skip retrieval, two generation templates (`high_confidence_minimal_context` v3, `low_confidence_with_retrieval` v3), no citations.
+- **Why**: to separate what the new knowledge base brings from what the changes to the workflow and template bring (the variant record above starts from this run).
+- **Runs compared**: `20261108T115256Z-harden-workflow-guardrails-rejudge`, `20261108T115919Z-harden-workflow-guardrails-rejudge` (the final `harden-workflow-guardrails` runs `20261031T114451Z-harden-workflow-guardrails-dataset-v1` and `20261031T115436Z-harden-workflow-guardrails-dataset-v1`, re-judged with faithfulness v2, destination v2 and preference v4, no regeneration) → `20261108T120935Z-rebuild-rag-q11-dataset-v1`, `20261108T122045Z-rebuild-rag-q11-dataset-v1` (commit `cca44de`, config `rebuild-rag-q11`).
+- **Run conditions**: both on the `dataset-v1` subset (73 entries), generation `gemini-3.1-flash-lite`, judge `gpt-6-luna` with the same judge prompts, correction template v2 in both (made active in the evaluation database for the after runs, then set back to v3). Differences: dataset v2 → v3 (labels only, which affect Recall and not the generation metrics); source commit `f77b603` is a hash from before the history rewrite.
+- **Results** (each cell: run 1 / run 2):
+
+| Metric | Corpus v1, v0.1.0 retrieval | Corpus v2, chosen retrieval | Change of the means |
+| --- | --- | --- | --- |
+| Faithfulness with context | 17.4% / 17.1% | 33.8% / 34.4% | +16.9 points |
+| Preferences followed | 73.6% / 72.8% | 77.4% / 76.8% | +3.9 points |
+| Added requirements (count) | 9 / 8 | 7 / 8 | -1.0 |
+| Destination rate | 95.0% / 96.7% | 98.3% / 96.6% | +1.6 points |
+| Within budget | 100.0% / 100.0% | 100.0% / 100.0% | +0.0 points |
+| Behaviour correct | 87.7% / 87.7% | 89.0% / 89.0% | +1.4 points |
+| Retry rate | 1.7% / 0.0% | 0.0% / 1.7% | +0.0 points |
+| Mean cost per request | $0.00093 / $0.00091 | $0.00089 / $0.00091 | $-0.00002 |
+
+- **Conclusion**: the new knowledge base and retrieval alone roughly double faithfulness with context, 17.2% → 34.1% (mean of two runs). Both sides retrieved for the same 43 entries, so the figure compares the same requests. The other 16 planned entries had no context on either side and every claim in them is unsupported.
+- **Not comparable**: Recall@5 and MRR@5 (different corpus and labels); the step-by-step retrieval records cover retrieval.
+- **Cost**: unchanged within run-to-run variation.
+
+---
 
 ### 2026-11-08 · rebuild-rag · judge calibration of the re-judged baseline, and preference v4
 

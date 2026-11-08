@@ -50,7 +50,9 @@
    | B | The user's `{travel_style}` and `{notes}` only, no preset |
    | C | Both, stating that the user's words take precedence and the preset is a default suggestion |
 
-   All three carry `{notes}` (decided with the user 2026-11-08), so the comparison changes one thing: whether the style is described by the category preset or by the user's own `travel_style`. A is therefore not exactly v0.1.0; the v0.1.0 baseline already covers that. The three are versions 1 to 3 of `itinerary_with_context`; version 1 (A) is active until the comparison picks one.
+   All three carry `{notes}` (decided with the user 2026-11-08), so the comparison changes one thing: whether the style is described by the category preset or by the user's own `travel_style`. A is therefore not exactly v0.1.0; the v0.1.0 baseline already covers that. The three are versions 1 to 3 of `itinerary_with_context`.
+
+   **Result (task 5.4, `docs/experiments.md` 2026-11-09): C, version 3, is the seeded active version.** Means of two runs on the `dataset-v1` subset: preferences followed 85.6% (A), 92.4% (B), 97.7% (C); faithfulness with context 41.8%, 52.4%, 48.0%; within budget 100% for all three. The criteria set before the runs (at least +3 points of preferences followed over A, faithfulness no more than 2 points lower, within budget not lower; the higher preferences followed between qualifying variants) pick C. C gives up some faithfulness and destination rate against B (destination 89.0% against 93.2%), mostly because it follows requests that lead beyond the destination city (e007, e008, e065); request parsing (roadmap item 3) takes this up.
 
    The existing metrics cannot tell these apart (none asks whether the itinerary fits what the user asked for), so the comparison needs a new judge metric, preference adherence (task 2.4). The winner is the seeded version of `itinerary_with_context`; the decision and its numbers go into this section and `docs/experiments.md`. Whether the category presets survive at all after roadmap item 3 (request parsing) is decided there, starting from this result.
 

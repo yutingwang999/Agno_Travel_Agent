@@ -140,8 +140,9 @@ def test_correction_v3_keeps_citations_and_has_single_braces(seed_module):
     assert "{{" not in text and "}}" not in text
 
 
-def test_itinerary_with_context_variant_a_is_active_until_the_comparison(seed_module):
-    assert seed_module.ACTIVE_TEMPLATE_VERSIONS["itinerary_with_context"] == 1
+def test_itinerary_with_context_variant_c_is_active(seed_module):
+    """Variant C won the comparison of task 5.4 (docs/experiments.md, 2026-11-09)."""
+    assert seed_module.ACTIVE_TEMPLATE_VERSIONS["itinerary_with_context"] == 3
 
 
 @pytest.mark.integration

@@ -690,13 +690,14 @@ TEMPLATE_DEFINITIONS = [
 # The version of each key that requests use by default. Seed makes exactly this
 # version active; change the number to upgrade or roll back. Since rebuild-rag the
 # generate step uses only itinerary_with_context; the two older generation keys
-# stay active but are no longer selected. itinerary_with_context v1 (variant A,
-# closest to v0.1.0) is active until the comparison of task 5.4 picks a variant.
+# stay active but are no longer selected. itinerary_with_context v3 (variant C:
+# the traveller's words first, the category preset as a default) was chosen by
+# the comparison of task 5.4 (docs/experiments.md, 2026-11-09).
 ACTIVE_TEMPLATE_VERSIONS = {
     "high_confidence_minimal_context": 3,
     "low_confidence_with_retrieval": 3,
     "validate_output_correction": 3,
-    "itinerary_with_context": 1,
+    "itinerary_with_context": 3,
 }
 
 # ---- Source documents -------------------------------------------------------
