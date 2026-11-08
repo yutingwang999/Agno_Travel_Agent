@@ -109,12 +109,13 @@ def test_new_prompts_have_their_placeholders_and_kinds():
     assert "{notes}" in load_prompt("destination", 2)
     assert "{notes}" in load_prompt("preference", 1)
     assert "{notes}" in load_prompt("preference", 2)
-    preference = load_prompt("preference", 3)
+    assert "{notes}" in load_prompt("preference", 3)
+    preference = load_prompt("preference", 4)
     assert "{travel_style}" in preference and "{notes}" in preference and "{itinerary}" in preference
 
 
 def test_summary_records_the_versions_used():
-    assert Judge(FakeClient()).prompt_versions == {"faithfulness": 2, "destination": 2, "preference": 3}
+    assert Judge(FakeClient()).prompt_versions == {"faithfulness": 2, "destination": 2, "preference": 4}
 
 
 def test_destination_prompt_carries_the_notes():
@@ -196,7 +197,7 @@ def test_rejudging_can_keep_a_kind_as_stored():
 
     assert record["judge"]["faithfulness"]["version"] == 1
     assert record["judge"]["destination"]["version"] == 1
-    assert record["judge"]["preference"]["version"] == 3
+    assert record["judge"]["preference"]["version"] == 4
 
 
 def test_a_record_the_run_did_not_judge_stays_as_it_is():
@@ -443,3 +444,28 @@ def test_a_restriction_on_movement_is_still_an_added_requirement(judge):
     verdict = judge.preference(plan, "art").verdict
 
     assert verdict.added_requirements, verdict
+
+
+@pytest.mark.integration
+def test_a_celebratory_dinner_is_not_an_added_requirement(judge):
+    plan = _plan("Gallery morning, then a celebratory dinner at a harbourside restaurant", "Book dinner ahead")
+    verdict = judge.preference(plan, "art and food").verdict
+
+    assert not verdict.added_requirements, verdict
+
+
+@pytest.mark.integration
+def test_what_a_chosen_place_offers_is_not_an_added_requirement(judge):
+    plan = _plan("Stay at a hotel near the central station, then walk the stroller-friendly lakeside track",
+                 "Trains run every ten minutes")
+    verdict = judge.preference(plan, "nature").verdict
+
+    assert not verdict.added_requirements, verdict
+
+
+@pytest.mark.integration
+def test_planning_around_a_stated_need_is_not_an_added_requirement(judge):
+    plan = _plan("Wildlife park on level paved paths, without strenuous hiking", "Rest in the afternoon")
+    verdict = judge.preference(plan, "wildlife", notes="I use a wheelchair.").verdict
+
+    assert not verdict.added_requirements, verdict
