@@ -44,6 +44,7 @@ VALID_ITINERARY = {
             "afternoon": "Lunch",
             "evening": "Dinner",
             "estimated_cost_aud": 150.0,
+            "sources": [],
         }
     ],
     "total_estimated_cost_aud": 150.0,  # equals the daily costs (cost consistency rule)

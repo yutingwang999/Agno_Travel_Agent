@@ -93,8 +93,7 @@ def test_knowledge_context_matches_generate_formatting():
              "data": {"retrieved_context": [{"title": "Guide to Sydney", "chunk_text": "Bondi ..."},
                                             {"title": "", "chunk_text": "Untitled text"}]}}
     context = knowledge_context([{"step": "intake"}, event])
-    assert "[Guide to Sydney]\nBondi ..." in context
-    assert "Untitled text" in context
+    assert context == "[S1] Guide to Sydney\nBondi ...\n\n[S2] \nUntitled text"
 
 
 def test_knowledge_context_empty_without_retrieval():

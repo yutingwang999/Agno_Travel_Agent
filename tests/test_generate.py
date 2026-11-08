@@ -9,8 +9,7 @@ Verifies:
   - every request uses itinerary_with_context, whatever the confidence (rebuild-rag)
   - {notes} is substituted, and empty when the request has none
   - _format_template only replaces identifier placeholders, leaves JSON braces intact
-  - retrieved_context is empty string when rag_retrieve step was skipped
-  - retrieved_context is populated when rag_retrieve step ran
+  - retrieved chunks are numbered [S1], [S2], ... and listed in context_sources (rebuild-rag)
 """
 
 import json
@@ -184,47 +183,49 @@ def test_format_template_handles_empty_retrieved_context():
 # ---------------------------------------------------------------------------
 
 
-def test_extract_retrieved_context_returns_empty_when_step_skipped():
-    """Returns empty string when rag_retrieve step was not executed."""
+def _chunk(n: int) -> dict:
+    return {"chunk_id": f"c{n}", "destination": "sydney", "state": "NSW", "title": f"Title {n}",
+            "chunk_text": f"Text {n}.", "source": f"https://example.org/{n}", "section": "Do"}
+
+
+def test_citation_ids_assigned():
+    """Spec scenario "Citation ids assigned": blocks start with [S1], [S2], [S3] in retrieval order."""
     from app.workflow.steps.generate import _extract_retrieved_context
 
-    step_input = _make_step_input(cag_data={"matched_category": "family", "confidence_score": 0.85})
-    # No rag_data → rag_retrieve step output absent
+    rendered, _ = _extract_retrieved_context(_make_step_input(rag_data={"retrieved_context": [_chunk(1), _chunk(2), _chunk(3)]}))
 
-    result = _extract_retrieved_context(step_input)
-
-    assert result == ""
+    assert rendered == "[S1] Title 1\nText 1.\n\n[S2] Title 2\nText 2.\n\n[S3] Title 3\nText 3."
 
 
-def test_extract_retrieved_context_returns_formatted_chunks():
-    """Returns joined chunk text when rag_retrieve step provided results."""
+@pytest.mark.parametrize("rag_data", [None, {"retrieved_context": [], "chunks_retrieved": 0}])
+def test_retrieval_returned_nothing(rag_data):
+    """Spec scenarios "Retrieval returned nothing" and "No chunks retrieved"."""
     from app.workflow.steps.generate import _extract_retrieved_context
 
-    rag_data = {
-        "retrieved_context": [
-            {"destination": "Sydney", "title": "Guide to Sydney", "chunk_text": "Sydney has great beaches."},
-            {"destination": "Sydney", "title": "Sydney Transport", "chunk_text": "Trains run frequently."},
-        ],
-        "chunks_retrieved": 2,
-    }
-    step_input = _make_step_input(rag_data=rag_data)
-
-    result = _extract_retrieved_context(step_input)
-
-    assert "Sydney has great beaches." in result
-    assert "Trains run frequently." in result
-    assert "Guide to Sydney" in result
+    assert _extract_retrieved_context(_make_step_input(rag_data=rag_data)) == ("", [])
 
 
-def test_extract_retrieved_context_returns_empty_for_empty_list():
-    """Returns empty string when rag_retrieve ran but found no chunks."""
+def test_sources_listed():
+    """Spec scenario "Sources listed": one context_sources entry per chunk in the prompt."""
     from app.workflow.steps.generate import _extract_retrieved_context
 
-    step_input = _make_step_input(rag_data={"retrieved_context": [], "chunks_retrieved": 0})
+    _, sources = _extract_retrieved_context(_make_step_input(rag_data={"retrieved_context": [_chunk(1), _chunk(2), _chunk(3)]}))
 
-    result = _extract_retrieved_context(step_input)
+    assert [s["id"] for s in sources] == ["S1", "S2", "S3"]
+    assert sources[1] == {"id": "S2", "chunk_id": "c2", "title": "Title 2",
+                          "source": "https://example.org/2", "section": "Do"}
 
-    assert result == ""
+
+def test_generate_event_carries_context_sources():
+    event = _run_generate_executor(has_rag_context=True)
+
+    assert [s["id"] for s in event["data"]["context_sources"]] == ["S1"]
+
+
+def test_generate_event_has_empty_context_sources_without_chunks():
+    event = _run_generate_executor(has_rag_context=False)
+
+    assert event["data"]["context_sources"] == []
 
 
 # ---------------------------------------------------------------------------

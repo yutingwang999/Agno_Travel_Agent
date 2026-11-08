@@ -131,6 +131,15 @@ def test_itinerary_with_context_variants_differ_only_in_the_request_description(
     assert b.endswith(tail) and c.endswith(tail)
 
 
+def test_correction_v3_keeps_citations_and_has_single_braces(seed_module):
+    text = next(d["template_text"] for d in seed_module.TEMPLATE_DEFINITIONS
+                if d["template_key"] == "validate_output_correction" and d["version"] == 3)
+    assert seed_module.ACTIVE_TEMPLATE_VERSIONS["validate_output_correction"] == 3
+    assert '"sources": [string]' in text and "citation" in text
+    assert "{validation_errors}" in text and "{raw_llm_output}" in text
+    assert "{{" not in text and "}}" not in text
+
+
 def test_itinerary_with_context_variant_a_is_active_until_the_comparison(seed_module):
     assert seed_module.ACTIVE_TEMPLATE_VERSIONS["itinerary_with_context"] == 1
 

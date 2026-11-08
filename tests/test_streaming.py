@@ -28,7 +28,7 @@ from app.workflow.llm_usage import LLMResult
 _VALID_ITINERARY_JSON = (
     '{"destination": "Sydney", "trip_length_days": 1, "budget_level": "moderate",'
     ' "travel_style": "family", "daily_itinerary": [{"day": 1, "morning": "Bondi Beach",'
-    ' "afternoon": "Lunch", "evening": "Dinner", "estimated_cost_aud": 150.0}],'
+    ' "afternoon": "Lunch", "evening": "Dinner", "estimated_cost_aud": 150.0, "sources": []}],'
     ' "total_estimated_cost_aud": 150.0, "key_tips": ["Book ahead"]}'
 )
 

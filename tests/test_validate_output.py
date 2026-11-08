@@ -38,6 +38,7 @@ VALID_ITINERARY = {
             "afternoon": "Lunch at Bondi Icebergs",
             "evening": "Dinner in Surry Hills",
             "estimated_cost_aud": 150.0,
+            "sources": [],
         }
     ],
     "total_estimated_cost_aud": 150.0,  # equals the daily costs (cost consistency rule)
@@ -631,3 +632,134 @@ def test_requested_length_violation_triggers_the_correction_call():
     assert mock_llm.call_count == 1
     assert "Content guardrail failed: the request asks for 5 day(s)" in mock_llm.call_args.kwargs["prompt"]
     assert event["status"] == "error"
+
+
+
+# ---------------------------------------------------------------------------
+# Citations (rebuild-rag 6.2 and 6.3)
+# ---------------------------------------------------------------------------
+
+
+def _with_sources(*per_day: list[str]) -> str:
+    itinerary = json.loads(VALID_ITINERARY_JSON)
+    day = itinerary["daily_itinerary"][0]
+    itinerary["daily_itinerary"] = [{**day, "day": i + 1, "sources": s} for i, s in enumerate(per_day)]
+    itinerary["trip_length_days"] = len(per_day)
+    itinerary["total_estimated_cost_aud"] = day["estimated_cost_aud"] * len(per_day)
+    return json.dumps(itinerary)
+
+
+def test_day_without_sources_passes():
+    """Spec scenario "Day without sources": an empty list is valid."""
+    from app.workflow.output_validator import parse_llm_output
+
+    output, errors = parse_llm_output(_with_sources([]))
+
+    assert errors is None and output.daily_itinerary[0].sources == []
+
+
+def test_day_missing_the_sources_field_fails():
+    from app.workflow.output_validator import parse_llm_output
+
+    itinerary = json.loads(_with_sources([]))
+    del itinerary["daily_itinerary"][0]["sources"]
+    output, errors = parse_llm_output(json.dumps(itinerary))
+
+    assert output is None and "sources" in errors
+
+
+def _context(*ids: str):
+    from app.workflow.business_rules import ValidationContext
+
+    return ValidationContext(citation_ids=frozenset(ids))
+
+
+def test_invented_citation():
+    """Spec scenario "Invented citation"."""
+    from app.workflow.output_validator import parse_llm_output
+
+    output, errors = parse_llm_output(_with_sources(["S1", "S7"]), _context("S1", "S2", "S3", "S4", "S5"))
+
+    assert output is None
+    assert errors.startswith("Business rule failed: citation")
+    assert "day 1 cites S7" in errors and "S1, S2, S3, S4, S5" in errors
+
+
+def test_citation_without_context():
+    """Spec scenario "Citation without context"."""
+    from app.workflow.output_validator import parse_llm_output
+
+    output, errors = parse_llm_output(_with_sources([], ["S1"]), _context())
+
+    assert output is None
+    assert errors.startswith("Business rule failed: citation")
+    assert "day 2 cites S1" in errors and "must be empty" in errors
+
+
+def test_valid_citations_pass():
+    from app.workflow.output_validator import parse_llm_output
+
+    output, errors = parse_llm_output(_with_sources(["S1"], ["S2", "S1"]), _context("S1", "S2"))
+
+    assert errors is None
+
+
+def test_citation_rule_skipped_when_ids_unknown():
+    from app.workflow.output_validator import parse_llm_output
+
+    output, errors = parse_llm_output(_with_sources(["S9"]))
+
+    assert errors is None
+
+
+def _validate_with_context(raw: str, context_sources: list[dict]) -> dict:
+    from agno.workflow.types import StepInput, StepOutput
+
+    from app.workflow.steps.validate_output import validate_output_executor
+
+    generate = {"session_id": "s", "step": "generate", "status": "completed", "timestamp": "t",
+                "data": {"raw_llm_output": raw, "prompt_template_key": "itinerary_with_context",
+                         "prompt_template_version": 1, "context_sources": context_sources},
+                "error": None}
+    step_input = StepInput(additional_data={"session_id": "s"},
+                           previous_step_outputs={"generate": StepOutput(step_name="generate", content=json.dumps(generate))})
+    with patch("app.workflow.steps.validate_output.write_trace"):
+        return json.loads(validate_output_executor(step_input).content)
+
+
+def _source(n: int) -> dict:
+    return {"id": f"S{n}", "chunk_id": f"c{n}", "title": f"Title {n}",
+            "source": f"https://example.org/{n}", "section": "Do"}
+
+
+def test_citations_resolved():
+    """Spec scenario "Citations resolved": the event maps each used id to title, source and section."""
+    event = _validate_with_context(_with_sources(["S1"], ["S3", "S1"]), [_source(1), _source(2), _source(3)])
+
+    assert event["status"] == "completed"
+    assert event["data"]["citations"] == {
+        "S1": {"title": "Title 1", "source": "https://example.org/1", "section": "Do"},
+        "S3": {"title": "Title 3", "source": "https://example.org/3", "section": "Do"},
+    }
+
+
+def test_no_citations_gives_an_empty_mapping():
+    event = _validate_with_context(_with_sources([]), [_source(1)])
+
+    assert event["data"]["citations"] == {}
+
+
+def test_invented_citation_triggers_the_correction_call():
+    """A citation failure enters the existing corrective retry."""
+    corrected = _with_sources(["S1"])
+    with (
+        patch("app.workflow.steps.validate_output.resolve_template", return_value=("Fix: {validation_errors}", 3)),
+        patch("app.workflow.steps.validate_output._call_llm", return_value=LLMResult(corrected)) as mock_llm,
+        patch.dict("os.environ", {"DATABASE_URL": "postgresql://fake", "GEMINI_API_KEY": "k"}),
+    ):
+        event = _validate_with_context(_with_sources(["S4"]), [_source(1)])
+
+    assert "Business rule failed: citation" in mock_llm.call_args.kwargs["prompt"]
+    assert event["status"] == "completed" and event["data"]["degraded_mode"] is True
+    assert set(event["data"]["citations"]) == {"S1"}
+

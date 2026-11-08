@@ -45,9 +45,9 @@ Order (decided with the user 2026-11-08): 5.1 and 5.2, then 6.1 to 6.3, then 5.3
 
 ## 6. Source citations
 
-- [ ] 6.1 generate numbers the knowledge chunks `[S1]`… and adds `context_sources` to the event; Verify: `test_generate.py` covers Citation ids assigned / Retrieval returned nothing / Sources listed / No chunks retrieved
-- [ ] 6.2 `ItineraryOutput` adds `sources` to each day (harden's `response_schema` is updated along with it); Verify: schema tests cover Day without sources
-- [ ] 6.3 validate_output adds a citation validity rule, and on success the event carries `citations`; Verify: unit tests cover Invented citation / Citation without context / Citations resolved
+- [x] 6.1 generate numbers the knowledge chunks `[S1]`… and adds `context_sources` to the event; Verify: `test_generate.py` covers Citation ids assigned / Retrieval returned nothing / Sources listed / No chunks retrieved
+- [x] 6.2 `ItineraryOutput` adds `sources` to each day (harden's `response_schema` is updated along with it); Verify: schema tests cover Day without sources
+- [x] 6.3 validate_output adds a citation validity rule, and on success the event carries `citations`; the correction template gets a version 3 with `sources` in its JSON example and an instruction to keep valid citations and drop the invalid ones it is told about (the correction call has no knowledge context); Verify: unit tests cover Invented citation / Citation without context / Citations resolved
 - [ ] 6.4 Frontend: show source titles and links under each day's card, with the Wikivoyage licence notice; Verify: run the Family trip preset once in the browser; the sources are visible and can be opened
 
 ## 7. API

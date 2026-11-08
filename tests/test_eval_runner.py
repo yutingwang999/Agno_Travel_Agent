@@ -54,7 +54,7 @@ def _entry(entry_id, expected="plan", sections=("Guide to Sydney",), days=2, tag
 
 def _sse(session_id, days, with_rag):
     itinerary = {"daily_itinerary": [{"day": d, "morning": "m", "afternoon": "a", "evening": "e",
-                                      "estimated_cost_aud": 50} for d in range(1, days + 1)],
+                                      "estimated_cost_aud": 50, "sources": []} for d in range(1, days + 1)],
                  "total_estimated_cost_aud": 50 * days, "key_tips": ["t"]}
     events = [{"session_id": session_id, "step": "intake", "status": "completed", "data": {}}]
     if with_rag:
@@ -201,7 +201,7 @@ def test_result_record_keeps_judge_inputs_not_the_rendered_prompt():
     fit = record["judge"]["preference"]
     assert (fit["prompt"], fit["version"]) == ("preference", 4)
     assert fit["verdict"]["preferences"][0]["followed"] is True
-    assert "[Guide to Sydney]" in faith["knowledge_context"]
+    assert "[S1] Guide to Sydney" in faith["knowledge_context"]
     assert faith["itinerary_text"].startswith("Day 1")
     assert "Extract every specific claim" not in json.dumps(record)  # template text is not repeated
     assert record["outcome"]["events"][-1]["step"] == "validate_output"

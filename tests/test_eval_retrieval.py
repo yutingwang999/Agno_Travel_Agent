@@ -167,7 +167,7 @@ def mocked_workflow(monkeypatch):
         '{"destination": "Sydney", "trip_length_days": 3, "budget_level": "moderate",'
         ' "travel_style": "family", "daily_itinerary": ['
         + ", ".join(
-            f'{{"day": {d}, "morning": "m", "afternoon": "a", "evening": "e", "estimated_cost_aud": 50.0}}'
+            f'{{"day": {d}, "morning": "m", "afternoon": "a", "evening": "e", "estimated_cost_aud": 50.0, "sources": []}}'
             for d in (1, 2, 3)
         )
         + '], "total_estimated_cost_aud": 150.0, "key_tips": ["t"]}'

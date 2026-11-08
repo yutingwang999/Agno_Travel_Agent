@@ -247,7 +247,10 @@ Raw LLM response and the prompt template that was used.
   "data": {
     "raw_llm_output":          "{ \"destination\": \"sydney\", ... }",
     "prompt_template_key":     "itinerary_with_context",
-    "prompt_template_version": 1
+    "prompt_template_version": 1,
+    "context_sources": [
+      {"id": "S1", "chunk_id": "...", "title": "Sydney", "source": "https://...", "section": "See"}
+    ]
   },
   "error": null
 }
@@ -258,6 +261,9 @@ Raw LLM response and the prompt template that was used.
 | `raw_llm_output` | string | Raw text from the LLM before validation |
 | `prompt_template_key` | string | Always `"itinerary_with_context"` |
 | `prompt_template_version` | integer | The version of the template that was resolved |
+| `context_sources` | array | One entry per retrieved chunk placed in the prompt, in order: `id` (the citation id `S1`, `S2`, ...), `chunk_id`, `title`, `source` (URL), `section`. Empty when retrieval returned nothing |
+
+In the prompt each chunk is written as `[S1] <title>` followed by its text, and the model lists, for each day, the ids that day draws on.
 
 On error (template not found):
 
@@ -298,21 +304,24 @@ Validated and structured itinerary. This is the final consumable output.
           "morning":               "Visit the Sydney Opera House and join a guided backstage tour.",
           "afternoon":             "Walk across the Harbour Bridge and explore The Rocks heritage precinct.",
           "evening":               "Dinner at a waterfront restaurant in Circular Quay.",
-          "estimated_cost_aud":    180.0
+          "estimated_cost_aud":    180.0,
+          "sources":               ["S1"]
         },
         {
           "day":                   2,
           "morning":               "Aboriginal Bush Tucker Tour at the Royal Botanic Gardens.",
           "afternoon":             "Art Gallery of NSW — permanent collection and Aboriginal art wing.",
           "evening":               "Live performance at the Sydney Opera House.",
-          "estimated_cost_aud":    160.0
+          "estimated_cost_aud":    160.0,
+          "sources":               ["S1", "S2"]
         },
         {
           "day":                   3,
           "morning":               "Coastal walk from Bondi Beach to Coogee.",
           "afternoon":             "Sydney Jewish Museum or Museum of Sydney.",
           "evening":               "Dinner in Surry Hills.",
-          "estimated_cost_aud":    140.0
+          "estimated_cost_aud":    140.0,
+          "sources":               []
         }
       ],
       "total_estimated_cost_aud": 480.0,
@@ -322,11 +331,17 @@ Validated and structured itinerary. This is the final consumable output.
         "Many galleries have free entry; check before paying at the door."
       ]
     },
-    "degraded_mode": false
+    "degraded_mode": false,
+    "citations": {
+      "S1": {"title": "Sydney", "source": "https://...", "section": "See"},
+      "S2": {"title": "Sydney/City Centre", "source": "https://...", "section": "Do"}
+    }
   },
   "error": null
 }
 ```
+
+Each day's `sources` lists the citation ids it draws on, possibly none. `citations` maps every id used in the itinerary to its `title`, `source` and `section` from the `generate` event's `context_sources`, so a client can show the sources under each day.
 
 `degraded_mode: true` means the first LLM response failed validation and a corrective retry was needed — the itinerary is still valid but was produced on the second attempt.
 
@@ -444,7 +459,7 @@ flowchart TD
     V2 -- no --> E3["error: Validation failed after retry<br/>trace: validation_failed_after_retry"]
 ```
 
-"Validation" means JSON parsing, the `ItineraryOutput` schema, and the business rules: the day count (internally and against the requested `trip_length`), daily costs adding up to the total, the total within the request's daily budget ceiling times the days, and no opening hours or prices in the text that the retrieved chunks do not state. A failed rule is reported in the correction prompt and, if the correction also fails, in `error` (messages begin `Content guardrail failed:` or `Business rule failed: cost` / `budget` / `unsupported`).
+"Validation" means JSON parsing, the `ItineraryOutput` schema, and the business rules: the day count (internally and against the requested `trip_length`), daily costs adding up to the total, the total within the request's daily budget ceiling times the days, no opening hours or prices in the text that the retrieved chunks do not state, and every citation id in a day's `sources` being one of the `generate` event's `context_sources` (all `sources` empty when there were none). A failed rule is reported in the correction prompt and, if the correction also fails, in `error` (messages begin `Content guardrail failed:` or `Business rule failed: cost` / `budget` / `unsupported` / `citation`).
 
 Every `validate_output` error event has `"data": { "degraded_mode": true }`. A reply blocked by Gemini's safety filter arrives as empty text, not as an exception, so it ends as "Validation failed after retry".
 

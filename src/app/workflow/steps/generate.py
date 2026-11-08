@@ -6,8 +6,9 @@ Reads upstream workflow state to build a fully resolved prompt:
   the optional ``max_daily_budget_aud`` from intake (available in
   ``step_input.additional_data``); budget and amount give ``daily_budget_ceiling``
 - ``matched_category``, ``tone``, ``constraints`` from the cag_match SSE event
-- ``retrieved_context`` from the rag_retrieve SSE event (empty string when
-  retrieval returned nothing)
+- ``retrieved_context`` from the rag_retrieve SSE event, each chunk numbered
+  with a citation id ``[S1]``, ``[S2]``, ... (empty string when retrieval
+  returned nothing); ``context_sources`` in the event maps each id to its chunk
 
 Every request uses the template key ``itinerary_with_context`` (rebuild-rag):
 the active version from ``prompt_templates``, or the exact version given by
@@ -59,41 +60,50 @@ def _extract_from_step(step_input: StepInput, step_name: str, field: str) -> str
         return ""
 
 
-def _extract_retrieved_context(step_input: StepInput) -> str:
-    """Build a plain-text block from the rag_retrieve chunk list.
+def _retrieved_chunks(step_input: StepInput) -> list[dict]:
+    """Return the chunk dicts of the rag_retrieve event, or [] when unavailable."""
+    content = step_input.get_step_content("rag_retrieve")
+    if content is None:
+        return []
+    try:
+        chunks = json.loads(content).get("data", {}).get("retrieved_context") or []
+    except (json.JSONDecodeError, TypeError, AttributeError):
+        return []
+    return [chunk for chunk in chunks if isinstance(chunk, dict)]
 
-    Joins each retrieved chunk's title and text into a single string for
-    the ``{retrieved_context}`` placeholder.  Returns an empty string if
-    rag_retrieve did not run or returned no chunks.
+
+def citation_id(position: int) -> str:
+    """The citation id of the chunk at 1-based *position*: ``S1``, ``S2``, ..."""
+    return f"S{position}"
+
+
+def _extract_retrieved_context(step_input: StepInput) -> tuple[str, list[dict]]:
+    """Number the retrieved chunks as citations and render them for the prompt.
+
+    Each chunk becomes ``"[S{n}] {title}\\n{chunk_text}"`` in retrieval order,
+    joined by blank lines, and gets an entry in the returned sources list.
 
     Args:
         step_input: Agno step input carrying previous step outputs.
 
     Returns:
-        A newline-separated string of document chunks, or ``""`` if none.
+        ``(retrieved_context, context_sources)``: the rendered text, ``""`` when
+        no chunks were retrieved, and one ``{"id", "chunk_id", "title",
+        "source", "section"}`` dict per chunk placed in the prompt.
     """
-    content = step_input.get_step_content("rag_retrieve")
-    if content is None:
-        return ""
-    try:
-        event = json.loads(content)
-        chunks = event.get("data", {}).get("retrieved_context", [])
-    except (json.JSONDecodeError, TypeError):
-        return ""
-
-    if not chunks:
-        return ""
-
-    parts = []
-    for chunk in chunks:
-        title = chunk.get("title", "")
-        chunk_text = chunk.get("chunk_text", "")
-        if title:
-            parts.append(f"[{title}]\n{chunk_text}")
-        else:
-            parts.append(chunk_text)
-
-    return "\n\n".join(parts)
+    blocks, sources = [], []
+    for position, chunk in enumerate(_retrieved_chunks(step_input), start=1):
+        cid = citation_id(position)
+        title = chunk.get("title") or ""
+        blocks.append(f"[{cid}] {title}\n{chunk.get('chunk_text') or ''}")
+        sources.append({
+            "id": cid,
+            "chunk_id": chunk.get("chunk_id"),
+            "title": title,
+            "source": chunk.get("source"),
+            "section": chunk.get("section"),
+        })
+    return "\n\n".join(blocks), sources
 
 
 def _format_template(template_text: str, variables: dict) -> str:
@@ -182,8 +192,8 @@ def generate_executor(step_input: StepInput) -> StepOutput:
     tone: str = _extract_from_step(step_input, "cag_match", "tone")
     constraints: str = _extract_from_step(step_input, "cag_match", "constraints")
 
-    # Read the knowledge context — empty string when retrieval returned nothing
-    retrieved_context: str = _extract_retrieved_context(step_input)
+    # Read the knowledge context, numbered for citations — "" when retrieval returned nothing
+    retrieved_context, context_sources = _extract_retrieved_context(step_input)
 
     template_key: str = TEMPLATE_KEY
 
@@ -266,6 +276,7 @@ def generate_executor(step_input: StepInput) -> StepOutput:
             "raw_llm_output": raw_llm_output,
             "prompt_template_key": template_key,
             "prompt_template_version": template_version,
+            "context_sources": context_sources,
         },
     )
 

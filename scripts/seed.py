@@ -606,6 +606,22 @@ ITINERARY_WITH_CONTEXT_A = _itinerary_with_context(REQUEST_PRESET)
 ITINERARY_WITH_CONTEXT_B = _itinerary_with_context(REQUEST_OWN_WORDS)
 ITINERARY_WITH_CONTEXT_C = _itinerary_with_context(REQUEST_BOTH)
 
+# validate_output_correction v3 (rebuild-rag): v2 with "sources" in the JSON example,
+# an instruction on citations, and single braces (v1 and v2 double them, and
+# _build_correction_prompt never unescapes them either). The correction call has no
+# knowledge context, so it keeps the original citations and drops only invalid ones.
+CITATION_CORRECTION_SENTENCE = (
+    'Keep each day\'s "sources" (citation ids such as "S1") as they are, unless an error above '
+    "says a citation is invalid: then remove the ids it names."
+)
+_SOURCES_IN_EXAMPLE = ('      "estimated_cost_aud": number\n', '      "estimated_cost_aud": number,\n      "sources": [string]\n')
+assert CORRECTION_TEMPLATE_V2.count(_SOURCES_IN_EXAMPLE[0]) == 1
+CORRECTION_TEMPLATE_V3 = _insert_before(
+    CORRECTION_TEMPLATE_V2.replace("{{", "{").replace("}}", "}").replace(*_SOURCES_IN_EXAMPLE),
+    "Return ONLY a corrected valid JSON object",
+    CITATION_CORRECTION_SENTENCE,
+)
+
 # Every version ever defined, append-only: a new wording is a new entry, so
 # earlier results stay reproducible with ?template_version=N.
 TEMPLATE_DEFINITIONS = [
@@ -664,6 +680,11 @@ TEMPLATE_DEFINITIONS = [
         "version": 3,
         "template_text": ITINERARY_WITH_CONTEXT_C,
     },
+    {
+        "template_key": "validate_output_correction",
+        "version": 3,
+        "template_text": CORRECTION_TEMPLATE_V3,
+    },
 ]
 
 # The version of each key that requests use by default. Seed makes exactly this
@@ -674,7 +695,7 @@ TEMPLATE_DEFINITIONS = [
 ACTIVE_TEMPLATE_VERSIONS = {
     "high_confidence_minimal_context": 3,
     "low_confidence_with_retrieval": 3,
-    "validate_output_correction": 2,
+    "validate_output_correction": 3,
     "itinerary_with_context": 1,
 }
 

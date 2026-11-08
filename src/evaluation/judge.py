@@ -111,7 +111,7 @@ def knowledge_context(events: list[dict]) -> str:
     step_input = StepInput(
         previous_step_outputs={"rag_retrieve": StepOutput(step_name="rag_retrieve", content=json.dumps(rag_event))}
     )
-    return _extract_retrieved_context(step_input)
+    return _extract_retrieved_context(step_input)[0]
 
 
 def itinerary_text(itinerary: dict) -> str:
