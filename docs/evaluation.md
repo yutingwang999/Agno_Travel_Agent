@@ -137,7 +137,7 @@ Observed behaviour is `plan` (a validated itinerary), `refuse` (422 with a guard
 
 **`faithfulness`** — The judge extracts specific claims (opening hours, prices, named places, transport routes and durations, and from prompt v2 activities at a place and seasons) and decides whether the knowledge context the generator was given supports each one; a matching name with a different location is unsupported. Numbers from different prompt versions are not comparable: `conditions.judge_prompts` says which one a run used.
 
-**`preference`** — From judge prompt `preference_v4` (v1 counted planned meals and etiquette as added requirements, v2 still counted being able to do a planned activity, and v3 failed calibration on celebratory dinners, descriptions of chosen places and plans that follow from a stated need, see `docs/experiments.md`). The judge lists what the traveller's `travel_style` and `notes` ask of the trip and decides whether the itinerary follows each (`followed_share`). It also lists what the itinerary assumes about the traveller that they did not state, such as their access needs, diet, who travels with them or the reason for the trip (`added_requirements`, `itineraries_with_added_requirements`), for example wheelchair access for "seniors, slow pace"; these are counted, not treated as failures, since some defaults are reasonable.
+**`preference`** — From judge prompt `preference_v4` (v1 counted planned meals and etiquette as added requirements, v2 still counted being able to do a planned activity, and v3 failed calibration on celebratory dinners, descriptions of chosen places and plans that follow from a stated need, see `docs/experiments.md`). The judge lists what the traveller's `travel_style` and `notes` ask of the trip and decides whether the itinerary follows each (`followed_share`). It also lists what the itinerary assumes about the traveller that they did not state, such as their access needs, diet, who travels with them or the reason for the trip (`added_requirements`, `itineraries_with_added_requirements`), for example wheelchair access for "seniors, slow pace"; these are counted, not treated as failures, since some defaults are reasonable. Calibration (2026-11-08, see `docs/experiments.md`): `followed_share` passes; `added_requirements` does not (6 of 9 agreed under v4), so it is reported as a count and checked by reading the listed items, not used as a decision criterion on its own. One known cause: the judge does not receive the budget level, so a choice that follows from `luxury` can be listed as an assumption.
 
 | Field | Meaning |
 | --- | --- |
@@ -307,7 +307,7 @@ If the judge extracts the *same* text twice — the route as `transport` and "Ma
 - `extraction_precision` and `missed_claims` — how well the judge picks out claims.
 - `destination.judge_in` / `destination.judge_out` — the same for the destination check.
 
-If any stratum is below 0.8, improve the judge prompt (a new version) and recalibrate before relying on that metric. Record the result in the baseline or change entry of `experiments.md`, with the sample sizes.
+If any stratum is below 0.8, improve the judge prompt (a new version) and recalibrate before relying on that metric; if that is not done, say next to the metric that it failed calibration, as for `preference.judge_added`. Record the result in the baseline or change entry of `experiments.md`, with the sample sizes.
 
 ## Time and cost per run
 

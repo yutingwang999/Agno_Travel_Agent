@@ -32,6 +32,7 @@ This file records the effect of every change that affects quality, behaviour or 
 
 | Date | Change | What changed | Key result | Record |
 | --- | --- | --- | --- | --- |
+| 2026-11-08 | `rebuild-rag` | Judge calibration of the re-judged baseline, and preference v4 | Faithfulness v2 and destination v2 pass every stratum; preferences followed passes (83.3% (20 / 24) for "not followed"); added requirements fail (66.7% (6 / 9)) and are reported as a count only | [Calibration](#2026-11-08--rebuild-rag--judge-calibration-of-the-re-judged-baseline-and-preference-v4) |
 | 2026-11-05 | `rebuild-rag` | Preference v3: being able to do a planned activity is not an added requirement | Added requirements 21 and 18 → 13 and 17; preferences followed about 82% and 83%; to be calibrated | [Preference v3](#2026-11-05--rebuild-rag--preference-v3-being-able-to-do-a-planned-activity-is-not-an-added-requirement) |
 | 2026-11-05 | `rebuild-rag` | Preference v2 narrows added requirements | Added requirements 94 and 86 → 21 and 18 on the two baselines; preferences followed stays about 81% to 82%; not calibrated yet | [Preference v2](#2026-11-05--rebuild-rag--preference-v2-narrows-added-requirements) |
 | 2026-11-05 | `rebuild-rag` | v0.1.0 baseline re-judged with faithfulness v2, destination v2 and preference v1 | Faithfulness with context 23.0% under v1, 20.5% under v2 (mean of two runs); not calibrated yet | [Re-judged baseline](#2026-11-05--rebuild-rag--v010-baseline-re-judged-with-faithfulness-v2-destination-v2-and-preference-v1) |
@@ -92,6 +93,38 @@ Copy the template below, fill it in, and put it at the **top** of the "Records" 
 ---
 
 ## Records
+
+### 2026-11-08 · rebuild-rag · judge calibration of the re-judged baseline, and preference v4
+
+First calibration of faithfulness v2, destination v2 and the preference judge. The sample was drawn from `20261105T111852Z-v010-baseline-rejudge` (preference v3): 20 itineraries in full plus 23 more for the judge's less common answers only (a place outside the destination, a preference not followed, an added requirement). The added requirements failed, so preference v4 (commit `c051f22`) re-judged the preference verdicts of both baselines, faithfulness and destination verdicts carried over unchanged, and was calibrated on `20261108T103031Z-v010-baseline-rejudge`: the same 20 itineraries plus 17. Answers to items with identical text were carried over from the first review; the reviewer answered the 20 new or reworded preference items and added requirements. Agreement figures: `eval/calibration/<run id>.agreement.json`. Cell: agreement (agreeing / compared), ❌ below 0.8.
+
+| Stratum | `20261105T111852Z-v010-baseline-rejudge` (preference v3) | `20261108T103031Z-v010-baseline-rejudge` (preference v4) |
+| --- | --- | --- |
+| `faithfulness.judge_supported` | 100.0% (107 / 107) | 100.0% (107 / 107) |
+| `faithfulness.judge_unsupported` | 99.0% (98 / 99) | 99.0% (98 / 99) |
+| `destination.judge_in` | 100.0% (80 / 80) | 100.0% (80 / 80) |
+| `destination.judge_out` | 100.0% (8 / 8) | 100.0% (8 / 8) |
+| `preference.judge_followed` | 100.0% (31 / 31) | 100.0% (30 / 30) |
+| `preference.judge_not_followed` | 82.6% (19 / 23) | 83.3% (20 / 24) |
+| `preference.judge_added` | 46.2% (6 / 13) ❌ | 66.7% (6 / 9) ❌ |
+| `extraction_precision` (claims reviewed) | 97.2% (212) | 97.2% (212) |
+| `missed_claims` | 14 | 14 |
+
+Preference v4 re-judging, all 146 itineraries, no errors:
+
+| Source (preference v3) | Re-judged (preference v4) | Preferences followed, v3 → v4 | Added requirements, v3 → v4 | Itineraries with any, v3 → v4 | Judge cost |
+| --- | --- | --- | --- | --- | --- |
+| `20261105T111852Z-v010-baseline-rejudge` | `20261108T103031Z-v010-baseline-rejudge` | 82.0% → 81.7% | 13 → 9 | 12 → 8 | $0.022 |
+| `20261105T111942Z-v010-baseline-rejudge` | `20261108T103120Z-v010-baseline-rejudge` | 82.7% → 82.7% | 17 → 11 | 14 → 7 | $0.021 |
+
+- **Faithfulness v2 and destination v2 pass every stratum**, so the re-judged baseline's faithfulness with context (20.5%, mean of two runs) is the figure to beat. The strata are by verdict, not by claim kind: of the 212 claims reviewed, few are `season` or `opening_hours`, so those kinds on their own are hardly calibrated.
+- **Preferences followed passes, narrowly.** In the first review the reviewer disagreed with 6 of the judge's "not followed" answers; re-read against the written rule (a single-interest style must shape most of the trip), 2 answers changed (one surf session for `surfing`, a chauffeur on one day for "a private chauffeur every day"). One more disagreement would take the stratum below 0.8. Under v4 the 4 disagreements are e011 and e028 (whether the style shapes most of the trip), e035 ("relaxed") and e014 ("cheapest hostels only").
+- **Added requirements fail and are not improved further** (decided with the user). v4 added three examples from the first review (a celebratory dinner is a planned meal; what a chosen place offers describes the place; planning around a stated need is not an assumption) and removed the three celebratory dinners. Still disagreed: a hotel near the trains (e022) and "older kids" for a family (e042), the kinds v4 meant to exclude, and "a luxury traveller" (e056), which the judge cannot know is stated because the prompt receives `travel_style` and `notes` but not the budget level (`luxury` here). 9 items is a small stratum: one item moves it by 11 points.
+- **What this means for later comparisons**: `followed_share` is calibrated; `added_requirements` (9 and 11 on the two baselines) is reported as a count with this caveat and is not a decision criterion on its own; a change in it is checked by reading the listed items. Possible later fix: give the judge the budget level and exclude what it implies.
+- **v4's examples came from the calibrated items**, so its agreement on the same items is likely optimistic. The integration tests use made-up text.
+- **Preferences are split differently from run to run** although v4 did not change that part of the prompt: e027 gained "sports" next to "visit the Adelaide Oval", which the prompt says to list once, and e032 lists each city as well as the whole request. Preferences followed under v4: 81.7% and 82.7%.
+
+---
 
 ### 2026-11-05 · rebuild-rag · preference v3: being able to do a planned activity is not an added requirement
 
