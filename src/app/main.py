@@ -95,10 +95,9 @@ def _run_workflow(
 ) -> Iterator[dict]:
     """Run the Agno workflow and yield each step's SSE event as the step finishes.
 
-    Uses Agno's streaming run: every step, including ``rag_retrieve`` inside the
-    ``retrieval_branch`` Condition, yields a ``StepCompletedEvent`` carrying its
-    ``StepOutput`` content.  Events come out in execution order:
-    intake → cag_match → retrieval_decision → (rag_retrieve) → generate
+    Uses Agno's streaming run: every step yields a ``StepCompletedEvent``
+    carrying its ``StepOutput`` content.  Events come out in execution order:
+    intake → cag_match → retrieval_decision → rag_retrieve → generate
     → validate_output.
 
     This is a blocking generator — each ``next()`` runs the workflow up to the

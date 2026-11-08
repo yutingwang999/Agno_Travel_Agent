@@ -7,10 +7,6 @@
 MAX_TRIP_LENGTH_DAYS: int = 14
 MAX_NOTES_LENGTH: int = 500
 
-# Minimum CAG confidence score to skip RAG retrieval.
-# Raise to require retrieval more often; lower to rely more on cached answers.
-RETRIEVAL_CONFIDENCE_THRESHOLD: float = 0.85
-
 # Upper bound on itinerary cost per budget level, in AUD per person per day,
 # EXCLUDING accommodation (itineraries contain no stay). The trip cap is this value
 # times the number of days. A level missing from the mapping has no cap (luxury).

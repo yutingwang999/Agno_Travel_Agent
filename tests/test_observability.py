@@ -480,7 +480,7 @@ def test_generate_trace_includes_prompt_template_key(monkeypatch):
     generate_executor(_make_generate_step_input(confidence_score=0.85))
 
     kwargs = mock_write.call_args.kwargs
-    assert kwargs["prompt_template_key"] == "high_confidence_minimal_context"
+    assert kwargs["prompt_template_key"] == "itinerary_with_context"
 
 
 def test_generate_trace_includes_prompt_template_version(monkeypatch):
@@ -533,8 +533,8 @@ def test_generate_trace_common_fields(monkeypatch):
     assert kwargs["latency_ms"] >= 0
 
 
-def test_generate_trace_low_confidence_uses_low_confidence_key(monkeypatch):
-    """Low confidence_score must produce low_confidence_with_retrieval template key in trace."""
+def test_generate_trace_low_confidence_uses_the_same_key(monkeypatch):
+    """Low confidence_score uses the same single template key (rebuild-rag)."""
     monkeypatch.setenv("DATABASE_URL", "postgresql://x:x@localhost/x")
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     mock_write = MagicMock()
@@ -553,7 +553,7 @@ def test_generate_trace_low_confidence_uses_low_confidence_key(monkeypatch):
     generate_executor(_make_generate_step_input(confidence_score=0.50))
 
     kwargs = mock_write.call_args.kwargs
-    assert kwargs["prompt_template_key"] == "low_confidence_with_retrieval"
+    assert kwargs["prompt_template_key"] == "itinerary_with_context"
 
 
 # ---------------------------------------------------------------------------

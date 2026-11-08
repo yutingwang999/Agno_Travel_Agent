@@ -374,9 +374,10 @@ ITINERARY_CATEGORIES = [
 ]
 
 # ---- Prompt templates -------------------------------------------------------
-# Variables available in both templates:
-#   {destination}, {trip_length}, {budget}, {matched_category},
-#   {tone}, {constraints}, {retrieved_context}, {daily_budget_ceiling} (from version 3)
+# Variables the generate step fills:
+#   {destination}, {trip_length}, {budget}, {travel_style}, {notes}, {matched_category},
+#   {tone}, {constraints}, {retrieved_context}, {daily_budget_ceiling}
+# (the two v0.1.0 generation keys use a subset; {daily_budget_ceiling} from their version 3)
 # ---------------------------------------------------------------------------
 
 HIGH_CONFIDENCE_TEMPLATE = """\
@@ -523,6 +524,88 @@ LOW_CONFIDENCE_TEMPLATE_V3 = _insert_after(
     LOW_CONFIDENCE_TEMPLATE_V2, COST_UNIT_SENTENCE, BUDGET_CEILING_SENTENCE
 )
 
+# ---- itinerary_with_context (rebuild-rag) -----------------------------------
+# One template for every request, since every request now retrieves knowledge.
+# Its three versions differ only in how the request is described (design
+# decision 3); the evaluation picks one and ACTIVE_TEMPLATE_VERSIONS activates it.
+#   v1 (A): the matched category's preset tone and constraints, plus the notes
+#   v2 (B): the traveller's own travel_style and notes, no preset
+#   v3 (C): both, the traveller's words taking precedence over the preset
+# All three keep harden's cost unit and budget ceiling, number the knowledge
+# blocks for citations ([S1], [S2], ...), and write the JSON example with single
+# braces: the v1-v3 templates above double them, which _format_template never
+# unescapes, so the model received "{{" literally.
+
+REQUEST_PRESET = """\
+Travel style: {matched_category}
+Tone: {tone}
+Planning constraints: {constraints}
+Traveller's notes: {notes}"""
+
+REQUEST_OWN_WORDS = """\
+Travel style, in the traveller's words: {travel_style}
+Traveller's notes: {notes}"""
+
+REQUEST_BOTH = """\
+Travel style, in the traveller's words: {travel_style}
+Traveller's notes: {notes}
+Default suggestions for this kind of trip, to use only where the traveller's words above say nothing: \
+style {matched_category}; tone {tone}; planning constraints: {constraints}"""
+
+ITINERARY_WITH_CONTEXT_FRAME = """\
+You are an expert Australian travel planner.
+
+Plan a {trip_length}-day itinerary to {destination} for a traveller with a {budget} budget.
+
+<<request>>
+<<cost_unit>>
+<<ceiling>>
+
+Use the following reference information to enrich your plan with accurate, specific details. \
+Each block starts with a source id in square brackets, such as [S1]:
+---
+{retrieved_context}
+---
+
+For each day, list in "sources" the ids of the blocks that day's plan draws on, such as ["S1", "S3"]. \
+Use only ids that appear above. Give an empty list for a day that draws on none of them, \
+and for every day when there is no reference information.
+
+Return ONLY a valid JSON object with this exact structure — no prose, no markdown fences:
+{
+  "destination": string,
+  "trip_length_days": integer,
+  "budget_level": string,
+  "travel_style": string,
+  "daily_itinerary": [
+    {
+      "day": integer,
+      "morning": string,
+      "afternoon": string,
+      "evening": string,
+      "estimated_cost_aud": number,
+      "sources": [string]
+    }
+  ],
+  "total_estimated_cost_aud": number,
+  "key_tips": [string]
+}
+"""
+
+
+def _itinerary_with_context(request: str) -> str:
+    """The itinerary_with_context template with *request* as its request description."""
+    return (
+        ITINERARY_WITH_CONTEXT_FRAME.replace("<<request>>", request)
+        .replace("<<cost_unit>>", COST_UNIT_SENTENCE)
+        .replace("<<ceiling>>", BUDGET_CEILING_SENTENCE)
+    )
+
+
+ITINERARY_WITH_CONTEXT_A = _itinerary_with_context(REQUEST_PRESET)
+ITINERARY_WITH_CONTEXT_B = _itinerary_with_context(REQUEST_OWN_WORDS)
+ITINERARY_WITH_CONTEXT_C = _itinerary_with_context(REQUEST_BOTH)
+
 # Every version ever defined, append-only: a new wording is a new entry, so
 # earlier results stay reproducible with ?template_version=N.
 TEMPLATE_DEFINITIONS = [
@@ -566,14 +649,33 @@ TEMPLATE_DEFINITIONS = [
         "version": 3,
         "template_text": LOW_CONFIDENCE_TEMPLATE_V3,
     },
+    {
+        "template_key": "itinerary_with_context",
+        "version": 1,
+        "template_text": ITINERARY_WITH_CONTEXT_A,
+    },
+    {
+        "template_key": "itinerary_with_context",
+        "version": 2,
+        "template_text": ITINERARY_WITH_CONTEXT_B,
+    },
+    {
+        "template_key": "itinerary_with_context",
+        "version": 3,
+        "template_text": ITINERARY_WITH_CONTEXT_C,
+    },
 ]
 
 # The version of each key that requests use by default. Seed makes exactly this
-# version active; change the number to upgrade or roll back.
+# version active; change the number to upgrade or roll back. Since rebuild-rag the
+# generate step uses only itinerary_with_context; the two older generation keys
+# stay active but are no longer selected. itinerary_with_context v1 (variant A,
+# closest to v0.1.0) is active until the comparison of task 5.4 picks a variant.
 ACTIVE_TEMPLATE_VERSIONS = {
     "high_confidence_minimal_context": 3,
     "low_confidence_with_retrieval": 3,
     "validate_output_correction": 2,
+    "itinerary_with_context": 1,
 }
 
 # ---- Source documents -------------------------------------------------------

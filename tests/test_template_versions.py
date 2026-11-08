@@ -85,7 +85,8 @@ def test_seed_active_templates_state_the_cost_unit(seed_module):
         assert COST_UNIT_PHRASE in d["template_text"], d["template_key"]
 
 
-GENERATION_KEYS = ("high_confidence_minimal_context", "low_confidence_with_retrieval")
+GENERATION_KEYS = ("high_confidence_minimal_context", "low_confidence_with_retrieval", "itinerary_with_context")
+V010_KEYS = ("high_confidence_minimal_context", "low_confidence_with_retrieval", "validate_output_correction")
 
 
 def test_seed_active_generation_templates_state_the_ceiling(seed_module):
@@ -96,10 +97,42 @@ def test_seed_active_generation_templates_state_the_ceiling(seed_module):
 
 
 def test_seed_v1_templates_are_unchanged(seed_module):
-    """Version 1 keeps the v0.1.0 text, so the baseline stays reproducible."""
-    v1 = {d["template_key"]: d["template_text"] for d in seed_module.TEMPLATE_DEFINITIONS if d["version"] == 1}
+    """Version 1 of the v0.1.0 keys keeps the v0.1.0 text, so the baseline stays reproducible."""
+    v1 = {d["template_key"]: d["template_text"] for d in seed_module.TEMPLATE_DEFINITIONS
+          if d["version"] == 1 and d["template_key"] in V010_KEYS}
+    assert set(v1) == set(V010_KEYS)
     for text in v1.values():
         assert COST_UNIT_PHRASE not in text
+
+
+def _itinerary_with_context(seed) -> dict[int, str]:
+    return {d["version"]: d["template_text"] for d in seed.TEMPLATE_DEFINITIONS
+            if d["template_key"] == "itinerary_with_context"}
+
+
+def test_itinerary_with_context_versions_carry_every_required_part(seed_module):
+    """Spec "Single generation template": every variant has the knowledge context and the notes,
+    harden's cost unit and ceiling, citation instructions, and a JSON example with single braces."""
+    versions = _itinerary_with_context(seed_module)
+    assert set(versions) == {1, 2, 3}
+    for version, text in versions.items():
+        for part in ("{retrieved_context}", "{notes}", "{daily_budget_ceiling}", COST_UNIT_PHRASE, '"sources"', "[S1]"):
+            assert part in text, (version, part)
+        assert "{{" not in text and "}}" not in text, version
+
+
+def test_itinerary_with_context_variants_differ_only_in_the_request_description(seed_module):
+    """Design decision 3: A has the preset, B the traveller's own style, C both."""
+    a, b, c = (_itinerary_with_context(seed_module)[v] for v in (1, 2, 3))
+    assert "{matched_category}" in a and "{travel_style}" not in a
+    assert "{travel_style}" in b and "{matched_category}" not in b and "{constraints}" not in b
+    assert "{travel_style}" in c and "{matched_category}" in c and "{constraints}" in c
+    tail = a[a.index("All costs are"):]
+    assert b.endswith(tail) and c.endswith(tail)
+
+
+def test_itinerary_with_context_variant_a_is_active_until_the_comparison(seed_module):
+    assert seed_module.ACTIVE_TEMPLATE_VERSIONS["itinerary_with_context"] == 1
 
 
 @pytest.mark.integration

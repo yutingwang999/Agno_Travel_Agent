@@ -89,7 +89,7 @@ The response body is a stream of SSE `data:` lines. Each line is a JSON object. 
 1. `intake`
 2. `cag_match`
 3. `retrieval_decision`
-4. `rag_retrieve` _(only when confidence score < 0.85)_
+4. `rag_retrieve`
 5. `generate`
 6. `validate_output`
 
@@ -172,11 +172,11 @@ Result of embedding-based intent classification against `itinerary_categories`.
 | `constraints` | string | Constraint hint from the matched category |
 | `is_fallback` | boolean | `true` when no match exceeded the minimum threshold and the default category was used |
 
-If the embedding call or loading the categories fails, the step still completes with `matched_category` = `"family"`, `confidence_score` = `0.0` and `is_fallback` = `true`, so the request takes the retrieval path; the trace row records `error_type` = `"embedding_failed"`.
+If the embedding call or loading the categories fails, the step still completes with `matched_category` = `"family"`, `confidence_score` = `0.0` and `is_fallback` = `true`, and the request continues as usual; the trace row records `error_type` = `"embedding_failed"`.
 
 #### `retrieval_decision`
 
-Routing decision based on the confidence threshold (0.85).
+The routing step. Every request is routed to `rag_retrieve`: confidence measures similarity to an itinerary category, not whether destination knowledge is needed. A redesigned routing rule may use this step later.
 
 ```json
 {
@@ -185,22 +185,19 @@ Routing decision based on the confidence threshold (0.85).
   "status":     "completed",
   "timestamp":  "2026-04-08T04:12:02.345678+00:00",
   "data": {
-    "routing_decision":  "generate",
-    "confidence_score":  0.91,
-    "threshold":         0.85
+    "routing_decision":  "rag_retrieve",
+    "confidence_score":  0.91
   },
   "error": null
 }
 ```
 
-| `routing_decision` | Meaning |
-|--------------------|---------|
-| `"rag_retrieve"` | Confidence was below threshold; the RAG step will run |
-| `"generate"` | Confidence was at or above threshold; RAG step is skipped |
+| Field | Type | Notes |
+|-------|------|-------|
+| `routing_decision` | string | Always `"rag_retrieve"` |
+| `confidence_score` | float | The `cag_match` score, for information only |
 
 #### `rag_retrieve`
-
-_(Only present when `routing_decision` is `"rag_retrieve"`.)_
 
 Top-k source document chunks retrieved from PgVector.
 
@@ -249,7 +246,7 @@ Raw LLM response and the prompt template that was used.
   "timestamp":  "2026-04-08T04:12:06.567890+00:00",
   "data": {
     "raw_llm_output":          "{ \"destination\": \"sydney\", ... }",
-    "prompt_template_key":     "high_confidence_minimal_context",
+    "prompt_template_key":     "itinerary_with_context",
     "prompt_template_version": 1
   },
   "error": null
@@ -259,7 +256,7 @@ Raw LLM response and the prompt template that was used.
 | Field | Type | Notes |
 |-------|------|-------|
 | `raw_llm_output` | string | Raw text from the LLM before validation |
-| `prompt_template_key` | string | `"high_confidence_minimal_context"` or `"low_confidence_with_retrieval"` |
+| `prompt_template_key` | string | Always `"itinerary_with_context"` |
 | `prompt_template_version` | integer | The version of the template that was resolved |
 
 On error (template not found):
@@ -271,11 +268,11 @@ On error (template not found):
   "status":     "error",
   "timestamp":  "2026-04-08T04:12:06.567890+00:00",
   "data":       {},
-  "error":      "No active template found for key 'high_confidence_minimal_context'"
+  "error":      "No active template found for key 'itinerary_with_context'"
 }
 ```
 
-If the selected template is missing but `low_confidence_with_retrieval` exists, that template is used and reported in `prompt_template_key` / `prompt_template_version`.
+There is no fallback template: the LLM is not called.
 
 On error (LLM call failed) the event has the same shape, with `"error": "LLM call failed: <exception type>"`. Only the exception type is included; details stay in the server log.
 
@@ -400,16 +397,14 @@ flowchart TD
     B --> C{cag_match:<br/>embed intent,<br/>load categories}
     C -- ok --> C1[completed:<br/>best category and score]
     C -- raises --> C2["completed: family, confidence 0.0,<br/>is_fallback true<br/>trace: embedding_failed"]
-    C1 --> D["retrieval_decision (Step):<br/>routing_decision = rag_retrieve<br/>if confidence < 0.85, else generate"]
+    C1 --> D["retrieval_decision:<br/>routing_decision = rag_retrieve"]
     C2 --> D
-    D --> R{"retrieval_branch (Condition):<br/>routing_decision?"}
-    R -- rag_retrieve --> E["rag_retrieve<br/>(a failed search continues<br/>with empty context)"]
-    R -- generate --> F[generate]
-    E --> F
+    D --> E["rag_retrieve<br/>(a failed search continues<br/>with empty context)"]
+    E --> F[generate]
     F --> G[validate_output]
 ```
 
-An embedding failure is treated as "no match": confidence 0.0 sends the request down the retrieval path. `retrieval_branch` emits no event of its own; it only reads the `retrieval_decision` event, and falls back to running `rag_retrieve` if that event is missing or malformed.
+An embedding failure is treated as "no match": the request continues with the default category and confidence 0.0. Every request runs `rag_retrieve`.
 
 #### Client disconnects
 
@@ -426,13 +421,9 @@ The stream simply ends; there is no error event, because there is no client left
 
 ```mermaid
 flowchart TD
-    S[select template by confidence] --> T{template found?}
+    S[resolve itinerary_with_context:<br/>active version, or template_version] --> T{template found?}
     T -- yes --> L
-    T -- no --> U{selected key is<br/>high_confidence_minimal_context?}
-    U -- yes --> V{low_confidence_with_retrieval<br/>found?}
-    V -- yes --> V1[report low_confidence_with_retrieval<br/>as the template used] --> L
-    V -- no --> X
-    U -- no --> X["error: No active template found<br/>for key '#lt;selected key#gt;'<br/>(LLM not called)"]
+    T -- no --> X["error: No active template found<br/>for key 'itinerary_with_context'<br/>(LLM not called)"]
     L{call Gemini} -- ok --> OK[completed:<br/>raw_llm_output, template key and version]
     L -- raises --> Y["error: LLM call failed: #lt;exception type#gt;<br/>trace: llm_call_failed"]
 ```
@@ -503,7 +494,7 @@ Returns all `trace_events` rows written during a workflow run, ordered by `creat
     "step_name":                "generate",
     "status":                   "completed",
     "latency_ms":               3201.7,
-    "prompt_template_key":      "high_confidence_minimal_context",
+    "prompt_template_key":      "itinerary_with_context",
     "prompt_template_version":  1,
     "degraded_mode":            null,
     "error_type":               null,

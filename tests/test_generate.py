@@ -6,8 +6,8 @@ Verifies:
   - prompt_template_version written to workflow state after step 5
   - raw_llm_output present in workflow state after step 5
   - SSE event structure matches DESIGN.md section 9
-  - template key selection: confidence >= 0.85 → high_confidence_minimal_context
-  - template key selection: confidence < 0.85  → low_confidence_with_retrieval
+  - every request uses itinerary_with_context, whatever the confidence (rebuild-rag)
+  - {notes} is substituted, and empty when the request has none
   - _format_template only replaces identifier placeholders, leaves JSON braces intact
   - retrieved_context is empty string when rag_retrieve step was skipped
   - retrieved_context is populated when rag_retrieve step ran
@@ -111,39 +111,22 @@ def test_template_resolver_importable():
 
 
 # ---------------------------------------------------------------------------
-# Template key selection (unit tests — no DB or LLM needed)
+# Single template key (rebuild-rag)
 # ---------------------------------------------------------------------------
 
 
-def test_select_template_key_high_confidence():
-    """confidence_score >= 0.85 must select high_confidence_minimal_context."""
-    from app.workflow.steps.generate import (
-        HIGH_CONFIDENCE_TEMPLATE_KEY,
-        _select_template_key,
-    )
+def test_template_key_is_itinerary_with_context():
+    from app.workflow.steps.generate import TEMPLATE_KEY
 
-    assert _select_template_key(0.85) == HIGH_CONFIDENCE_TEMPLATE_KEY
-    assert _select_template_key(0.90) == HIGH_CONFIDENCE_TEMPLATE_KEY
-    assert _select_template_key(1.00) == HIGH_CONFIDENCE_TEMPLATE_KEY
+    assert TEMPLATE_KEY == "itinerary_with_context"
 
 
-def test_select_template_key_low_confidence():
-    """confidence_score < 0.85 must select low_confidence_with_retrieval."""
-    from app.workflow.steps.generate import (
-        LOW_CONFIDENCE_TEMPLATE_KEY,
-        _select_template_key,
-    )
+def test_confidence_based_selection_is_gone():
+    import app.workflow.steps.generate as generate
 
-    assert _select_template_key(0.77) == LOW_CONFIDENCE_TEMPLATE_KEY
-    assert _select_template_key(0.50) == LOW_CONFIDENCE_TEMPLATE_KEY
-    assert _select_template_key(0.00) == LOW_CONFIDENCE_TEMPLATE_KEY
-
-
-def test_threshold_is_0_85():
-    """RETRIEVAL_CONFIDENCE_THRESHOLD must equal 0.85."""
-    from app.workflow.steps.generate import RETRIEVAL_CONFIDENCE_THRESHOLD
-
-    assert RETRIEVAL_CONFIDENCE_THRESHOLD == 0.85
+    for name in ("RETRIEVAL_CONFIDENCE_THRESHOLD", "HIGH_CONFIDENCE_TEMPLATE_KEY",
+                 "LOW_CONFIDENCE_TEMPLATE_KEY", "_select_template_key"):
+        assert not hasattr(generate, name), name
 
 
 # ---------------------------------------------------------------------------
@@ -352,44 +335,17 @@ def test_sse_event_structure():
 # ---------------------------------------------------------------------------
 
 
-def test_high_confidence_uses_minimal_context_template():
-    """confidence_score >= 0.85 must resolve high_confidence_minimal_context template."""
-    from app.workflow.steps.generate import (
-        HIGH_CONFIDENCE_TEMPLATE_KEY,
-        generate_executor,
-    )
+@pytest.mark.parametrize("confidence_score", [0.95, 0.20])
+def test_any_confidence_uses_itinerary_with_context(confidence_score):
+    """Spec scenario "Any confidence"."""
+    from app.workflow.steps.generate import generate_executor
 
-    step_input = _make_step_input(cag_data={"matched_category": "family", "confidence_score": 0.85, "tone": "friendly", "constraints": "safe"})
+    step_input = _make_step_input(cag_data={"matched_category": "family", "confidence_score": confidence_score, "tone": "friendly", "constraints": "safe"})
 
-    captured_key = {}
+    captured_keys = []
 
     def fake_resolve(template_key, db_url, version=None):
-        captured_key["key"] = template_key
-        return ("Plan a trip to {destination}.", 1)
-
-    with (
-        patch("app.workflow.steps.generate.resolve_template", side_effect=fake_resolve),
-        patch("app.workflow.steps.generate._call_llm", return_value=LLMResult("some output")),
-        patch.dict("os.environ", {"DATABASE_URL": "postgresql://fake", "GEMINI_API_KEY": "fake-key"}),
-    ):
-        generate_executor(step_input)
-
-    assert captured_key["key"] == HIGH_CONFIDENCE_TEMPLATE_KEY
-
-
-def test_low_confidence_uses_retrieval_template():
-    """confidence_score < 0.85 must resolve low_confidence_with_retrieval template."""
-    from app.workflow.steps.generate import (
-        LOW_CONFIDENCE_TEMPLATE_KEY,
-        generate_executor,
-    )
-
-    step_input = _make_step_input(cag_data={"matched_category": "family", "confidence_score": 0.50, "tone": "friendly", "constraints": "safe"})
-
-    captured_key = {}
-
-    def fake_resolve(template_key, db_url, version=None):
-        captured_key["key"] = template_key
+        captured_keys.append(template_key)
         return ("Plan a trip to {destination}. Context: {retrieved_context}.", 1)
 
     with (
@@ -397,9 +353,10 @@ def test_low_confidence_uses_retrieval_template():
         patch("app.workflow.steps.generate._call_llm", return_value=LLMResult("some output")),
         patch.dict("os.environ", {"DATABASE_URL": "postgresql://fake", "GEMINI_API_KEY": "fake-key"}),
     ):
-        generate_executor(step_input)
+        event = json.loads(generate_executor(step_input).content)
 
-    assert captured_key["key"] == LOW_CONFIDENCE_TEMPLATE_KEY
+    assert captured_keys == ["itinerary_with_context"]
+    assert event["data"]["prompt_template_key"] == "itinerary_with_context"
 
 
 def test_template_never_hardcoded_resolve_template_always_called():
@@ -569,49 +526,25 @@ def test_generate_executor_no_version_override_passes_none_to_resolve_template()
 # ---------------------------------------------------------------------------
 
 _ENV = {"DATABASE_URL": "postgresql://fake", "GEMINI_API_KEY": "k"}
-_HIGH_CONFIDENCE_CAG = {"matched_category": "family", "confidence_score": 0.90, "tone": "friendly", "constraints": ""}
-
-
-def test_fallback_template_recorded_in_event_and_trace():
-    """High-confidence template missing: the low-confidence template is reported as used."""
-    from app.workflow.steps.generate import generate_executor
-    from app.workflow.template_resolver import TemplateNotFoundError
-
-    def fake_resolve(template_key, db_url, version=None):
-        if template_key == "high_confidence_minimal_context":
-            raise TemplateNotFoundError(template_key)
-        return ("Plan a trip to {destination}.", 1)
-
-    with (
-        patch("app.workflow.steps.generate.resolve_template", side_effect=fake_resolve),
-        patch("app.workflow.steps.generate._call_llm", return_value=LLMResult('{"ok": true}')),
-        patch("app.workflow.steps.generate.write_trace") as mock_trace,
-        patch.dict("os.environ", _ENV),
-    ):
-        event = json.loads(generate_executor(_make_step_input(cag_data=_HIGH_CONFIDENCE_CAG)).content)
-
-    assert event["status"] == "completed"
-    assert event["data"]["prompt_template_key"] == "low_confidence_with_retrieval"
-    assert event["data"]["prompt_template_version"] == 1
-    assert mock_trace.call_args.kwargs["prompt_template_key"] == "low_confidence_with_retrieval"
-    assert mock_trace.call_args.kwargs["prompt_template_version"] == 1
+_CAG = {"matched_category": "family", "confidence_score": 0.90, "tone": "friendly", "constraints": ""}
 
 
 def test_template_table_empty_names_selected_key_and_skips_llm():
-    """No template at all: error event naming the selected key, LLM not called."""
+    """Spec scenario "Template table empty": error event naming the key, no fallback, LLM not called."""
     from app.workflow.steps.generate import generate_executor
     from app.workflow.template_resolver import TemplateNotFoundError
 
     with (
-        patch("app.workflow.steps.generate.resolve_template", side_effect=TemplateNotFoundError("x")),
+        patch("app.workflow.steps.generate.resolve_template", side_effect=TemplateNotFoundError("x")) as mock_resolve,
         patch("app.workflow.steps.generate._call_llm") as mock_llm,
         patch("app.workflow.steps.generate.write_trace") as mock_trace,
         patch.dict("os.environ", _ENV),
     ):
-        event = json.loads(generate_executor(_make_step_input(cag_data=_HIGH_CONFIDENCE_CAG)).content)
+        event = json.loads(generate_executor(_make_step_input(cag_data=_CAG)).content)
 
     assert event["status"] == "error"
-    assert event["error"] == "No active template found for key 'high_confidence_minimal_context'"
+    assert event["error"] == "No active template found for key 'itinerary_with_context'"
+    assert mock_resolve.call_count == 1
     mock_llm.assert_not_called()
     assert mock_trace.call_args.kwargs["status"] == "error"
 
@@ -629,7 +562,7 @@ def test_llm_call_failure_emits_error_event_without_raising():
         patch("app.workflow.steps.generate.write_trace") as mock_trace,
         patch.dict("os.environ", _ENV),
     ):
-        event = json.loads(generate_executor(_make_step_input(cag_data=_HIGH_CONFIDENCE_CAG)).content)
+        event = json.loads(generate_executor(_make_step_input(cag_data=_CAG)).content)
 
     assert event["status"] == "error"
     assert event["error"] == "LLM call failed: ServerError"
@@ -637,7 +570,7 @@ def test_llm_call_failure_emits_error_event_without_raising():
     trace = mock_trace.call_args.kwargs
     assert trace["status"] == "error"
     assert trace["error_type"] == "llm_call_failed"
-    assert trace["prompt_template_key"] == "high_confidence_minimal_context"
+    assert trace["prompt_template_key"] == "itinerary_with_context"
     assert trace["prompt_template_version"] == 3
 
 
@@ -670,8 +603,8 @@ def test_ceiling_text():
     assert ceiling_text(None) == "none set"
 
 
-def _resolved_prompt(additional_data: dict) -> str:
-    """Run generate with a template that is only the ceiling placeholder; return the prompt."""
+def _resolved_prompt(additional_data: dict, template: str = "Ceiling: {daily_budget_ceiling}") -> str:
+    """Run generate with a one-placeholder template (the ceiling by default); return the prompt."""
     from app.workflow.steps.generate import generate_executor
 
     captured = {}
@@ -681,12 +614,12 @@ def _resolved_prompt(additional_data: dict) -> str:
         return LLMResult('{"ok": true}')
 
     with (
-        patch("app.workflow.steps.generate.resolve_template", return_value=("Ceiling: {daily_budget_ceiling}", 3)),
+        patch("app.workflow.steps.generate.resolve_template", return_value=(template, 3)),
         patch("app.workflow.steps.generate._call_llm", side_effect=fake_llm),
         patch("app.workflow.steps.generate.write_trace"),
         patch.dict("os.environ", _ENV),
     ):
-        generate_executor(_make_step_input(cag_data=_HIGH_CONFIDENCE_CAG, additional_data=additional_data))
+        generate_executor(_make_step_input(cag_data=_CAG, additional_data=additional_data))
     return captured["prompt"]
 
 
@@ -698,6 +631,17 @@ def test_ceiling_from_the_level_in_prompt():
 
 def test_no_ceiling_in_prompt():
     assert _resolved_prompt({"budget": "luxury"}) == "Ceiling: none set"
+
+
+def test_notes_substituted():
+    """Spec scenario "Notes substituted"."""
+    assert _resolved_prompt({"notes": "kids love animals"}, "Notes: {notes}") == "Notes: kids love animals"
+
+
+@pytest.mark.parametrize("additional_data", [{}, {"notes": None}])
+def test_no_notes(additional_data):
+    """Spec scenario "No notes": {notes} becomes an empty string."""
+    assert _resolved_prompt(additional_data, "Notes: [{notes}]") == "Notes: []"
 
 
 def test_user_amount_in_prompt():
