@@ -207,6 +207,25 @@ Retrieval only, dataset v3, table `travel_docs_v2_c800`, destination filter on, 
 
 Three variables: `notes` at the start of the query or not; the category as matched today, matched on an intent text without the budget phrase (`{style} trip to {destination}`), or left out with the word "itinerary"; and search as in step b or step c. The `no budget` and `none` variants exist only in the evaluation harness. Criteria set before the run: `city` Recall@5 and MRR@5 decide, `national_only` must not get worse; a group is better only with Recall at least 0.02 higher and MRR not lower; otherwise the simpler one wins. The 0.02 is a judgement, not a statistical test.
 
+**One entry across the 12 groups** (example added 2026-11-06; no number in this record changed). e022 asks for Melbourne, style `sports`, budget `moderate`, notes "I want to see a game at the MCG." The category comes from two different intent texts: `sports trip to melbourne with moderate budget` matches `budget`, and `sports trip to melbourne` matches `sports-active`. The search column changes how the query is searched, not its text, so each odd group and the even group after it send the same query.
+
+| Group | Notes | Category | Search | Query | Recall@5 | Sections retrieved, in rank order |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | no | as matched | vector | `sports travel in melbourne budget itinerary` | 0.50 | Do, Do, Sleep, See, See |
+| 2 | no | as matched | BM25 + RRF | `sports travel in melbourne budget itinerary` | 0.25 | Do, Sleep, Sleep, Get in, Sleep |
+| 3 | no | no budget | vector | `sports travel in melbourne sports-active itinerary` | 0.75 | Do, Do, Understand, Understand, See |
+| 4 | no | no budget | BM25 + RRF | `sports travel in melbourne sports-active itinerary` | 0.75 | Do, Understand, Understand, See, Introduction |
+| 5 | no | none | vector | `sports travel in melbourne` | 0.50 | Do, Understand, Understand, Do, Understand |
+| 6 | no | none | BM25 + RRF | `sports travel in melbourne` | 0.50 | Do, Understand, Understand, Introduction, Understand |
+| 7 | yes | as matched | vector | `I want to see a game at the MCG. sports travel in melbourne budget itinerary` | 0.50 | Do, Do, See, See, Do |
+| 8 | yes | as matched | BM25 + RRF | `I want to see a game at the MCG. sports travel in melbourne budget itinerary` | 0.75 | Do, Do, Do, Understand, See |
+| 9 | yes | no budget | vector | `I want to see a game at the MCG. sports travel in melbourne sports-active itinerary` | 0.75 | Do, Do, See, Understand, Do |
+| 10 | yes | no budget | BM25 + RRF | `I want to see a game at the MCG. sports travel in melbourne sports-active itinerary` | 0.75 | Do, Understand, Do, Do, See |
+| 11 | yes | none | vector | `I want to see a game at the MCG. sports travel in melbourne` | 0.75 | Do, See, Do, Do, Understand |
+| 12 | yes | none | BM25 + RRF | `I want to see a game at the MCG. sports travel in melbourne` | 0.75 | Do, Do, Do, Understand, See |
+
+Values are from each group's run in the second table below. e022 has 4 labelled sections, and the first result is relevant in all 12 groups (reciprocal rank 1.0). This shows what the groups send; it is one entry, not evidence for a choice: here group 3 scores above group 5, while over all `city` entries group 5 is slightly higher on Recall and higher on MRR.
+
 Each cell is Recall@5 / MRR@5.
 
 | Group | Notes | Category | Search | `city` (38) | `national_only` (16) | All (54) |
