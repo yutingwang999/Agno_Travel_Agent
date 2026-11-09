@@ -32,6 +32,7 @@ This file records the effect of every change that affects quality, behaviour or 
 
 | Date | Change | What changed | Key result | Record |
 | --- | --- | --- | --- | --- |
+| 2026-11-09 | `rebuild-rag` | No invented exclusive arrangements: `itinerary_with_context` v4 (task 5.5) | Activity claims supported 27.4% → 39.7%, faithfulness with context 48.1% → 56.3%; preferences followed 97.2% → 93.8%, criterion not met, mostly on contradictory requests; adopted with the user | [No exclusives](#2026-11-09--rebuild-rag--no-invented-exclusive-arrangements-v4-adopted-although-preferences-followed-fell-more-than-the-criterion-allowed) |
 | 2026-11-09 | `rebuild-rag` | Request description in the template: variants A, B, C (task 5.4) | C chosen: preferences followed 85.6% (A) / 92.4% (B) / 97.7% (C), faithfulness with context 41.8% / 52.4% / 48.0%, within budget 100% for all; C's destination rate is lower (89.0% against 93.2% for A) | [Variants](#2026-11-09--rebuild-rag--request-description-in-the-template-variants-a-b-and-c-c-chosen) |
 | 2026-11-09 | `rebuild-rag` | Control: corpus v2 and the chosen retrieval on the old workflow | Faithfulness with context 17.2% → 34.1% on the same 43 itineraries (means of two runs) | [Control](#2026-11-09--rebuild-rag--control-corpus-v2-and-the-chosen-retrieval-on-the-old-workflow) |
 | 2026-11-08 | `rebuild-rag` | Judge calibration of the re-judged baseline, and preference v4 | Faithfulness v2 and destination v2 pass every stratum; preferences followed passes (83.3% (20 / 24) for "not followed"); added requirements fail (66.7% (6 / 9)) and are reported as a count only | [Calibration](#2026-11-08--rebuild-rag--judge-calibration-of-the-re-judged-baseline-and-preference-v4) |
@@ -95,6 +96,37 @@ Copy the template below, fill it in, and put it at the **top** of the "Records" 
 ---
 
 ## Records
+
+### 2026-11-09 · rebuild-rag · no invented exclusive arrangements: v4 adopted although preferences followed fell more than the criterion allowed
+
+- **What changed**: one sentence added to variant C (`itinerary_with_context` v3 → v4, design decision 4): "Do not invent exclusive or private arrangements, such as private tours, after-hours access, private viewings or charters, unless the reference information above offers them or the traveller asks for them."
+- **Why**: luxury itineraries are full of private tours, after-hours access and charters that no corpus can confirm can be booked (v0.1.0 baseline e065).
+- **Criteria, set before the runs** (means of two runs, C re-run in the same batch): keep v4 only if activity claims supported rise by at least 3 points, preferences followed fall by no more than 1 point, and within budget does not fall.
+- **Runs**: commit `12f6d7b`, configs `rebuild-rag-gen-c` and `rebuild-rag-gen-c-no-exclusives` (identical except `template_version` 3 and 4), `dataset-v1` subset (73 entries, dataset v3), corpus v2 / `travel_docs_v2_c800`, generation `gemini-3.1-flash-lite`, judge `gpt-6-luna` (faithfulness v2, destination v2, preference v4), correction template v3. Order C, v4, C, v4: C `20261109T024954Z-rebuild-rag-gen-c-dataset-v1`, `20261109T031348Z-rebuild-rag-gen-c-dataset-v1`; v4 `20261109T030056Z-rebuild-rag-gen-c-no-exclusives-dataset-v1`, `20261109T032500Z-rebuild-rag-gen-c-no-exclusives-dataset-v1`. Every run: no uncommitted changes, error rate 0, no judge errors.
+- **Results**:
+
+| Metric | C, v3 (run 1 / run 2) | v4 (run 1 / run 2) | Change of the means |
+| --- | --- | --- | --- |
+| Activity claims supported (primary) | 25.1% / 29.7% | 39.1% / 40.3% | +12.3 points |
+| Preferences followed | 97.2% / 97.2% | 93.0% / 94.5% | -3.5 points |
+| Within budget | 100.0% / 100.0% | 100.0% / 100.0% | +0.0 points |
+| Faithfulness with context | 47.0% / 49.2% | 57.0% / 55.6% | +8.2 points |
+| Activity claims judged | 362 / 374 | 335 / 347 | -27.0 |
+| Itineraries with "private", "exclusive", "after-hours", "charter", "chauffeur", "VIP" or "behind the scenes" | 21 / 20 | 16 / 16 | -4.5 |
+| Occurrences of those words | 245 / 256 | 75 / 64 | -181.0 |
+| Destination rate | 93.2% / 88.1% | 94.9% / 93.2% | +3.4 points |
+| Added requirements (count, reference only) | 7 / 6 | 5 / 3 | -2.5 |
+| Retry rate | 0.0% / 0.0% | 0.0% / 0.0% | +0.0 points |
+| Mean cost per request | $0.00102 / $0.00101 | $0.00102 / $0.00103 | $+0.00001 |
+| Preferences followed, entries expected to be planned only (post hoc) | 100.0% / 100.0% | 99.0% / 99.0% | -1.0 points |
+
+- **Criteria**: activity claims supported 27.4% → 39.7% (+12.3 points, met); within budget unchanged (met); preferences followed 97.2% → 93.8% (-3.5 points, **not met**).
+- **Where the preference drop comes from**: preferences not followed, by entry, C: e014, e032, e050; e032, e049, e050; v4: e014, e032, e032, e032, e049, e049, e050, e061; e010, e032, e032, e049, e049, e050. Most are in e014, e032, e049 and e050, contradictory requests the dataset expects to be clarified, not planned; no plan can follow them. e032 also counts two or three times in the v4 runs because the judge split "see Perth, Cairns and Hobart in the same day" into several preferences there and kept it as one in the C runs. In e049 ("five-star hotel and a private chauffeur every day" on a `budget` budget) v4 drops the chauffeur although the instruction lets a traveller's request through. Outside these entries v4 misses "indigenous culture" (e061) and "free museums and galleries only" (e010) once each.
+- **Decision (with the user): v4 is adopted** and is now the active version, although the criterion was not met. Reason: the drop is almost entirely on requests that should not be planned, while every measure of grounding improved. The breakdown that leaves those entries out (100.0% → 99.0%) was made after seeing the results, so it is an explanation, not a passed criterion. The criterion itself is unchanged; once request parsing (roadmap item 3) asks for clarification on contradictory requests, preferences followed no longer includes them.
+- **Run-to-run variation of C**: faithfulness with context 47.0% / 49.2% here against 48.1% / 48.0% in the 5.4 runs, activity claims supported 25.1% to 29.7% across the four C runs.
+- **Cost**: unchanged per request; judge cost about $0.16 per run.
+
+---
 
 ### 2026-11-09 · rebuild-rag · request description in the template: variants A, B and C, C chosen
 

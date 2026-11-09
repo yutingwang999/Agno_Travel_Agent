@@ -709,12 +709,13 @@ TEMPLATE_DEFINITIONS = [
 # generate step uses only itinerary_with_context; the two older generation keys
 # stay active but are no longer selected. itinerary_with_context v3 (variant C:
 # the traveller's words first, the category preset as a default) was chosen by
-# the comparison of task 5.4 (docs/experiments.md, 2026-11-09).
+# the comparison of task 5.4; v4 adds the instruction against invented exclusive
+# arrangements and was adopted in task 5.5 (docs/experiments.md, 2026-11-09).
 ACTIVE_TEMPLATE_VERSIONS = {
     "high_confidence_minimal_context": 3,
     "low_confidence_with_retrieval": 3,
     "validate_output_correction": 3,
-    "itinerary_with_context": 3,
+    "itinerary_with_context": 4,
 }
 
 # ---- Source documents -------------------------------------------------------
