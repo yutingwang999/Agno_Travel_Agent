@@ -32,6 +32,7 @@ This file records the effect of every change that affects quality, behaviour or 
 
 | Date | Change | What changed | Key result | Record |
 | --- | --- | --- | --- | --- |
+| 2026-11-09 | `rebuild-rag` | Budget sentences diagnosis (task 5.6) and citations against support | Without the cost-unit and ceiling sentences faithfulness with context 56.3% → 58.2% (below the 2-point criterion) and retry 0% → 18.6%; sentences kept. Places on citing days that appear in a cited chunk: `city` 77.2%, `national_only` 26.7% | [Budget sentences](#2026-11-09--rebuild-rag--the-budget-sentences-cost-no-clear-faithfulness-and-stay-citations-against-support) |
 | 2026-11-09 | `rebuild-rag` | No invented exclusive arrangements: `itinerary_with_context` v4 (task 5.5) | Activity claims supported 27.4% → 39.7%, faithfulness with context 48.1% → 56.3%; preferences followed 97.2% → 93.8%, criterion not met, mostly on contradictory requests; adopted with the user | [No exclusives](#2026-11-09--rebuild-rag--no-invented-exclusive-arrangements-v4-adopted-although-preferences-followed-fell-more-than-the-criterion-allowed) |
 | 2026-11-09 | `rebuild-rag` | Request description in the template: variants A, B, C (task 5.4) | C chosen: preferences followed 85.6% (A) / 92.4% (B) / 97.7% (C), faithfulness with context 41.8% / 52.4% / 48.0%, within budget 100% for all; C's destination rate is lower (89.0% against 93.2% for A) | [Variants](#2026-11-09--rebuild-rag--request-description-in-the-template-variants-a-b-and-c-c-chosen) |
 | 2026-11-09 | `rebuild-rag` | Control: corpus v2 and the chosen retrieval on the old workflow | Faithfulness with context 17.2% → 34.1% on the same 43 itineraries (means of two runs) | [Control](#2026-11-09--rebuild-rag--control-corpus-v2-and-the-chosen-retrieval-on-the-old-workflow) |
@@ -96,6 +97,43 @@ Copy the template below, fill it in, and put it at the **top** of the "Records" 
 ---
 
 ## Records
+
+### 2026-11-09 · rebuild-rag · the budget sentences cost no clear faithfulness and stay; citations against support
+
+- **What changed**: the diagnosis of task 5.6. v5 is the active template v4 without the two sentences `harden-workflow-guardrails` added: the per-person AUD cost unit and the daily budget ceiling. The business rules still check the budget and ask for one correction when it fails. v5 is never active.
+- **Why**: faithfulness with context fell from 23.0% to 19.6% over `harden-workflow-guardrails` on corpus v1 (20.8% after the cost unit, 19.1% after the ceiling), and the cause was never found. Suspected: the sentences turn the generator towards keeping numbers low rather than using the context.
+- **Criteria, set before the runs** (means of two runs): remove the sentences only if faithfulness with context rises by at least 2 points and within budget does not fall; otherwise keep them.
+- **Runs**: v4 `20261109T030056Z-rebuild-rag-gen-c-no-exclusives-dataset-v1`, `20261109T032500Z-rebuild-rag-gen-c-no-exclusives-dataset-v1` (commit `12f6d7b`, the v4 runs of task 5.5, reused) → v5 `20261109T034905Z-rebuild-rag-gen-v4-no-budget-sentences-dataset-v1`, `20261109T040011Z-rebuild-rag-gen-v4-no-budget-sentences-dataset-v1` (commit `703140c`, config `rebuild-rag-gen-v4-no-budget-sentences`). Between the two commits only `seed.py` (v5 added, v4 made active), tests and documents changed; the saved v4 prompt is identical to the current v4 text and the code, dataset, judge prompts and correction template v3 are the same. The v5 runs started about 45 minutes after the second v4 run, not interleaved with it. Both on the `dataset-v1` subset (73 entries, dataset v3), corpus v2 / `travel_docs_v2_c800`, generation `gemini-3.1-flash-lite`, judge `gpt-6-luna` (faithfulness v2, destination v2, preference v4). Every run: no uncommitted changes, error rate 0, no judge errors.
+- **Results**:
+
+| Metric | v4, with the sentences (run 1 / run 2) | v5, without (run 1 / run 2) | Change of the means |
+| --- | --- | --- | --- |
+| Faithfulness with context (primary) | 57.0% / 55.6% | 56.2% / 60.2% | +1.9 points |
+| Within budget | 100.0% / 100.0% | 100.0% / 100.0% | +0.0 points |
+| Retry rate (corrective call needed) | 0.0% / 0.0% | 22.0% / 15.3% | +18.6 points |
+| Named places that appear in the retrieved context | 56.3% / 55.3% | 56.0% / 58.6% | +1.5 points |
+| Median `estimated_cost_aud` per day | 140 AUD / 150 AUD | 180 AUD / 180 AUD | +35 AUD |
+| Preferences followed | 93.0% / 94.5% | 92.7% / 91.0% | -1.9 points |
+| Destination rate | 94.9% / 93.2% | 94.9% / 89.8% | -1.7 points |
+| Latency p50 | 4.21 s / 4.43 s | 4.54 s / 4.30 s | +0.10 s |
+| Mean cost per request | $0.00102 / $0.00103 | $0.00119 / $0.00113 | $+0.00014 |
+
+- **Decision: keep the sentences; v4 stays active.** Faithfulness with context 56.3% → 58.2% (+1.9 points) is below the 2-point criterion and within the run-to-run variation (v5 alone: 56.2% / 60.2%). Within budget stays 100%, but only because the business rules correct the itinerary: without the sentences 18.6% of planned requests need the corrective call, against none with them, and estimated daily spending rises.
+- **What this says about the drop under `harden-workflow-guardrails`**: on corpus v2 with the current template the sentences cost at most about 2 points of faithfulness, and the share of named places that appear in the context barely moves. The 23.0% → 19.6% fall on corpus v1 is therefore not explained by these sentences on today's set-up; with a corpus of a few handwritten documents most claims had no source either way. Not investigated further.
+- **Citations against support** (v4, both runs pooled; the task 5.6 follow-up from the coverage breakdown). A named place counts as in a chunk when its name appears in the chunk text; "judged supported" is the faithfulness judge's verdict on the same places, which also accepts a reworded mention.
+
+| Coverage | Days that cite a source | Claims supported | Named places on citing days | In a cited chunk | In any retrieved chunk | Judged supported |
+| --- | --- | --- | --- | --- | --- | --- |
+| `city` | 97.7% (297 / 304) | 75.6% | 806 | 77.2% | 79.4% | 91.7% |
+| `national_only` | 87.0% (94 / 108) | 20.4% | 277 | 26.7% | 30.3% | 35.0% |
+| `none` | 11.7% (7 / 60) | 1.8% | 9 | 22.2% | 22.2% | 22.2% |
+
+  - In `city`, 77.2% of the places on a day that cites sources are named in one of the cited chunks, close to the share named anywhere in the context (79.4%): when the context covers the city, the cited ids point at the right chunks.
+  - In `national_only`, days cite a source as often (87.0%), but only 26.7% of their places appear in the cited chunks: the generator cites the Australia-wide documents for places those documents do not describe. A citation there marks the day as drawing on the context without saying which claims it backs.
+  - The citation rule checks only that the ids exist (design decision "Source citations", 4: citation accuracy belongs to the evaluation harness). A citation-accuracy measure in the harness, or a template instruction to cite a block only for what it names, would be a later change; corpus coverage for the `national_only` destinations is the larger lever.
+- **Cost**: v5 costs more per request and in latency, from the corrective calls.
+
+---
 
 ### 2026-11-09 · rebuild-rag · no invented exclusive arrangements: v4 adopted although preferences followed fell more than the criterion allowed
 
