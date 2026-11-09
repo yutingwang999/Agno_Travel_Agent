@@ -48,13 +48,13 @@ Order (decided with the user 2026-11-08): 5.1 and 5.2, then 6.1 to 6.3, then 5.3
 - [x] 6.1 generate numbers the knowledge chunks `[S1]`… and adds `context_sources` to the event; Verify: `test_generate.py` covers Citation ids assigned / Retrieval returned nothing / Sources listed / No chunks retrieved
 - [x] 6.2 `ItineraryOutput` adds `sources` to each day (harden's `response_schema` is updated along with it); Verify: schema tests cover Day without sources
 - [x] 6.3 validate_output adds a citation validity rule, and on success the event carries `citations`; the correction template gets a version 3 with `sources` in its JSON example and an instruction to keep valid citations and drop the invalid ones it is told about (the correction call has no knowledge context); Verify: unit tests cover Invented citation / Citation without context / Citations resolved
-- [ ] 6.4 Frontend: show source titles and links under each day's card, with the Wikivoyage licence notice; Verify: run the Family trip preset once in the browser; the sources are visible and can be opened
+- [x] 6.4 Frontend: show source titles and links under each day's card, with the Wikivoyage licence notice; Verify: run the Family trip preset once in the browser; the sources are visible and can be opened
 
 ## 7. API
 
 - [x] 7.1 `TravelRequest` gains a `notes` field (leading/trailing whitespace stripped, at most 500 characters, null when blank), and intake emits it; harden's injection guardrail applies to `notes` as well; Verify: `test_intake.py` adds Blank notes / Notes too long; `test_input_guard.py` covers injection in `notes`
-- [ ] 7.3 The frontend adds an optional `notes` input box; Verify: manually submit a request with notes and see it in `query_text` in the rag_retrieve panel
-- [ ] 7.2 Update the "Failure behaviour" diagrams and event-sequence table in `docs/api.md` (retrieval always runs; no template selection by confidence and no fallback template, so a missing `itinerary_with_context` is an error) and `docs/main-logic-diagram.png` (no confidence branch); Verify: code review
+- [x] 7.3 The frontend adds an optional `notes` input box; Verify: manually submit a request with notes and see it in `query_text` in the rag_retrieve panel
+- [x] 7.2 Update the "Failure behaviour" diagrams and event-sequence table in `docs/api.md` (retrieval always runs; no template selection by confidence and no fallback template, so a missing `itinerary_with_context` is an error) and `docs/main-logic-diagram.png` (no confidence branch); Verify: code review
 
 ## 8. Evaluation and regression
 

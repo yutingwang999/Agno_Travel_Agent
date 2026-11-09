@@ -48,7 +48,7 @@ Executes the 6-step CAG + RAG travel itinerary workflow and streams one Server-S
 | `budget` | string | Yes | One of `"budget"`, `"moderate"`, `"luxury"` |
 | `travel_style` | string | Yes | Non-empty free text (e.g. `"family"`, `"adventure"`) |
 | `max_daily_budget_aud` | integer | No | Daily budget per person in whole AUD, excluding accommodation; at least 1, no upper bound. Sets the request's daily budget ceiling (see below). A fractional value is a 422 |
-| `notes` | string | No | Free text for details the other fields cannot express, added to the retrieval query. Surrounding whitespace is stripped, at most 500 characters (longer is a 422), and blank counts as absent |
+| `notes` | string | No | Free text for details the other fields cannot express, added to the retrieval query and to the generation prompt. Surrounding whitespace is stripped, at most 500 characters (longer is a 422), and blank counts as absent |
 
 **Daily budget ceiling.** All costs in the itinerary are AUD per person, excluding accommodation. The ceiling is `max_daily_budget_aud` when given, otherwise the budget level's default: `budget` 70, `moderate` 200, `luxury` none. The amount wins over the level when they seem to disagree (`budget` with 500 a day is accepted, with a ceiling of 500); the level still describes the travel style. The generation prompt states the ceiling, and an itinerary whose total exceeds the ceiling times the number of days fails validation and gets one correction call. Whether an amount is realistic for the destination is not checked.
 
@@ -247,7 +247,7 @@ Raw LLM response and the prompt template that was used.
   "data": {
     "raw_llm_output":          "{ \"destination\": \"sydney\", ... }",
     "prompt_template_key":     "itinerary_with_context",
-    "prompt_template_version": 1,
+    "prompt_template_version": 4,
     "context_sources": [
       {"id": "S1", "chunk_id": "...", "title": "Sydney", "source": "https://...", "section": "See"}
     ]
@@ -465,15 +465,18 @@ Every `validate_output` error event has `"data": { "degraded_mode": true }`. A r
 
 #### Event sequences
 
-| Situation | `cag_match` | `generate` | `validate_output` |
-|---|---|---|---|
-| Everything works | completed | completed | completed, `degraded_mode` false |
-| Gemini fails during embedding | completed (fallback, `embedding_failed`) | completed | completed |
-| Gemini fails during generation (429, 503, network) | completed | error: `LLM call failed: ClientError` | error: `Generation failed upstream` |
-| No active template | completed | error: `No active template found for key ...` | error: `Generation failed upstream` |
-| First output invalid (schema or a business rule), correction valid | completed | completed | completed, `degraded_mode` true |
-| First output invalid, correction call fails | completed | completed | error: `Correction call failed: ServerError` |
-| First output and correction both invalid | completed | completed | error: `Validation failed after retry: ...` |
+`retrieval_decision` always completes with `routing_decision` = `"rag_retrieve"` and is left out of the table.
+
+| Situation | `cag_match` | `rag_retrieve` | `generate` | `validate_output` |
+|---|---|---|---|---|
+| Everything works | completed | completed | completed | completed, `degraded_mode` false |
+| Gemini fails during embedding | completed (fallback, `embedding_failed`) | completed | completed | completed |
+| The search fails | completed | completed, `retrieved_context` empty (logged; no `error_type`) | completed, `context_sources` empty | completed; every day's `sources` empty, `citations` empty |
+| Gemini fails during generation (429, 503, network) | completed | completed | error: `LLM call failed: ClientError` | error: `Generation failed upstream` |
+| No active `itinerary_with_context` (there is no fallback template) | completed | completed | error: `No active template found for key ...` | error: `Generation failed upstream` |
+| First output invalid (schema or a business rule, e.g. a citation id not in `context_sources`), correction valid | completed | completed | completed | completed, `degraded_mode` true |
+| First output invalid, correction call fails | completed | completed | completed | error: `Correction call failed: ServerError` |
+| First output and correction both invalid | completed | completed | completed | error: `Validation failed after retry: ...` |
 
 ---
 

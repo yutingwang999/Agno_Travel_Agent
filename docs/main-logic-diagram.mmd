@@ -1,0 +1,17 @@
+%% Source of docs/main-logic-diagram.png. Render it again after editing, e.g. on
+%% https://mermaid.live (Actions > PNG) or with mermaid-cli: mmdc -i main-logic-diagram.mmd -o main-logic-diagram.png
+flowchart TD
+    A[User submits form] --> B["Intake<br/>validate, input guards, notes"]
+    B --> C["CAG matching<br/>itinerary category: tone and constraints"]
+    C --> D["Retrieval decision<br/>always rag_retrieve"]
+    D --> E["RAG retrieval<br/>query: notes + style + destination<br/>filter: destination + Australia-wide"]
+    E --> F["Prompt generation<br/>itinerary_with_context, chunks numbered S1, S2, ..."]
+    F --> G[LLM call]
+    G --> H{"Validate output<br/>schema + business rules<br/>incl. citation ids"}
+    H -- Valid --> I["Stream result via SSE<br/>itinerary + citations"]
+    H -- Invalid --> J[Retry once with correction prompt]
+    J --> K{Valid?}
+    K -- Yes --> I
+    K -- No --> L[Error event]
+    I --> M[Store trace]
+    L --> M
