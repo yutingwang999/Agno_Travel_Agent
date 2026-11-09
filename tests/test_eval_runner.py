@@ -218,7 +218,7 @@ def test_result_record_keeps_judge_inputs_not_the_rendered_prompt():
 def test_prompt_copies_written_once_per_run(tmp_path):
     judge = Judge(FakeJudgeClient())
     write_prompt_copies(tmp_path, judge)
-    assert sorted(p.name for p in (tmp_path / "judge_prompts").iterdir()) == ["citation_v1.md",
+    assert sorted(p.name for p in (tmp_path / "judge_prompts").iterdir()) == ["citation_v2.md",
                                                                               "destination_v2.md",
                                                                               "faithfulness_v2.md",
                                                                               "preference_v4.md"]

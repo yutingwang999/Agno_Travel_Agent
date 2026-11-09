@@ -266,6 +266,19 @@ def render_review(run_id: str, scores: list[ItineraryScore], records: dict[str, 
     are carried over; ``supported`` is pre-filled ``n`` when there was no knowledge
     context, since no claim can be supported then.
     """
+    if scores and all(s.citation_only for s in scores):
+        lines = [f"# Citation calibration review: `{run_id}`", "",
+                 "For each `ci` line replace `?` with `y` when the block states at least one specific thing "
+                 "the day plans (a named place, venue, attraction, tour or event, or a specific fact the day "
+                 "relies on; a shortened or reworded name of the same place counts), or `n` when it only "
+                 "shares the day's theme, names the same kind of thing elsewhere, or states nothing the day "
+                 f"plans. Then run `python scripts/eval_calibration.py score {run_id}`.",
+                 "Rules: docs/evaluation.md, \"Judge calibration\" → \"How to review\" → \"Citations\". "
+                 "Decide only from the block text shown here, never from what you know about the place, "
+                 "and ignore whether the rest of the day is accurate.", ""]
+        for score in scores:
+            lines += _render_citations(score, records[score.entry_id])
+        return "\n".join(lines)
     lines = [f"# Judge calibration review: `{run_id}`", "",
              "Replace each `?` with `y` or `n` (`supported` is `-` when the item is not a claim; "
              "`supports`: does the block state at least one specific thing the day plans), "

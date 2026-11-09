@@ -220,6 +220,7 @@ def test_citation_review_sheet_round_trip_and_agreement():
     blank = ItineraryScore.model_validate({"entry_id": "e001", "citation_only": True, "citations": [
         {"day": 1, "id": "S1", "judge_supported": True}, {"day": 1, "id": "S2", "judge_supported": False}]})
     sheet = render_review("run", [blank], {"e001": _citation_record()})
+    assert sheet.startswith("# Citation calibration review") and "missed:" not in sheet
     assert "## e001 (citations)" in sheet and "morning: Harbour cruise" in sheet
     assert "Ferries leave hourly." in sheet and "A night market on Thursdays." in sheet
     assert '[supports: ?]   judge: SUPPORTED · day 1 · S1 · item: "x"' in sheet

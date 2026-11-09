@@ -139,10 +139,18 @@ def test_empty_summary():
     assert summary["supported_share"] is None and summary["days_citing_share"] is None
 
 
-def test_prompt_file_has_only_its_placeholders():
-    text = load_prompt("citation", 1)
-    assert set(re.findall(r"\{(\w+)\}", text)) == {"blocks", "days"}
-    assert text.count("{") == text.count("}") == 2
+def test_prompt_files_have_only_their_placeholders():
+    for version in (1, 2):
+        text = load_prompt("citation", version)
+        assert set(re.findall(r"\{(\w+)\}", text)) == {"blocks", "days"}, version
+        assert text.count("{") == text.count("}") == 2, version
+
+
+def test_v2_adds_named_places_and_what_they_offer():
+    """v1 failed to count a block naming the place a day goes, or what it offers there."""
+    v1, v2 = load_prompt("citation", 1), load_prompt("citation", 2)
+    assert "what that place offers which the day does there" in v2 and "what that place offers" not in v1
+    assert "destination name on its own does not count" in v2
 
 
 def _record(itinerary):
@@ -165,7 +173,7 @@ def test_rejudge_adds_citation_verdicts_to_a_stored_run():
     client = FakeClient([_check(1, "S1", True, "harbour cruise"), _check(2, "S3", False)])
     judged = rejudge_record(_record(itinerary), Judge(client), kinds=("citation",))
     stored = judged["judge"]["citation"]
-    assert stored["prompt"] == "citation" and stored["version"] == 1 and stored["had_context"] is True
+    assert stored["prompt"] == "citation" and stored["version"] == 2 and stored["had_context"] is True
     assert list(stored["cited_blocks"]) == ["S1", "S3"]
     pricing = Pricing.model_validate({"date": "2026-10-25", "currency": "USD", "embedding_chars_per_token": 4,
                                       "models": {"judge": {"input": 0.1, "output": 0.5}}})

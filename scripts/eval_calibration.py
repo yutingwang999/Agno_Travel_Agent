@@ -150,7 +150,10 @@ def score(run_id: str) -> int:
         print(f"ERROR: {exc}")
         return 1
     print(json.dumps(result, indent=2))
-    if not result["sample_meets_minimum"]:
+    # A citation-only sheet has no faithfulness sample; its own minimum is the itineraries drawn.
+    sampled = result["citation_itineraries"] if result["citation_itineraries"] and not result["sample_size"] \
+        else result["sample_size"]
+    if sampled < MIN_SAMPLE:
         print(f"WARNING: fewer than {MIN_SAMPLE} itineraries scored")
     low = [f"{group}.{name}" for group in ("faithfulness", "destination", "preference", "citation")
            for name, stratum in result[group].items()
