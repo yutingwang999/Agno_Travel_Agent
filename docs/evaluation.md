@@ -55,7 +55,7 @@ The private files hold model output — every itinerary and knowledge context in
 
 ### Re-judging a stored run
 
-`python scripts/eval_rejudge.py <run id>` applies the current judge prompts to a run's stored itineraries and knowledge context. Nothing is regenerated, so before and after can use the same prompts. It needs the run's local `results.jsonl`, and writes a new run directory named `<UTC time>-<source config>-rejudge`. Its summary is the source's with the judge's metrics replaced, `rejudged_from` naming the source, and `metrics.rejudge` holding the count, errors and judge cost; `conditions.git_commit` is the commit that re-judged and `conditions.source_git_commit` the one that generated. `--kinds` limits which judge calls run, and `--entries` limits the entries, for checking a prompt by hand.
+`python scripts/eval_rejudge.py <run id>` applies the current judge prompts to a run's stored itineraries and knowledge context. Nothing is regenerated, so before and after can use the same prompts. It needs the run's local `results.jsonl`, and writes a new run directory named `<UTC time>-<source config>-rejudge`. Its summary is the source's with the judge's metrics replaced, `rejudged_from` naming the source, and `metrics.rejudge` holding the count, errors and judge cost; `conditions.git_commit` is the commit that re-judged and `conditions.source_git_commit` the one that generated. `--kinds` limits which judge calls run (default `faithfulness,destination,preference`; add `citation` for citation accuracy), and `--entries` limits the entries, for checking a prompt by hand. Each record gets the entry's `corpus_coverage` from the current dataset, so the re-judged metrics can be split by it.
 
 ## Reading `summary.json`
 
@@ -139,6 +139,15 @@ Observed behaviour is `plan` (a validated itinerary), `refuse` (422 with a guard
 
 **`preference`** — From judge prompt `preference_v4` (v1 counted planned meals and etiquette as added requirements, v2 still counted being able to do a planned activity, and v3 failed calibration on celebratory dinners, descriptions of chosen places and plans that follow from a stated need, see `docs/experiments.md`). The judge lists what the traveller's `travel_style` and `notes` ask of the trip and decides whether the itinerary follows each (`followed_share`). It also lists what the itinerary assumes about the traveller that they did not state, such as their access needs, diet, who travels with them or the reason for the trip (`added_requirements`, `itineraries_with_added_requirements`), for example wheelchair access for "seniors, slow pace"; these are counted, not treated as failures, since some defaults are reasonable. Calibration (2026-11-08, see `docs/experiments.md`): `followed_share` passes; `added_requirements` does not (6 of 9 agreed under v4), so it is reported as a count and checked by reading the listed items, not used as a decision criterion on its own. One known cause: the judge does not receive the budget level, so a choice that follows from `luxury` can be listed as an assumption.
 
+**`citation`** — Citation accuracy, from judge prompt `citation_v1` (`rebuild-rag`). Each day of an itinerary lists the ids of the knowledge chunks it draws on (`sources`); for every (day, cited chunk) pair the judge decides whether the chunk states at least one specific thing the day plans: a named place, venue, tour or event, or a specific fact the day relies on. One such item is enough; a chunk that only shares the day's theme (seafood across Australia for a seafood dinner in Adelaide) does not support it. Whether the rest of the day is grounded is faithfulness's job. An itinerary that cites nothing gets no judge call. `by_corpus_coverage` has the same fields per coverage group.
+
+| Field | Meaning |
+| --- | --- |
+| `itineraries` / `itineraries_citing` | Judged itineraries, and those citing at least one chunk |
+| `citations` / `supported_share` | Judged (day, chunk) pairs, and the share the cited chunk supports |
+| `missing_checks` | Pairs the judge did not answer (left out of `supported_share`) |
+| `days_with_context` / `days_citing_share` | Days of itineraries whose generator had knowledge context, and the share citing at least one chunk |
+
 | Field | Meaning |
 | --- | --- |
 | `overall` | `itineraries`, `claims` and `supported_share` over all judged itineraries |
@@ -204,6 +213,8 @@ The sample is stratified, so that the judge's likely mistakes get reviewed witho
 
 Agreement is reported per stratum (per judge answer), never as one pooled rate, because the strata are not sampled in proportion.
 
+Citation accuracy is calibrated on its own, on a run judged with the citation prompt (a re-judged run with `--kinds citation` will do): `sample <run id> --kinds citation` draws 20 itineraries that cite something and, in each, up to 2 citations the judge called supported and up to 3 it called unsupported, plus up to 2 unsupported citations from every other itinerary.
+
 ### How to review
 
 Everything is in one file, `eval/calibration/<run id>.review.md`: each itinerary's request, the knowledge context the generator was given, the itinerary, and one line per item with an answer slot:
@@ -225,6 +236,8 @@ Replace each `?` with `y` or `n`; `supported` is `-` when the item is not a clai
 **Activities and seasons in judge prompt v2.** An `activity` is a specific thing a place has to offer ("swim with seals at Kangaroo Island"), not something anyone can do anywhere (walking around, having lunch, taking photos). It is supported only when the context offers that activity at that place. A `season` says certain months suit a place or activity; it is supported only when the context gives the same months for the same place or activity, and overlapping months are unsupported. When a place or service operates stays `opening_hours`. The two paragraphs below describe v1 and apply when reviewing a v1 run.
 
 **Preferences and added requirements.** `followed`: `y` when the itinerary visibly does what was asked: a specific request is planned at least once, a single-interest style shapes most of the trip, and each interest of a style with several has a real part of the plan, though not on every day; a passing mention in a tip does not count. Decide fit only, not whether the places are real. `added`: `y` when the itinerary treats something as true of this traveller and plans around it, though they did not state it: access needs, a diet, who they are or travel with, or the reason for the trip. `n` when the traveller's words state or directly imply it (including what the plan does because of it, such as avoiding strenuous hikes for a wheelchair user), or when it is a planned activity or meal (a celebratory dinner included), being physically able to do what the plan includes, advice on how to behave or what to bring, a choice of places or services or what a chosen place offers, or a cost choice. Both are decided from the request and the itinerary, without the knowledge context.
+
+**Citations.** A citation item shows the day's plan and the full text of the chunk it cites, with one line per (day, chunk) pair: `ci1  [supports: ?]   judge: SUPPORTED · day 2 · S3 · item: "..."`. `supports`: `y` when the chunk states at least one specific thing the day plans — a named place, venue, attraction, tour or event, or a specific fact the day relies on (a route, a market day, what a named place offers); one item is enough, and a shortened or reworded name of the same place counts. `n` when the chunk only shares the day's theme or kind of activity (a chunk on seafood across Australia for "a seafood dinner in Adelaide"), names the same kind of attraction in another place, or states nothing the day plans. Decide from the chunk text only, not from what you know, and ignore whether the rest of the day is accurate.
 
 **Activities at a place are not claims in judge prompt v1.** In "spot wild koalas at Kennett River", the named place (Kennett River) is a claim; the activity (spotting koalas there) is not. When the judge extracts such a sentence as a `named_place` claim, decide `supported` on the place alone — is it in the context, in the same location — and ignore the activity. This keeps the review consistent with what faithfulness v1 measures. It also means an invented activity at a real place ("swim with dolphins at Bondi") is not caught; a later judge prompt adds an `activity` kind (see `rebuild-rag`).
 
@@ -306,6 +319,7 @@ If the judge extracts the *same* text twice — the route as `transport` and "Ma
 - `faithfulness.judge_unsupported` — the same for unsupported; low values mean faithfulness is **understated**.
 - `extraction_precision` and `missed_claims` — how well the judge picks out claims.
 - `destination.judge_in` / `destination.judge_out` — the same for the destination check.
+- `citation.judge_supported` / `citation.judge_unsupported` — the same for citation accuracy; a low `judge_supported` means `supported_share` is overstated.
 
 If any stratum is below 0.8, improve the judge prompt (a new version) and recalibrate before relying on that metric; if that is not done, say next to the metric that it failed calibration, as for `preference.judge_added`. Record the result in the baseline or change entry of `experiments.md`, with the sample sizes.
 

@@ -2,7 +2,7 @@
 Judge calibration (task 6.2): sample judged items for manual review, then score agreement.
 
 Usage:
-    python scripts/eval_calibration.py sample <run id> [--n 20] [--seed 0]
+    python scripts/eval_calibration.py sample <run id> [--n 20] [--seed 0] [--kinds citation]
     python scripts/eval_calibration.py review <run id>
     python scripts/eval_calibration.py score <run id>
 
@@ -12,7 +12,8 @@ Files under eval/calibration/ (see docs/evaluation.md, "Judge calibration"):
   <run id>.jsonl      the stored record: the judge's verdicts on the sampled items and the
                       reviewer's answers, one line per itinerary
 
-`sample` draws the stratified sample and writes both files. `review` rebuilds the review
+`sample` draws the stratified sample and writes both files; with `--kinds citation` it
+samples only citations (citation accuracy, for a run judged with the citation prompt). `review` rebuilds the review
 sheet from the .jsonl, keeping answers already recorded. `score` copies the answers from
 the review sheet into the .jsonl and prints the agreement per stratum.
 """
@@ -31,8 +32,10 @@ if SRC_DIR not in sys.path:
 from evaluation.calibration import (  # noqa: E402
     MIN_AGREEMENT,
     MIN_SAMPLE,
+    CITATIONS_UNSUPPORTED_EXTRA,
     ItineraryScore,
     agreement,
+    citation_template,
     destination_only_template,
     load_scores,
     parse_review,
@@ -62,6 +65,32 @@ def write_scores(run_id: str, scores: list[ItineraryScore]) -> None:
 def write_review(run_id: str, scores: list[ItineraryScore], records: dict[str, dict]) -> None:
     (CALIBRATION_DIR / f"{run_id}.review.md").write_text(render_review(run_id, scores, records),
                                                         encoding="utf-8")
+
+
+def sample_citations(run_id: str, n: int, seed: int) -> int:
+    records = {k: r for k, r in run_records(run_id).items()
+               if ((r["judge"].get("citation") or {}).get("verdict") or {}).get("checks")}
+    if len(records) < n:
+        print(f"ERROR: run {run_id} has only {len(records)} itineraries with judged citations, need {n}")
+        return 1
+    if (CALIBRATION_DIR / f"{run_id}.jsonl").exists():
+        print(f"ERROR: eval/calibration/{run_id}.jsonl already exists; delete it first to resample")
+        return 1
+    rng = random.Random(seed)
+    chosen = sorted(rng.sample(sorted(records), n))
+    scores = [citation_template(entry_id, records[entry_id]["judge"]["citation"]["verdict"], rng)
+              for entry_id in chosen]
+    extras = [citation_template(entry_id, records[entry_id]["judge"]["citation"]["verdict"], rng,
+                                supported=0, unsupported=CITATIONS_UNSUPPORTED_EXTRA)
+              for entry_id in sorted(records) if entry_id not in chosen]
+    scores += [e for e in extras if e.citations]
+    write_scores(run_id, scores)
+    write_review(run_id, scores, records)
+    items = [c for s in scores for c in s.citations]
+    print(f"wrote eval/calibration/{run_id}.review.md and .jsonl: {n} itineraries "
+          f"(+{len(scores) - n} for unsupported citations only), {len(items)} citations to review "
+          f"({sum(c.judge_supported for c in items)} judged supported)")
+    return 0
 
 
 def sample(run_id: str, n: int, seed: int) -> int:
@@ -123,7 +152,7 @@ def score(run_id: str) -> int:
     print(json.dumps(result, indent=2))
     if not result["sample_meets_minimum"]:
         print(f"WARNING: fewer than {MIN_SAMPLE} itineraries scored")
-    low = [f"{group}.{name}" for group in ("faithfulness", "destination", "preference")
+    low = [f"{group}.{name}" for group in ("faithfulness", "destination", "preference", "citation")
            for name, stratum in result[group].items()
            if stratum["agreement"] is not None and stratum["agreement"] < MIN_AGREEMENT]
     if low:
@@ -139,10 +168,14 @@ def main() -> int:
     p_sample.add_argument("run_id")
     p_sample.add_argument("--n", type=int, default=MIN_SAMPLE)
     p_sample.add_argument("--seed", type=int, default=0)
+    p_sample.add_argument("--kinds", choices=("all", "citation"), default="all",
+                          help="citation: sample only citations, for citation accuracy")
     for name in ("review", "score"):
         sub.add_parser(name).add_argument("run_id")
     args = parser.parse_args()
     if args.command == "sample":
+        if args.kinds == "citation":
+            return sample_citations(args.run_id, args.n, args.seed)
         return sample(args.run_id, args.n, args.seed)
     return review(args.run_id) if args.command == "review" else score(args.run_id)
 

@@ -2,11 +2,13 @@
 Re-judge a stored evaluation run with the current judge prompts, without regenerating anything.
 
 Usage:
-    python scripts/eval_rejudge.py <run id> [--kinds faithfulness,destination,preference] [--entries e001,e002]
+    python scripts/eval_rejudge.py <run id> [--kinds faithfulness,destination,preference,citation] [--entries e001,e002]
 
 Writes a new run directory, eval/runs/<UTC time>-<source config>-rejudge[-entries], with the
 source's records and the new verdicts. Its summary is the source's, with the judge's metrics
-replaced and `rejudged_from` naming the source. See docs/evaluation.md.
+replaced and `rejudged_from` naming the source. `--kinds` defaults to the first three;
+`citation` (citation accuracy) is asked for explicitly. Each record gets the entry's
+`corpus_coverage` from the dataset, so the judge's metrics can be split by it. See docs/evaluation.md.
 """
 
 import argparse
@@ -31,6 +33,7 @@ def main() -> int:
 
     load_dotenv(os.path.join(ROOT_DIR, ".env"), override=False)
     from evaluation.cost import load_pricing
+    from evaluation.dataset import load_dataset
     from evaluation.judge import Judge
     from evaluation.rejudge import KINDS, rejudge_records, rejudged_metrics
     from evaluation.runner import RUNS_DIR, append_jsonl, git_state, make_run_id, utc_now, write_prompt_copies
@@ -49,6 +52,8 @@ def main() -> int:
     source = json.loads((source_dir / "summary.json").read_text(encoding="utf-8"))
     config = source["conditions"]["config"]
     records = [json.loads(line) for line in results.read_text(encoding="utf-8").splitlines() if line.strip()]
+    coverage = {entry.id: entry.corpus_coverage for entry in load_dataset()}
+    records = [{**record, "corpus_coverage": coverage.get(record["entry_id"])} for record in records]
     if args.entries:
         wanted = {entry.strip() for entry in args.entries.split(",")}
         records = [record for record in records if record["entry_id"] in wanted]
@@ -81,6 +86,8 @@ def main() -> int:
         metrics["constraints"] = {**metrics.get("constraints", {}), **fresh["destination"]}
     if "preference" in fresh:
         metrics["preference"] = fresh["preference"]
+    if "citation" in fresh:
+        metrics["citation"] = fresh["citation"]
     metrics["rejudge"] = fresh["rejudge"]
     summary = {
         **source,

@@ -9,6 +9,8 @@ from app.workflow.retrieval_service import RetrievedChunk
 from evaluation.cost import Pricing
 from evaluation.dataset import DatasetEntry
 from evaluation.judge import (
+    CitationCheck,
+    CitationVerdict,
     Claim,
     DestinationVerdict,
     FaithfulnessVerdict,
@@ -52,9 +54,11 @@ def _entry(entry_id, expected="plan", sections=("Guide to Sydney",), days=2, tag
     })
 
 
-def _sse(session_id, days, with_rag):
+def _sse(session_id, days, with_rag, day_one_sources=()):
     itinerary = {"daily_itinerary": [{"day": d, "morning": "m", "afternoon": "a", "evening": "e",
-                                      "estimated_cost_aud": 50, "sources": []} for d in range(1, days + 1)],
+                                      "estimated_cost_aud": 50,
+                                      "sources": list(day_one_sources) if d == 1 else []}
+                                     for d in range(1, days + 1)],
                  "total_estimated_cost_aud": 50 * days, "key_tips": ["t"]}
     events = [{"session_id": session_id, "step": "intake", "status": "completed", "data": {}}]
     if with_rag:
@@ -78,6 +82,9 @@ class FakeJudgeClient:
     def parse(self, model, input, text_format):
         verdict = (FaithfulnessVerdict(claims=[Claim(category="named_place", text="Bondi", supported=True)])
                    if text_format is FaithfulnessVerdict
+                   else CitationVerdict(checks=[CitationCheck(day=1, id="S1", supported=True, item="Bondi",
+                                                              reason="r")])
+                   if text_format is CitationVerdict
                    else PreferenceVerdict(preferences=[PreferenceCheck(preference="beach", followed=True, reason="r")],
                                           added_requirements=[])
                    if text_format is PreferenceVerdict
@@ -211,7 +218,8 @@ def test_result_record_keeps_judge_inputs_not_the_rendered_prompt():
 def test_prompt_copies_written_once_per_run(tmp_path):
     judge = Judge(FakeJudgeClient())
     write_prompt_copies(tmp_path, judge)
-    assert sorted(p.name for p in (tmp_path / "judge_prompts").iterdir()) == ["destination_v2.md",
+    assert sorted(p.name for p in (tmp_path / "judge_prompts").iterdir()) == ["citation_v1.md",
+                                                                              "destination_v2.md",
                                                                               "faithfulness_v2.md",
                                                                               "preference_v4.md"]
 
@@ -379,3 +387,17 @@ def test_generation_variant_configs_pin_their_template(letter, version):
     ignored = {"name", "description", "template_version"}
     assert config.model_dump(exclude=ignored) == reference.model_dump(exclude=ignored)
 
+
+
+def test_citation_accuracy_in_the_summary():
+    """An itinerary citing a chunk gets one citation call; one citing nothing gets none."""
+    services, _ = _services([(200, _sse("s1", 2, with_rag=True, day_one_sources=["S1"])),
+                             (200, _sse("s2", 2, with_rag=True))])
+    results = run([_entry("e1"), _entry("e2")], CONFIG, services, PRICING)
+    assert results[0].citation["cited_blocks"] == {"S1": "Guide to Sydney\nBondi"}
+    assert results[1].citation["verdict"] == {"checks": []} and results[1].citation["input_tokens"] == 0
+    metrics = summarise(results, CONFIG, PRICING)["metrics"]
+    assert metrics["citation"]["citations"] == 1 and metrics["citation"]["supported_share"] == 1.0
+    assert metrics["citation"]["days_with_context"] == 4 and metrics["citation"]["days_citing_share"] == 0.25
+    assert metrics["cost"]["judge_calls"] == 3 * 2 + 1
+    assert result_record(results[0])["judge"]["citation"]["prompt"] == "citation"

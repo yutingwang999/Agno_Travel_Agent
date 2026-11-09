@@ -183,3 +183,53 @@ def test_load_scores_round_trip_and_bad_line(tmp_path):
     bad.write_text('{"entry_id": "e1", "claims": [{"text": "x"}]}\n', encoding="utf-8")
     with pytest.raises(ValueError, match="line 1"):
         load_scores(bad)
+
+
+# --- Citation accuracy (citation-only records) ---------------------------------------
+
+def _citation_verdict(*checks):
+    return {"checks": [{"day": d, "id": i, "supported": s, "item": "x" if s else "", "reason": "r"}
+                       for d, i, s in checks]}
+
+
+def test_citation_template_samples_both_answers_in_day_order():
+    from evaluation.calibration import CITATIONS_SUPPORTED, CITATIONS_UNSUPPORTED, citation_template
+
+    verdict = _citation_verdict((1, "S1", True), (1, "S2", False), (2, "S1", True), (2, "S3", True),
+                                (3, "S2", False), (3, "S4", False), (4, "S5", False), (5, "S1", True))
+    score = citation_template("e001", verdict, random.Random(0))
+    assert score.citation_only and not score.claims and not score.places
+    assert sum(c.judge_supported for c in score.citations) == CITATIONS_SUPPORTED
+    assert sum(not c.judge_supported for c in score.citations) == CITATIONS_UNSUPPORTED
+    assert [c.day for c in score.citations] == sorted(c.day for c in score.citations)
+
+
+def _citation_record():
+    itinerary = {"daily_itinerary": [{"day": 1, "morning": "Harbour cruise", "afternoon": "Testville Museum",
+                                      "evening": "Dinner", "sources": ["S1", "S2"]}]}
+    return {"form": {"destination": "Testville", "trip_length": 1, "budget": "moderate", "travel_style": "harbours"},
+            "outcome": {"events": [{"step": "validate_output", "data": {"itinerary": itinerary}}]},
+            "judge": {"citation": {"cited_blocks": {"S1": "Testville/Harbour\nFerries leave hourly.",
+                                                    "S2": "Testville\nA night market on Thursdays."},
+                                   "verdict": _citation_verdict((1, "S1", True), (1, "S2", False))}}}
+
+
+def test_citation_review_sheet_round_trip_and_agreement():
+    from evaluation.calibration import parse_review, render_review
+
+    blank = ItineraryScore.model_validate({"entry_id": "e001", "citation_only": True, "citations": [
+        {"day": 1, "id": "S1", "judge_supported": True}, {"day": 1, "id": "S2", "judge_supported": False}]})
+    sheet = render_review("run", [blank], {"e001": _citation_record()})
+    assert "## e001 (citations)" in sheet and "morning: Harbour cruise" in sheet
+    assert "Ferries leave hourly." in sheet and "A night market on Thursdays." in sheet
+    assert '[supports: ?]   judge: SUPPORTED · day 1 · S1 · item: "x"' in sheet
+    assert "ci2  [supports: ?]   judge: not supported · day 1 · S2" in sheet
+    assert unreviewed_items([blank]) == ["e001 citation 1", "e001 citation 2"]
+
+    filled = sheet.replace("ci1  [supports: ?]", "ci1  [supports: y]").replace("ci2  [supports: ?]", "ci2  [supports: y]")
+    result = agreement(parse_review(filled, [blank]))
+    assert result["citation"]["judge_supported"] == {"compared": 1, "agreement": 1.0}
+    assert result["citation"]["judge_unsupported"] == {"compared": 1, "agreement": 0.0}
+    # citation-only records are not counted as faithfulness or destination-only samples
+    assert result["citation_itineraries"] == 1
+    assert result["sample_size"] == 0 and result["destination_only_itineraries"] == 0

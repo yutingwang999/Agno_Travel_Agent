@@ -33,9 +33,13 @@ from evaluation.behaviour import Outcome, behaviour_correctness, describe_except
 from evaluation.cost import Pricing, RequestCost, request_cost, summarize_costs
 from evaluation.dataset import ROOT_DIR, DatasetEntry
 from evaluation.judge import (
+    CitationVerdict,
     DestinationVerdict,
     FaithfulnessVerdict,
     Judge,
+    cited_blocks,
+    citation_by_coverage,
+    citation_summary,
     destination_rate,
     faithfulness_by_coverage,
     faithfulness_summary,
@@ -150,6 +154,7 @@ class EntryRun:
     faithfulness: dict | None = None
     destination: dict | None = None
     preference: dict | None = None
+    citation: dict | None = None
     judge_error: str | None = None
 
 
@@ -270,6 +275,10 @@ def judge_entry(result: EntryRun, judge: Judge) -> None:
         start = time.perf_counter()
         fit = retry(lambda: judge.preference(itinerary, form.travel_style, form.notes))
         fit_ms = _elapsed_ms(start)
+        blocks = cited_blocks(result.outcome.events, itinerary)
+        start = time.perf_counter()
+        cites = retry(lambda: judge.citation(itinerary, blocks))
+        cites_ms = _elapsed_ms(start)
     except Exception as exc:  # noqa: BLE001
         result.judge_error = describe_exception(exc)
         return
@@ -281,6 +290,8 @@ def judge_entry(result: EntryRun, judge: Judge) -> None:
                                            notes=form.notes)
     result.preference = judge_call_record("preference", judge, fit, fit_ms, itinerary_text=text,
                                           travel_style=form.travel_style, notes=form.notes)
+    result.citation = judge_call_record("citation", judge, cites, cites_ms, cited_blocks=blocks,
+                                        had_context=bool(context))
 
 
 def run(entries: list[DatasetEntry], config: RunConfig, services: Services, pricing: Pricing,
@@ -319,7 +330,7 @@ def phase_breakdown(results: list[EntryRun], sending_seconds: float, judging_sec
     """
     requests = sum(r.outcome.latency_ms or 0 for r in results) / 1000
     retrieval = sum(r.retrieval_ms or 0 for r in results) / 1000
-    judge_calls = sum(d["latency_ms"] for r in results for d in (r.faithfulness, r.destination, r.preference) if d) / 1000
+    judge_calls = sum(d["latency_ms"] for r in results for d in (r.faithfulness, r.destination, r.preference, r.citation) if d) / 1000
     return {
         "requests": round(requests, 2),
         "retrieval_measurement": round(retrieval, 2),
@@ -355,7 +366,7 @@ def result_record(result: EntryRun) -> dict:
         "trace_rows": result.trace_rows,
         "cost": {**asdict(result.cost), "total_usd": result.cost.total_usd} if result.cost else None,
         "judge": {"faithfulness": result.faithfulness, "destination": result.destination,
-                  "preference": result.preference, "error": result.judge_error},
+                  "preference": result.preference, "citation": result.citation, "error": result.judge_error},
     }
 
 
@@ -394,8 +405,12 @@ def summarise(results: list[EntryRun], config: RunConfig, pricing: Pricing) -> d
                    for r in results if r.faithfulness and r.entry.corpus_coverage]
     places = [DestinationVerdict.model_validate(r.destination["verdict"]) for r in results if r.destination]
     fits = [PreferenceVerdict.model_validate(r.preference["verdict"]) for r in results if r.preference]
+    # A citation record without tokens is an itinerary that cites nothing: no call was made.
     judge_usage = [(d["input_tokens"], d["output_tokens"])
-                   for r in results for d in (r.faithfulness, r.destination, r.preference) if d]
+                   for r in results for d in (r.faithfulness, r.destination, r.preference, r.citation)
+                   if d and (d is not r.citation or d["input_tokens"])]
+    cites = [(CitationVerdict.model_validate(r.citation["verdict"]), r.outcome.itinerary, r.citation["cited_blocks"],
+              r.citation["had_context"], r.entry.corpus_coverage) for r in results if r.citation]
     templates = sorted({(e["data"]["prompt_template_key"], e["data"]["prompt_template_version"])
                         for r in results for e in r.outcome.events
                         if e.get("step") == "generate" and e.get("status") == "completed"})
@@ -416,6 +431,8 @@ def summarise(results: list[EntryRun], config: RunConfig, pricing: Pricing) -> d
                              "by_corpus_coverage": faithfulness_by_coverage(by_coverage),
                              "judge_errors": sum(1 for r in results if r.judge_error)},
             "preference": preference_summary(fits),
+            "citation": {**citation_summary([c[:4] for c in cites]),
+                         "by_corpus_coverage": citation_by_coverage([c for c in cites if c[4]])},
             "system": {**system_metrics([r.outcome for r in results]),
                        "step_latency_ms": step_latencies(results)},
             "cost": summarize_costs([r.cost for r in results if r.cost], judge_usage,

@@ -15,10 +15,14 @@ from concurrent.futures import ThreadPoolExecutor
 from evaluation.behaviour import describe_exception
 from evaluation.cost import Pricing, token_cost
 from evaluation.judge import (
+    CitationVerdict,
     DestinationVerdict,
     FaithfulnessVerdict,
     Judge,
     PreferenceVerdict,
+    cited_blocks,
+    citation_by_coverage,
+    citation_summary,
     destination_rate,
     faithfulness_by_coverage,
     faithfulness_summary,
@@ -27,7 +31,7 @@ from evaluation.judge import (
 )
 from evaluation.runner import judge_call_record, retry
 
-KINDS = ("faithfulness", "destination", "preference")
+KINDS = ("faithfulness", "destination", "preference", "citation")
 
 
 def stored_itinerary(record: dict) -> dict:
@@ -72,6 +76,12 @@ def rejudge_record(record: dict, judge: Judge, kinds: tuple[str, ...] = KINDS) -
                 "preference", judge, call, ms, itinerary_text=text, travel_style=form["travel_style"],
                 notes=form.get("notes"),
             )
+        if "citation" in kinds:
+            blocks = cited_blocks(record["outcome"]["events"], itinerary)
+            call, ms = _timed(lambda: judge.citation(itinerary, blocks))
+            judged["citation"] = judge_call_record(
+                "citation", judge, call, ms, cited_blocks=blocks, had_context=bool(context)
+            )
     except Exception as exc:  # noqa: BLE001 - recorded, and the run goes on
         judged = dict(stored, error=describe_exception(exc), rejudge_failed=True)
     return {**record, "judge": judged}
@@ -113,6 +123,14 @@ def rejudged_metrics(records: list[dict], kinds: tuple[str, ...], judge_model: s
         metrics["preference"] = preference_summary(
             [PreferenceVerdict.model_validate(r["judge"]["preference"]["verdict"]) for r in usable]
         )
+    if "citation" in kinds:
+        items = [
+            (CitationVerdict.model_validate(r["judge"]["citation"]["verdict"]), stored_itinerary(r),
+             r["judge"]["citation"]["cited_blocks"], r["judge"]["citation"]["had_context"], r.get("corpus_coverage"))
+            for r in usable
+        ]
+        metrics["citation"] = {**citation_summary([i[:4] for i in items]),
+                               "by_corpus_coverage": citation_by_coverage([i for i in items if i[4]])}
     usage = [(r["judge"][kind]["input_tokens"], r["judge"][kind]["output_tokens"]) for r in usable for kind in kinds]
     metrics["rejudge"] = {
         "judged": len(usable),

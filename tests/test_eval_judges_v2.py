@@ -115,7 +115,8 @@ def test_new_prompts_have_their_placeholders_and_kinds():
 
 
 def test_summary_records_the_versions_used():
-    assert Judge(FakeClient()).prompt_versions == {"faithfulness": 2, "destination": 2, "preference": 4}
+    assert Judge(FakeClient()).prompt_versions == {"faithfulness": 2, "destination": 2, "preference": 4,
+                                                   "citation": 1}
 
 
 def test_destination_prompt_carries_the_notes():

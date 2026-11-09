@@ -12,6 +12,13 @@ re-extracting everything from scratch (see docs/evaluation.md, "Judge calibratio
   items only (``destination_only``), since a random sample holds too few of them for
   the judge's less common answers to get reviewed.
 
+Citation accuracy is calibrated on its own (``citation_only`` records, see
+:func:`citation_template`): for each sampled itinerary, up to ``CITATIONS_SUPPORTED`` of
+the (day, block) citations the judge called supported and up to ``CITATIONS_UNSUPPORTED``
+it called unsupported, plus the unsupported ones of the other itineraries
+(``CITATIONS_UNSUPPORTED_EXTRA`` each). The reviewer answers ``supports``: does the block
+state at least one specific thing the day plans.
+
 The reviewer marks each item: for a claim, is it one of the judge's claim kinds
 (``is_claim``) and is it supported by the knowledge context (``supported``); for a
 place, is it in the destination (``in_destination``); for a preference, does the
@@ -38,6 +45,9 @@ from pydantic import BaseModel, ConfigDict, Field
 MIN_SAMPLE = 20
 UNSUPPORTED_PER_ITINERARY = 5
 PLACES_PER_ITINERARY = 4
+CITATIONS_SUPPORTED = 2
+CITATIONS_UNSUPPORTED = 3
+CITATIONS_UNSUPPORTED_EXTRA = 2
 # Below this, improve the judge prompt before trusting the judge's numbers.
 MIN_AGREEMENT = 0.8
 
@@ -76,6 +86,15 @@ class AddedRequirementScore(BaseModel):
     added: bool | None = None  # None until reviewed
 
 
+class CitationScore(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    day: int
+    id: str
+    judge_supported: bool
+    supports: bool | None = None  # None until reviewed
+
+
 class ItineraryScore(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -83,11 +102,14 @@ class ItineraryScore(BaseModel):
     # True for itineraries added only to review the judge's less common answers: outside the
     # destination, a preference not followed, an added requirement. No claims are reviewed.
     destination_only: bool = False
+    # True for records that review citations only (citation accuracy is calibrated on its own).
+    citation_only: bool = False
     claims: list[ClaimScore] = Field(default_factory=list)
     missed_claims: list[str] = Field(default_factory=list)
     places: list[PlaceScore] = Field(default_factory=list)
     preferences: list[PreferenceScore] = Field(default_factory=list)
     added_requirements: list[AddedRequirementScore] = Field(default_factory=list)
+    citations: list[CitationScore] = Field(default_factory=list)
 
 
 def load_scores(path: Path) -> list[ItineraryScore]:
@@ -141,6 +163,21 @@ def destination_only_template(entry_id: str, destination_verdict: dict,
     )
 
 
+def citation_template(entry_id: str, citation_verdict: dict, rng: random.Random,
+                      supported: int = CITATIONS_SUPPORTED, unsupported: int = CITATIONS_UNSUPPORTED) -> ItineraryScore:
+    """A citation-only record: a random few of the judge's supported and unsupported citations, in day order."""
+    checks = citation_verdict.get("checks", [])
+    yes = [c for c in checks if c["supported"]]
+    no = [c for c in checks if not c["supported"]]
+    keep = {id(c) for c in rng.sample(yes, min(supported, len(yes))) + rng.sample(no, min(unsupported, len(no)))}
+    return ItineraryScore(
+        entry_id=entry_id,
+        citation_only=True,
+        citations=[CitationScore(day=c["day"], id=c["id"], judge_supported=c["supported"])
+                   for c in checks if id(c) in keep],
+    )
+
+
 def unreviewed_items(scores: list[ItineraryScore]) -> list[str]:
     """Labels of claims and places the reviewer has not filled in yet."""
     missing = []
@@ -153,6 +190,8 @@ def unreviewed_items(scores: list[ItineraryScore]) -> list[str]:
                     if p.followed is None]
         missing += [f"{itinerary.entry_id} added requirement {i}" for i, a in enumerate(itinerary.added_requirements, 1)
                     if a.added is None]
+        missing += [f"{itinerary.entry_id} citation {i}" for i, c in enumerate(itinerary.citations, 1)
+                    if c.supports is None]
     return missing
 
 
@@ -170,11 +209,14 @@ def agreement(scores: list[ItineraryScore]) -> dict:
     places = [p for s in scores for p in s.places]
     preferences = [p for s in scores for p in s.preferences]
     added = [a for s in scores for a in s.added_requirements]
-    faithfulness_scores = [s for s in scores if not s.destination_only]
+    citations = [c for s in scores for c in s.citations]
+    faithfulness_scores = [s for s in scores if not s.destination_only and not s.citation_only]
+    citation_scores = [s for s in scores if s.citation_only]
     return {
         "sample_size": len(faithfulness_scores),
         "sample_meets_minimum": len(faithfulness_scores) >= MIN_SAMPLE,
-        "destination_only_itineraries": len(scores) - len(faithfulness_scores),
+        "destination_only_itineraries": len(scores) - len(faithfulness_scores) - len(citation_scores),
+        "citation_itineraries": len(citation_scores),
         "faithfulness": {
             # Of the claims the judge called supported, how many the reviewer also calls supported.
             "judge_supported": _stratum([c.supported for c in accepted if c.judge_supported], True),
@@ -193,6 +235,10 @@ def agreement(scores: list[ItineraryScore]) -> dict:
             "judge_not_followed": _stratum([p.followed for p in preferences if not p.judge_followed], False),
             "judge_added": _stratum([a.added for a in added], True),
         },
+        "citation": {
+            "judge_supported": _stratum([c.supports for c in citations if c.judge_supported], True),
+            "judge_unsupported": _stratum([c.supports for c in citations if not c.judge_supported], False),
+        },
         "min_agreement": MIN_AGREEMENT,
     }
 
@@ -204,6 +250,7 @@ _CLAIM_LINE = re.compile(r"^c(\d+)\s+\[claim:\s*(\S)\]\s+\[supported:\s*(\S)\]")
 _PLACE_LINE = re.compile(r"^p(\d+)\s+\[in:\s*(\S)\]")
 _PREFERENCE_LINE = re.compile(r"^pr(\d+)\s+\[followed:\s*(\S)\]")
 _ADDED_LINE = re.compile(r"^ar(\d+)\s+\[added:\s*(\S)\]")
+_CITATION_LINE = re.compile(r"^ci(\d+)\s+\[supports:\s*(\S)\]")
 _ENTRY_LINE = re.compile(r"^## (\S+)")
 _MISSED_LINE = re.compile(r"^missed:(.*)$")
 
@@ -220,7 +267,8 @@ def render_review(run_id: str, scores: list[ItineraryScore], records: dict[str, 
     context, since no claim can be supported then.
     """
     lines = [f"# Judge calibration review: `{run_id}`", "",
-             "Replace each `?` with `y` or `n` (`supported` is `-` when the item is not a claim), "
+             "Replace each `?` with `y` or `n` (`supported` is `-` when the item is not a claim; "
+             "`supports`: does the block state at least one specific thing the day plans), "
              "add missed claims after `missed:` separated by `;`, then run "
              f"`python scripts/eval_calibration.py score {run_id}`.",
              "Rules: docs/evaluation.md, \"Judge calibration\" → \"How to review\". "
@@ -228,6 +276,9 @@ def render_review(run_id: str, scores: list[ItineraryScore], records: dict[str, 
              "about the place; decide `in` with your own geographic knowledge.", ""]
     for score in scores:
         record = records[score.entry_id]
+        if score.citation_only:
+            lines += _render_citations(score, record)
+            continue
         faith, place = record["judge"]["faithfulness"], record["judge"]["destination"]
         form = record["form"]
         reasons = {p["name"]: p["reason"] for p in place["verdict"]["places"]}
@@ -276,6 +327,33 @@ def render_review(run_id: str, scores: list[ItineraryScore], records: dict[str, 
     return "\n".join(lines)
 
 
+def _render_citations(score: ItineraryScore, record: dict) -> list[str]:
+    """One itinerary's sampled citations: each day's plan, then each cited block with its answer slot."""
+    form = record["form"]
+    cite = record["judge"]["citation"]
+    checks = {(c["day"], c["id"]): c for c in cite["verdict"]["checks"]}
+    final = next(e for e in record["outcome"]["events"] if e.get("step") == "validate_output")
+    days = {d["day"]: d for d in final["data"]["itinerary"]["daily_itinerary"]}
+    lines = [f"## {score.entry_id} (citations)", "",
+             f"Request: {form['destination']}, {form['trip_length']} days, {form['budget']}, "
+             f"\"{form['travel_style']}\"" + (f" · notes: {form['notes']}" if form.get("notes") else ""), ""]
+    shown_day = None
+    for i, c in enumerate(score.citations, 1):
+        if c.day != shown_day:
+            day = days[c.day]
+            lines += [f"**Day {c.day}**", "", "```",
+                      f"morning: {day.get('morning')}", f"afternoon: {day.get('afternoon')}",
+                      f"evening: {day.get('evening')}", "```", ""]
+            shown_day = c.day
+        judged = checks.get((c.day, c.id), {})
+        verdict = "SUPPORTED" if c.judge_supported else "not supported"
+        item = f" · item: \"{judged['item']}\"" if judged.get("item") else ""
+        lines += [f"Block {c.id}:", "", "```", cite["cited_blocks"].get(c.id, "(missing)"), "```", "",
+                  f"ci{i}  [supports: {_mark(c.supports)}]   judge: {verdict} · day {c.day} · {c.id}{item} — "
+                  f"{judged.get('reason', '')}", ""]
+    return lines
+
+
 def _unsampled_claims(all_claims: list[dict], sampled: list[ClaimScore]) -> list[dict]:
     """The judge's claims that are not in the sample, in the judge's order."""
     remaining = [(c.text, c.category) for c in sampled]
@@ -316,6 +394,9 @@ def parse_review(text: str, scores: list[ItineraryScore]) -> list[ItineraryScore
         elif match := _ADDED_LINE.match(line):
             requirement = _item(current.added_requirements, int(match.group(1)), number)
             requirement.added = _answer(match.group(2), number, allow_skip=False)
+        elif match := _CITATION_LINE.match(line):
+            citation = _item(current.citations, int(match.group(1)), number)
+            citation.supports = _answer(match.group(2), number, allow_skip=False)
         elif match := _MISSED_LINE.match(line):
             current.missed_claims = [m.strip() for m in match.group(1).split(";") if m.strip()]
     return [by_id[s.entry_id] for s in scores]
