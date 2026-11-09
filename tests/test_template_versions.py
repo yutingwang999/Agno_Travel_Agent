@@ -112,13 +112,29 @@ def _itinerary_with_context(seed) -> dict[int, str]:
 
 def test_itinerary_with_context_versions_carry_every_required_part(seed_module):
     """Spec "Single generation template": every variant has the knowledge context and the notes,
-    harden's cost unit and ceiling, citation instructions, and a JSON example with single braces."""
+    harden's cost unit and ceiling, citation instructions, and a JSON example with single braces.
+    v5 is the task 5.6 diagnosis without the cost unit and ceiling; it is never active."""
     versions = _itinerary_with_context(seed_module)
-    assert set(versions) == {1, 2, 3, 4}
+    assert set(versions) == {1, 2, 3, 4, 5}
+    assert seed_module.ACTIVE_TEMPLATE_VERSIONS["itinerary_with_context"] != 5
     for version, text in versions.items():
-        for part in ("{retrieved_context}", "{notes}", "{daily_budget_ceiling}", COST_UNIT_PHRASE, '"sources"', "[S1]"):
+        parts = ["{retrieved_context}", "{notes}", '"sources"', "[S1]"]
+        if version != 5:
+            parts += ["{daily_budget_ceiling}", COST_UNIT_PHRASE]
+        for part in parts:
             assert part in text, (version, part)
         assert "{{" not in text and "}}" not in text, version
+
+
+def test_itinerary_with_context_v5_is_v4_without_the_budget_sentences(seed_module):
+    """Task 5.6: v5 removes exactly harden's cost-unit and ceiling sentences from v4."""
+    versions = _itinerary_with_context(seed_module)
+    v4, v5 = versions[4], versions[5]
+    assert COST_UNIT_PHRASE not in v5 and "{daily_budget_ceiling}" not in v5
+    restored = v5.replace("\n\nUse the following reference information",
+                          f"\n{seed_module.COST_UNIT_SENTENCE}\n{seed_module.BUDGET_CEILING_SENTENCE}"
+                          "\n\nUse the following reference information")
+    assert restored == v4
 
 
 def test_itinerary_with_context_variants_differ_only_in_the_request_description(seed_module):

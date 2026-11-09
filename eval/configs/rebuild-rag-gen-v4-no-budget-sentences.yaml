@@ -1,0 +1,18 @@
+# rebuild-rag task 5.6: itinerary_with_context v5, v4 without the cost-unit and budget-ceiling
+# sentences of harden-workflow-guardrails (diagnosis only). Everything else as
+# rebuild-rag-gen-c-no-exclusives (v4, the active version), so the comparison changes one thing.
+name: rebuild-rag-gen-v4-no-budget-sentences
+description: itinerary_with_context v5 (v4 without the per-person AUD cost unit and the daily budget ceiling sentences; the business rules still check the budget); retrieval with notes, no category, vector search, destination filter, corpus v2, chunks 800/80
+generation_model: gemini-3.1-flash-lite
+embedding_model: gemini-embedding-001
+judge_model: gpt-6-luna
+corpus_version: v2
+knowledge_table: travel_docs_v2_c800
+embedding_task_types: retrieval
+destination_filter: true
+query_notes: true
+query_category: no_category
+retrieval_k: 5
+judge_concurrency: 8
+request_parser: false
+template_version: 5

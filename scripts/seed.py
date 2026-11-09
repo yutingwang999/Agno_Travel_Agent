@@ -618,6 +618,20 @@ ITINERARY_WITH_CONTEXT_C_NO_EXCLUSIVES = _insert_before(
     ITINERARY_WITH_CONTEXT_C, "Return ONLY a valid JSON object", NO_INVENTED_EXCLUSIVES_SENTENCE
 )
 
+
+def _remove_line(template: str, line: str) -> str:
+    """Return *template* without *line* and its line break."""
+    assert template.count(f"{line}\n") == 1, line
+    return template.replace(f"{line}\n", "")
+
+
+# itinerary_with_context v5 (rebuild-rag task 5.6, diagnosis only, never active): v4
+# without harden-workflow-guardrails' cost-unit and budget-ceiling sentences, to see
+# whether they cost faithfulness. The business rules still check the budget.
+ITINERARY_WITH_CONTEXT_V4_NO_BUDGET_SENTENCES = _remove_line(
+    _remove_line(ITINERARY_WITH_CONTEXT_C_NO_EXCLUSIVES, COST_UNIT_SENTENCE), BUDGET_CEILING_SENTENCE
+)
+
 # validate_output_correction v3 (rebuild-rag): v2 with "sources" in the JSON example,
 # an instruction on citations, and single braces (v1 and v2 double them, and
 # _build_correction_prompt never unescapes them either). The correction call has no
@@ -696,6 +710,11 @@ TEMPLATE_DEFINITIONS = [
         "template_key": "itinerary_with_context",
         "version": 4,
         "template_text": ITINERARY_WITH_CONTEXT_C_NO_EXCLUSIVES,
+    },
+    {
+        "template_key": "itinerary_with_context",
+        "version": 5,
+        "template_text": ITINERARY_WITH_CONTEXT_V4_NO_BUDGET_SENTENCES,
     },
     {
         "template_key": "validate_output_correction",
