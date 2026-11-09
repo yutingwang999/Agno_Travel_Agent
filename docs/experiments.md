@@ -32,6 +32,7 @@ This file records the effect of every change that affects quality, behaviour or 
 
 | Date | Change | What changed | Key result | Record |
 | --- | --- | --- | --- | --- |
+| 2026-11-09 | `rebuild-rag` | Citation accuracy judge calibrated: v1 strict on named places, v2 adopted | v2 agreement 88.9% (supported) and 87.2% (unsupported); v1 passed narrowly (81.4%) and fails with one later answer. Citations supported 86.7%: `city` 91.7%, `national_only` 66.7% | [Citation judge](#2026-11-09--rebuild-rag--citation-accuracy-judge-v1-strict-on-named-places-v2-calibrated) |
 | 2026-11-09 | `rebuild-rag` | Budget sentences diagnosis (task 5.6) and citations against support | Without the cost-unit and ceiling sentences faithfulness with context 56.3% → 58.2% (below the 2-point criterion) and retry 0% → 18.6%; sentences kept. Places on citing days that appear in a cited chunk: `city` 77.2%, `national_only` 26.7% | [Budget sentences](#2026-11-09--rebuild-rag--the-budget-sentences-cost-no-clear-faithfulness-and-stay-citations-against-support) |
 | 2026-11-09 | `rebuild-rag` | No invented exclusive arrangements: `itinerary_with_context` v4 (task 5.5) | Activity claims supported 27.4% → 39.7%, faithfulness with context 48.1% → 56.3%; preferences followed 97.2% → 93.8%, criterion not met, mostly on contradictory requests; adopted with the user | [No exclusives](#2026-11-09--rebuild-rag--no-invented-exclusive-arrangements-v4-adopted-although-preferences-followed-fell-more-than-the-criterion-allowed) |
 | 2026-11-09 | `rebuild-rag` | Request description in the template: variants A, B, C (task 5.4) | C chosen: preferences followed 85.6% (A) / 92.4% (B) / 97.7% (C), faithfulness with context 41.8% / 52.4% / 48.0%, within budget 100% for all; C's destination rate is lower (89.0% against 93.2% for A) | [Variants](#2026-11-09--rebuild-rag--request-description-in-the-template-variants-a-b-and-c-c-chosen) |
@@ -97,6 +98,31 @@ Copy the template below, fill it in, and put it at the **top** of the "Records" 
 ---
 
 ## Records
+
+### 2026-11-09 · rebuild-rag · citation accuracy judge: v1 strict on named places, v2 calibrated
+
+The citation-accuracy judge (task 8.1's "citation accuracy") under rule A, decided with the user: a cited chunk supports a day when it states at least one specific thing the day plans. Both prompts re-judged `20261109T030056Z-rebuild-rag-gen-c-no-exclusives-dataset-v1` (template v4, the active configuration; no regeneration): v1 on commit `f7dc3fd` ($0.036), v2 on commit `3a20197` ($0.047). Sample for v1: 20 itineraries citing something, up to 2 citations judged supported and 3 judged unsupported in each, plus up to 2 unsupported citations from every other itinerary (77 items). For v2 the reviewer's answers were carried over item by item, since itineraries and cited chunks are identical, and the 15 citations whose verdict changed from v1 to v2 without having been reviewed were added. Agreement figures: `eval/calibration/<run id>.agreement.json`. Cell: agreement (agreeing / compared), ❌ below 0.8.
+
+| Stratum | `20261109T055046Z-rebuild-rag-gen-c-no-exclusives-rejudge` (v1) | v1, with the later answer to e008 day 3 S2 | `20261109T083456Z-rebuild-rag-gen-c-no-exclusives-rejudge` (v2) |
+| --- | --- | --- | --- |
+| `citation.judge_supported` | 97.1% (33 / 34) | 97.1% (33 / 34) | 88.9% (40 / 45) |
+| `citation.judge_unsupported` | 81.4% (35 / 43) | 79.1% (34 / 43) ❌ | 87.2% (41 / 47) |
+
+- **v1 was strict on named places.** Of the first review's 13 disagreements, 12 were citations the judge called unsupported. Six followed one pattern: the chunk names the place the day goes, or what that place offers that the day does there (surfing lessons in a beach town for a morning surfing at one of its beaches; seals on an island for a day watching seals there; a city's street-art lanes for a street-art walk), and v1 asked for the exact spot or activity. Five of the reviewer's answers were changed on re-reading against the written rule (a different building with a similar name, a themed bushwalk for a spa, a general restaurant scene, vineyards in another area, shopping for a market); v1 then passed at 81.4%, one item above the threshold. During the v2 review the reviewer also changed e008 day 3 S2 to "supports", which v1 had marked unsupported; with that answer v1 fails (79.1%).
+- **v2** (commit `3a20197`) states the case: a named river, beach, island, lane or park the day visits, or what a named town or island offers that the day does there, counts; the destination's name alone and another place with a similar name do not. Its examples are generic, not the calibrated items. 26 of the 376 verdicts changed from v1 to v2: 11 to supported, all among the reviewed items, and 15 to unsupported, none reviewed before, which are the items added for review; some changes are the judge's run-to-run variation rather than the new wording. v2 passes both strata with more margin, and its remaining disagreements go both ways: too lenient on e025 day 4 S2, e038 day 2 S3, e038 day 3 S3, e050 day 2 S1, e059 day 4 S1 (a transport operator for a train or ferry ride, "harbour views" for a harbour outing, a route's distance for a drive, a coast's surf for one beach), too strict on e004 day 1 S1, e012 day 2 S2, e060 day 5 S4, e062 day 5 S5, e065 day 4 S4, e069 day 1 S1 (towns on a peninsula the chunk names, a guided walk at a landmark the chunk names). e012 day 2 S2 and e025 day 4 S2 were disagreements in both reviews and are counted as contested.
+- **Numbers from the calibrated run** (the configuration of task 5.5, v4):
+
+| Coverage | Citations | Supported, v1 | Supported, v2 | Days citing a source (with context) |
+| --- | --- | --- | --- | --- |
+| all | 376 | 87.8% | 86.7% | 85.0% |
+| `city` | 278 | 93.2% | 91.7% | 98.0% |
+| `national_only` | 66 | 66.7% | 66.7% | 85.2% |
+| `none` | 5 | 20.0% | 20.0% | 13.3% |
+
+  `city` citations are mostly supported; in `national_only` two in three are, and in the reviewed items the unsupported ones are Australia-wide documents that name the region but not what the day does there; `none` (Gold Coast) has only 5 citations. These shares count a citation as supported when the chunk states one thing the day plans: whether the rest of the day is grounded is faithfulness's measure.
+- **How far the calibration reaches**: `days_citing_share` needs no judge. The v2 sample is the v1 sample plus the changed verdicts, not a fresh random draw from v2's answers, and the strata are not split by coverage, so the coverage figures above are the judge's without a per-group agreement.
+
+---
 
 ### 2026-11-09 · rebuild-rag · the budget sentences cost no clear faithfulness and stay; citations against support
 

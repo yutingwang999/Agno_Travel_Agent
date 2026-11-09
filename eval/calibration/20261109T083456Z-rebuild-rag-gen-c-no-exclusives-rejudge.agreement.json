@@ -1,0 +1,54 @@
+{
+  "sample_size": 0,
+  "sample_meets_minimum": false,
+  "destination_only_itineraries": 0,
+  "citation_itineraries": 43,
+  "faithfulness": {
+    "judge_supported": {
+      "compared": 0,
+      "agreement": null
+    },
+    "judge_unsupported": {
+      "compared": 0,
+      "agreement": null
+    }
+  },
+  "extraction_precision": null,
+  "claims_reviewed": 0,
+  "missed_claims": 0,
+  "destination": {
+    "judge_in": {
+      "compared": 0,
+      "agreement": null
+    },
+    "judge_out": {
+      "compared": 0,
+      "agreement": null
+    }
+  },
+  "preference": {
+    "judge_followed": {
+      "compared": 0,
+      "agreement": null
+    },
+    "judge_not_followed": {
+      "compared": 0,
+      "agreement": null
+    },
+    "judge_added": {
+      "compared": 0,
+      "agreement": null
+    }
+  },
+  "citation": {
+    "judge_supported": {
+      "compared": 45,
+      "agreement": 0.8888888888888888
+    },
+    "judge_unsupported": {
+      "compared": 47,
+      "agreement": 0.8723404255319149
+    }
+  },
+  "min_agreement": 0.8
+}
