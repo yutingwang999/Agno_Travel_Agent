@@ -606,6 +606,18 @@ ITINERARY_WITH_CONTEXT_A = _itinerary_with_context(REQUEST_PRESET)
 ITINERARY_WITH_CONTEXT_B = _itinerary_with_context(REQUEST_OWN_WORDS)
 ITINERARY_WITH_CONTEXT_C = _itinerary_with_context(REQUEST_BOTH)
 
+# itinerary_with_context v4 (rebuild-rag task 5.5, design decision 4): variant C plus
+# one instruction against invented exclusive or private arrangements, which no
+# corpus can confirm can be booked. A traveller who asks for one still gets it.
+NO_INVENTED_EXCLUSIVES_SENTENCE = (
+    "Do not invent exclusive or private arrangements, such as private tours, after-hours access, "
+    "private viewings or charters, unless the reference information above offers them or the "
+    "traveller asks for them."
+)
+ITINERARY_WITH_CONTEXT_C_NO_EXCLUSIVES = _insert_before(
+    ITINERARY_WITH_CONTEXT_C, "Return ONLY a valid JSON object", NO_INVENTED_EXCLUSIVES_SENTENCE
+)
+
 # validate_output_correction v3 (rebuild-rag): v2 with "sources" in the JSON example,
 # an instruction on citations, and single braces (v1 and v2 double them, and
 # _build_correction_prompt never unescapes them either). The correction call has no
@@ -679,6 +691,11 @@ TEMPLATE_DEFINITIONS = [
         "template_key": "itinerary_with_context",
         "version": 3,
         "template_text": ITINERARY_WITH_CONTEXT_C,
+    },
+    {
+        "template_key": "itinerary_with_context",
+        "version": 4,
+        "template_text": ITINERARY_WITH_CONTEXT_C_NO_EXCLUSIVES,
     },
     {
         "template_key": "validate_output_correction",

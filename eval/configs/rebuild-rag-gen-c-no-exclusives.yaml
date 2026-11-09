@@ -1,0 +1,18 @@
+# rebuild-rag task 5.5: variant C plus the instruction against invented exclusive or
+# private arrangements (itinerary_with_context v4, design decision 4). Everything else
+# as rebuild-rag-gen-c, the 5.4 winner, so the comparison changes one thing.
+name: rebuild-rag-gen-c-no-exclusives
+description: itinerary_with_context v4 (variant C plus "do not invent exclusive or private arrangements unless the context offers them or the traveller asks"); retrieval with notes, no category, vector search, destination filter, corpus v2, chunks 800/80
+generation_model: gemini-3.1-flash-lite
+embedding_model: gemini-embedding-001
+judge_model: gpt-6-luna
+corpus_version: v2
+knowledge_table: travel_docs_v2_c800
+embedding_task_types: retrieval
+destination_filter: true
+query_notes: true
+query_category: no_category
+retrieval_k: 5
+judge_concurrency: 8
+request_parser: false
+template_version: 4

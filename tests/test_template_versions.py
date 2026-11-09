@@ -114,7 +114,7 @@ def test_itinerary_with_context_versions_carry_every_required_part(seed_module):
     """Spec "Single generation template": every variant has the knowledge context and the notes,
     harden's cost unit and ceiling, citation instructions, and a JSON example with single braces."""
     versions = _itinerary_with_context(seed_module)
-    assert set(versions) == {1, 2, 3}
+    assert set(versions) == {1, 2, 3, 4}
     for version, text in versions.items():
         for part in ("{retrieved_context}", "{notes}", "{daily_budget_ceiling}", COST_UNIT_PHRASE, '"sources"', "[S1]"):
             assert part in text, (version, part)
@@ -129,6 +129,15 @@ def test_itinerary_with_context_variants_differ_only_in_the_request_description(
     assert "{travel_style}" in c and "{matched_category}" in c and "{constraints}" in c
     tail = a[a.index("All costs are"):]
     assert b.endswith(tail) and c.endswith(tail)
+
+
+def test_itinerary_with_context_v4_is_c_plus_one_instruction(seed_module):
+    """Design decision 4 (task 5.5): v4 changes one thing against the 5.4 winner."""
+    versions = _itinerary_with_context(seed_module)
+    sentence = seed_module.NO_INVENTED_EXCLUSIVES_SENTENCE
+    assert sentence not in versions[3]
+    assert versions[4] == versions[3].replace(
+        "Return ONLY a valid JSON object", f"{sentence}\n\nReturn ONLY a valid JSON object")
 
 
 def test_correction_v3_keeps_citations_and_has_single_braces(seed_module):
