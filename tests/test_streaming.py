@@ -28,7 +28,7 @@ from app.workflow.llm_usage import LLMResult
 _VALID_ITINERARY_JSON = (
     '{"destination": "Sydney", "trip_length_days": 1, "budget_level": "moderate",'
     ' "travel_style": "family", "daily_itinerary": [{"day": 1, "morning": "Bondi Beach",'
-    ' "afternoon": "Lunch", "evening": "Dinner", "estimated_cost_aud": 150.0}],'
+    ' "afternoon": "Lunch", "evening": "Dinner", "estimated_cost_aud": 150.0, "sources": []}],'
     ' "total_estimated_cost_aud": 150.0, "key_tips": ["Book ahead"]}'
 )
 
@@ -70,7 +70,13 @@ def generate_gate(monkeypatch):
 
     monkeypatch.setenv("DATABASE_URL", "postgresql://test:test@localhost/test")
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    # High confidence: rag_retrieve is skipped, so no knowledge base is needed.
+    # Every request retrieves (rebuild-rag); the knowledge base returns nothing here.
+    monkeypatch.setattr(
+        "app.workflow.steps.rag_retrieve.retrieve_documents", lambda **kwargs: []
+    )
+    monkeypatch.setattr(
+        "app.workflow.steps.rag_retrieve.destination_in_knowledge_base", lambda destination, db_url: False
+    )
     monkeypatch.setattr(
         "app.workflow.steps.cag_match.match_category",
         lambda **kwargs: MatchResult(
@@ -150,8 +156,8 @@ def test_first_events_arrive_before_generate_finishes(base_url, generate_gate):
     """Spec scenario "First event arrives before generation finishes"."""
     stream = _StreamReader(f"{base_url}/generate")
 
-    early = stream.wait_for("retrieval_decision")
-    assert [e["step"] for e in early] == ["intake", "cag_match", "retrieval_decision"]
+    early = stream.wait_for("rag_retrieve")
+    assert [e["step"] for e in early] == ["intake", "cag_match", "retrieval_decision", "rag_retrieve"]
     assert not generate_gate.finished.is_set()
 
     generate_gate.release()
@@ -162,7 +168,7 @@ def test_first_events_arrive_before_generate_finishes(base_url, generate_gate):
 def test_health_answers_while_generate_runs(base_url, generate_gate):
     """Spec scenario "Health check during generation"."""
     stream = _StreamReader(f"{base_url}/generate")
-    stream.wait_for("retrieval_decision")
+    stream.wait_for("rag_retrieve")
 
     response = httpx.get(f"{base_url}/health", timeout=2)
 
@@ -176,7 +182,7 @@ def test_concurrent_requests_keep_their_own_events(base_url, generate_gate):
     """Spec scenario "Concurrent requests keep their own events"."""
     streams = [_StreamReader(f"{base_url}/generate") for _ in range(2)]
     # Both workflows are inside generate at the same time before either finishes.
-    received = [s.wait_for("retrieval_decision") for s in streams]
+    received = [s.wait_for("rag_retrieve") for s in streams]
     generate_gate.release()
     for events, stream in zip(received, streams):
         events.extend(stream.read_to_end())
@@ -184,7 +190,7 @@ def test_concurrent_requests_keep_their_own_events(base_url, generate_gate):
     session_ids = [events[0]["session_id"] for events in received]
     assert session_ids[0] != session_ids[1]
     for events, session_id in zip(received, session_ids):
-        assert len(events) == 5
+        assert len(events) == 6
         assert {e["session_id"] for e in events} == {session_id}
 
 
@@ -202,8 +208,8 @@ def test_client_disconnect_stops_the_workflow_at_the_next_step(
         lambda **kwargs: finished_steps.append(kwargs["step_name"]),
     )
 
-    stream = _StreamReader(f"{base_url}/generate", disconnect_after="retrieval_decision")
-    assert stream.read_to_end()[-1]["step"] == "retrieval_decision"
+    stream = _StreamReader(f"{base_url}/generate", disconnect_after="rag_retrieve")
+    assert stream.read_to_end()[-1]["step"] == "rag_retrieve"
     time.sleep(0.5)  # let the server notice the closed connection while generate runs
     generate_gate.release()
 

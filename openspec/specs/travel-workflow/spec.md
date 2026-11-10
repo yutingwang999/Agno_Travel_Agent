@@ -6,7 +6,7 @@ Defines how a travel planning request enters the system through `POST /generate`
 ## Requirements
 
 ### Requirement: Generate endpoint
-The system SHALL expose `POST /generate`, accepting a JSON body with the required fields `destination`, `trip_length`, `budget`, and `travel_style`, an optional integer field `max_daily_budget_aud`, and an optional integer query parameter `template_version`. The system SHALL respond with `Content-Type: text/event-stream`.
+The system SHALL expose `POST /generate`, accepting a JSON body with the required fields `destination`, `trip_length`, `budget`, and `travel_style`, an optional integer field `max_daily_budget_aud`, an optional free-text field `notes`, and an optional integer query parameter `template_version`. The system SHALL respond with `Content-Type: text/event-stream`.
 
 #### Scenario: Valid request
 - **WHEN** a client posts `{"destination": "Sydney", "trip_length": 5, "budget": "moderate", "travel_style": "family"}`
@@ -14,7 +14,7 @@ The system SHALL expose `POST /generate`, accepting a JSON body with the require
 - **AND** the body is an SSE stream whose `data` lines are JSON step events
 
 #### Scenario: Invalid request body
-- **WHEN** a required field is missing, `trip_length` is less than 1 or greater than 14, `budget` is not one of `budget`, `moderate`, `luxury`, `destination` / `travel_style` is blank, or `max_daily_budget_aud` is present and not an integer of at least 1
+- **WHEN** a required field is missing, `trip_length` is less than 1 or greater than 14, `budget` is not one of `budget`, `moderate`, `luxury`, or `destination` / `travel_style` is blank, or `max_daily_budget_aud` is present and not an integer of at least 1
 - **THEN** the response status is 422
 - **AND** the workflow is not executed
 
@@ -25,6 +25,10 @@ The system SHALL expose `POST /generate`, accepting a JSON body with the require
 #### Scenario: Request with a budget amount
 - **WHEN** a client posts a valid body that also contains `"max_daily_budget_aud": 150`
 - **THEN** the response status is 200 and the amount is available to the generate and validate_output steps
+
+#### Scenario: Request with notes
+- **WHEN** a client posts a valid body that also contains `"notes": "kids love animals"`
+- **THEN** the response status is 200 and the notes are available to the retrieval and generate steps
 
 #### Scenario: Trip too long
 - **WHEN** a client posts a valid body except that `trip_length` is `15`
@@ -45,7 +49,7 @@ The system SHALL generate a new UUID4 `session_id` for every `POST /generate` re
 - **AND** that `session_id` differs from the one produced by any other request
 
 ### Requirement: Intake normalisation
-The intake step SHALL validate the request with the `TravelRequest` model and SHALL emit the normalised fields: `destination` stripped of surrounding whitespace and lowercased, `trip_length` as an integer from 1 to 14, `budget` as one of `budget` / `moderate` / `luxury`, `travel_style` stripped of surrounding whitespace but otherwise kept as free text, and `max_daily_budget_aud` as an integer of at least 1, or `null` when absent. Unknown extra fields SHALL be ignored.
+The intake step SHALL validate the request with the `TravelRequest` model and SHALL emit the normalised fields: `destination` stripped of surrounding whitespace and lowercased, `trip_length` as an integer from 1 to 14, `budget` as one of `budget` / `moderate` / `luxury`, `travel_style` stripped of surrounding whitespace but otherwise kept as free text, `max_daily_budget_aud` as an integer of at least 1, or `null` when absent, and `notes` stripped of surrounding whitespace, at most 500 characters, and `null` when absent or blank. Unknown extra fields SHALL be ignored.
 
 #### Scenario: Destination is normalised
 - **WHEN** the request has `destination` = `"  Sydney "`
@@ -59,17 +63,13 @@ The intake step SHALL validate the request with the `TravelRequest` model and SH
 - **WHEN** the request has no `max_daily_budget_aud`
 - **THEN** the intake event `data.max_daily_budget_aud` is `null`
 
-### Requirement: Step order
-The workflow SHALL execute its steps in this fixed order: `intake`, `cag_match`, `retrieval_decision`, `rag_retrieve` (only when `retrieval_decision` routes to retrieval), `generate`, `validate_output`.
+#### Scenario: Blank notes
+- **WHEN** the request has `notes` = `"   "`
+- **THEN** the intake event `data.notes` is `null`
 
-#### Scenario: High-confidence run
-- **WHEN** `retrieval_decision` routes to `generate`
-- **THEN** the stream contains events for `intake`, `cag_match`, `retrieval_decision`, `generate`, `validate_output` in that order
-- **AND** no `rag_retrieve` event is present
-
-#### Scenario: Low-confidence run
-- **WHEN** `retrieval_decision` routes to `rag_retrieve`
-- **THEN** the stream contains events for all six steps in the order above
+#### Scenario: Notes too long
+- **WHEN** the request has `notes` longer than 500 characters
+- **THEN** the response status is 422
 
 ### Requirement: SSE event envelope
 Every step SHALL emit exactly one event shaped as `{"session_id", "step", "status", "timestamp", "data", "error"}`, where `status` is `"completed"` or `"error"`, `timestamp` is an ISO-8601 UTC string, `data` is an object (empty when there is nothing to report), and `error` is `null` unless the step failed.
@@ -263,3 +263,10 @@ When `POST /generate` returns a field validation error, the frontend SHALL show 
 #### Scenario: Invalid trip length
 - **WHEN** the user submits a trip length of 0
 - **THEN** the error banner shows the validation message instead of `[object Object]`
+
+### Requirement: Workflow step order
+The workflow SHALL execute its steps in this fixed order for every request: `intake`, `cag_match`, `retrieval_decision`, `rag_retrieve`, `generate`, `validate_output`.
+
+#### Scenario: Any request
+- **WHEN** a request is processed
+- **THEN** the stream contains events for all six steps in that order

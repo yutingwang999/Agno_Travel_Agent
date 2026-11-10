@@ -1,9 +1,12 @@
 """Golden tests for feat/testing branch.
 
-Three golden tests validating structure and branch correctness:
-  1. Family trip request → high-confidence path, no RAG, structured itinerary returned
-  2. Budget trip request → high-confidence path, no RAG, structured itinerary returned
-  3. Low-confidence request → RAG path taken, rag_retrieve SSE event present in stream
+Three golden tests validating structure and retrieval:
+  1. Family trip request at high confidence → retrieval still runs, valid citations
+  2. Budget trip request at the old threshold → retrieval still runs, valid citations
+  3. Low-confidence request → retrieval runs, rag_retrieve SSE event present in stream
+
+Since rebuild-rag every request retrieves (spec "Retrieval on every request"), so
+the two former high-confidence cases now assert retrieval and citations.
 
 These are integration tests requiring a live PostgreSQL database and Gemini API key.
 They assert structure and branch correctness — NOT exact LLM output strings.
@@ -52,9 +55,8 @@ def _run_workflow_and_collect_events(
 ) -> list[dict]:
     """Run the travel workflow with a mocked CAG matcher and return all SSE events.
 
-    The CAG matcher is patched to return a fixed confidence_score so that
-    branching is deterministic — high confidence skips RAG, low confidence
-    triggers it.
+    The CAG matcher is patched to return a fixed confidence_score, so the tests
+    show that the score no longer decides whether retrieval runs.
 
     Args:
         session_id:       Unique identifier for the test run.
@@ -62,7 +64,7 @@ def _run_workflow_and_collect_events(
         trip_length:      Number of days.
         budget:           Budget level string.
         travel_style:     Travel style string.
-        confidence_score: Mocked CAG confidence score controlling branch path.
+        confidence_score: Mocked CAG confidence score (no longer routes anything).
         is_fallback:      Whether the CAG matcher fell back to a default category
                           because no match exceeded minimum similarity.
 
@@ -104,6 +106,30 @@ def _assert_sse_structure(events: list[dict]) -> None:
         )
 
 
+def _assert_retrieval_and_valid_citations(events: list[dict]) -> None:
+    """Retrieval ran with context, and every citation is one generate offered.
+
+    Spec scenarios "High-confidence request", "Sources listed", "Citations resolved".
+    """
+    step_names = [e.get("step") for e in events]
+    assert step_names == ["intake", "cag_match", "retrieval_decision", "rag_retrieve",
+                          "generate", "validate_output"], step_names
+
+    rag_event = next(e for e in events if e.get("step") == "rag_retrieve")
+    retrieved = rag_event["data"]["retrieved_context"]
+    assert isinstance(retrieved, list) and retrieved, f"empty retrieved_context: {rag_event['data']}"
+
+    generate_event = next(e for e in events if e.get("step") == "generate")
+    offered = [s["id"] for s in generate_event["data"]["context_sources"]]
+    assert offered == [f"S{n}" for n in range(1, len(retrieved) + 1)], offered
+
+    validate_event = next(e for e in events if e.get("step") == "validate_output")
+    assert validate_event["status"] == "completed", validate_event.get("error")
+    used = {cid for day in validate_event["data"]["itinerary"]["daily_itinerary"] for cid in day["sources"]}
+    assert used <= set(offered), (used, offered)
+    assert set(validate_event["data"]["citations"]) == used
+
+
 def _get_itinerary(events: list[dict]) -> dict:
     """Extract and return the itinerary dict from the validate_output event."""
     validate_event = next(
@@ -118,18 +144,19 @@ def _get_itinerary(events: list[dict]) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Golden test 1: family trip — high-confidence path, no RAG
+# Golden test 1: family trip — high confidence, retrieval still runs
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
-def test_golden_family_trip_high_confidence_no_rag():
-    """Golden test 1: family trip → high-confidence path, no RAG, structured itinerary.
+def test_golden_family_trip_high_confidence_still_retrieves():
+    """Golden test 1: family trip at confidence 0.90 → retrieval runs, citations valid.
 
     Asserts:
-    - rag_retrieve event is NOT present (high-confidence branch taken)
-    - All required workflow steps are present in the SSE stream
-    - Every SSE event has the required fields
+    - all six steps, rag_retrieve included, in order
+    - rag_retrieve data.retrieved_context is non-empty
+    - every cited id is in the generate event's context_sources
+    - every SSE event has the required fields
     - validate_output data.itinerary contains all required schema fields
     """
     session_id = f"golden-family-{uuid.uuid4()}"
@@ -139,50 +166,27 @@ def test_golden_family_trip_high_confidence_no_rag():
         trip_length=5,
         budget="moderate",
         travel_style="family",
-        confidence_score=0.90,  # above threshold → skip RAG
+        confidence_score=0.90,  # used to skip retrieval before rebuild-rag
     )
 
-    step_names = [e.get("step") for e in events]
-
-    # Branch correctness: rag_retrieve must NOT appear
-    assert "rag_retrieve" not in step_names, (
-        f"Expected no rag_retrieve for high-confidence path, got: {step_names}"
-    )
-
-    # Required steps must all be present
-    for required_step in (
-        "intake", "cag_match", "retrieval_decision", "generate", "validate_output"
-    ):
-        assert required_step in step_names, (
-            f"Expected step '{required_step}' in events, got: {step_names}"
-        )
-
-    # All events must have the required SSE fields
+    _assert_retrieval_and_valid_citations(events)
     _assert_sse_structure(events)
-
-    # validate_output must contain a structured itinerary with all required fields
     itinerary = _get_itinerary(events)
     missing_fields = ITINERARY_REQUIRED_FIELDS - itinerary.keys()
     assert not missing_fields, f"Itinerary missing required fields: {missing_fields}"
 
 
 # ---------------------------------------------------------------------------
-# Golden test 2: budget trip — high-confidence path, no RAG
+# Golden test 2: budget trip — at the old threshold, retrieval still runs
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
-def test_golden_budget_trip_high_confidence_no_rag():
-    """Golden test 2: budget trip → high-confidence path, no RAG, structured itinerary.
+def test_golden_budget_trip_high_confidence_still_retrieves():
+    """Golden test 2: budget trip at confidence 0.85 → retrieval runs, citations valid.
 
-    Same branch as golden test 1 but with a budget travel style and Melbourne
-    as the destination.
-
-    Asserts:
-    - rag_retrieve event is NOT present (high-confidence branch taken)
-    - All required workflow steps are present in the SSE stream
-    - Every SSE event has the required fields
-    - validate_output data.itinerary contains all required schema fields
+    Same checks as golden test 1, with a budget travel style and Melbourne as the
+    destination.
     """
     session_id = f"golden-budget-{uuid.uuid4()}"
     events = _run_workflow_and_collect_events(
@@ -191,28 +195,11 @@ def test_golden_budget_trip_high_confidence_no_rag():
         trip_length=3,
         budget="budget",
         travel_style="budget",
-        confidence_score=0.85,  # above threshold → skip RAG
+        confidence_score=0.85,  # the old threshold, which skipped retrieval
     )
 
-    step_names = [e.get("step") for e in events]
-
-    # Branch correctness: rag_retrieve must NOT appear
-    assert "rag_retrieve" not in step_names, (
-        f"Expected no rag_retrieve for high-confidence path, got: {step_names}"
-    )
-
-    # Required steps must all be present
-    for required_step in (
-        "intake", "cag_match", "retrieval_decision", "generate", "validate_output"
-    ):
-        assert required_step in step_names, (
-            f"Expected step '{required_step}' in events, got: {step_names}"
-        )
-
-    # All events must have the required SSE fields
+    _assert_retrieval_and_valid_citations(events)
     _assert_sse_structure(events)
-
-    # validate_output must contain a structured itinerary with all required fields
     itinerary = _get_itinerary(events)
     missing_fields = ITINERARY_REQUIRED_FIELDS - itinerary.keys()
     assert not missing_fields, f"Itinerary missing required fields: {missing_fields}"
@@ -241,13 +228,13 @@ def test_golden_low_confidence_rag_path_taken():
         session_id=session_id,
         # A real Australian place, so the destination guard accepts it through the API;
         # with this unusual style the real CAG match is 0.836 (measured 2026-10-31,
-        # gemini-embedding-001), below the 0.85 threshold. The test mocks the score.
+        # gemini-embedding-001). The test mocks the score.
         destination="alice springs",
         trip_length=4,
         budget="moderate",
         travel_style="spontaneous_urban_nomad",  # unusual style → low-confidence match
-        confidence_score=0.50,  # below 0.85 threshold → trigger RAG
-        is_fallback=False,  # a category was matched, just not confidently enough to skip RAG
+        confidence_score=0.50,
+        is_fallback=False,
     )
 
     step_names = [e.get("step") for e in events]

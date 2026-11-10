@@ -54,7 +54,7 @@ _ENGLISH_PLACE_NAME = re.compile(r"^[A-Za-z][A-Za-z .'-]*$")
 _CHINESE_PLACE_NAME = re.compile(r"^[一-鿿]+$")
 
 # Sections that relevant_sections may point at, per corpus version.
-# v1: the 13 handwritten v0.1.0 documents in scripts/seed.py, source "handwritten",
+# v1: the 13 v0.1.0 documents in the private data/knowledge/v1/source_documents.json, source "handwritten",
 # section = document title.
 CORPUS_SECTIONS: dict[str, set[tuple[str, str]]] = {
     "v1": {
@@ -76,6 +76,23 @@ CORPUS_SECTIONS: dict[str, set[tuple[str, str]]] = {
         )
     },
 }
+
+# v2 is not listed here: its page names are private apart from those used as labels,
+# so its sections are read from the local corpus, when there is one.
+LOCAL_CORPUS_FILES = {"v2": ROOT_DIR / "data" / "knowledge" / "corpus_c800_o80.jsonl"}
+
+
+def known_corpus_sections(corpus_version: str) -> set[tuple[str, str]] | None:
+    """Sections labels may point at; None when they cannot be checked here (corpus not local)."""
+    path = LOCAL_CORPUS_FILES.get(corpus_version)
+    if path is None or not path.exists():
+        return CORPUS_SECTIONS.get(corpus_version)
+    sections = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        chunk = json.loads(line)
+        source = chunk["source"] if chunk["source"] == "handwritten" else chunk["title"]
+        sections.add((source, chunk["section"]))
+    return sections
 
 
 class DatasetError(Exception):
@@ -117,6 +134,9 @@ class GoldSlots(BaseModel):
     preferences: list[str] = Field(default_factory=list)
 
 
+CorpusCoverage = Literal["city", "national_only", "none"]
+
+
 class RelevantSection(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -134,6 +154,10 @@ class DatasetEntry(BaseModel):
     gold_slots: GoldSlots
     expected_behavior: ExpectedBehavior
     relevant_sections: list[RelevantSection]
+    # Plan entries: what the corpus holds for this request. "city": pages for the
+    # destination; "national_only": only the Australia-wide documents apply; "none":
+    # nothing applies, so no labels and no part in Recall, though it still needs knowledge.
+    corpus_coverage: CorpusCoverage | None = None
     # False marks a plan entry that needs no knowledge-base content at all.
     needs_knowledge: bool = True
     # Optional; reserved for a later fact-coverage metric.
@@ -233,12 +257,14 @@ def check_dataset(
     if not any("out_of_scope" in e.tags and e.expected_behavior == "refuse" for e in entries):
         problems.append("no out_of_scope entry expecting refuse (e.g. a non-Australian city)")
 
-    known_sections = CORPUS_SECTIONS.get(meta.corpus_version)
-    if known_sections is None:
+    known_sections = known_corpus_sections(meta.corpus_version)
+    if known_sections is None and meta.corpus_version not in LOCAL_CORPUS_FILES:
         problems.append(f"unknown corpus version {meta.corpus_version!r}")
 
     for entry in entries:
         problems.extend(_check_entry(entry, known_sections))
+        if meta.corpus_version in LOCAL_CORPUS_FILES and entry.expected_behavior == "plan" and not entry.corpus_coverage:
+            problems.append(f"entry {entry.id!r}: plan entries need corpus_coverage on corpus {meta.corpus_version}")
 
     return problems
 
@@ -262,11 +288,13 @@ def _check_entry(entry: DatasetEntry, known_sections: set[tuple[str, str]] | Non
         slots = entry.gold_slots
         if slots.destination is None or slots.trip_length_days is None:
             problems.append(f"{where}: plan entries need gold_slots destination and trip_length_days")
-        if entry.needs_knowledge and not entry.relevant_sections:
+        if entry.needs_knowledge and not entry.relevant_sections and entry.corpus_coverage != "none":
             problems.append(f"{where}: plan entry has no relevant_sections and is not marked needs_knowledge=false")
 
     if not entry.needs_knowledge and entry.relevant_sections:
         problems.append(f"{where}: needs_knowledge=false but relevant_sections is not empty")
+
+    problems.extend(_check_coverage(entry))
 
     if known_sections is not None:
         for section in entry.relevant_sections:
@@ -274,6 +302,17 @@ def _check_entry(entry: DatasetEntry, known_sections: set[tuple[str, str]] | Non
                 problems.append(f"{where}: unknown section ({section.source!r}, {section.section!r})")
 
     return problems
+
+
+def _check_coverage(entry: DatasetEntry) -> list[str]:
+    """corpus_coverage must agree with the entry's labels."""
+    if entry.corpus_coverage is None:
+        return []
+    sources = {section.source for section in entry.relevant_sections}
+    expected: CorpusCoverage = "none" if not sources else "national_only" if sources == {"handwritten"} else "city"
+    if entry.corpus_coverage != expected:
+        return [f"entry {entry.id!r}: corpus_coverage is {entry.corpus_coverage!r} but its labels mean {expected!r}"]
+    return []
 
 
 def _format_validation_error(exc: ValidationError) -> str:

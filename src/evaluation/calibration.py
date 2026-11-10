@@ -5,15 +5,25 @@ re-extracting everything from scratch (see docs/evaluation.md, "Judge calibratio
 
 - at least 20 itineraries; in each, every claim the judge called supported, up to
   ``UNSUPPORTED_PER_ITINERARY`` of the claims it called unsupported, and up to
-  ``PLACES_PER_ITINERARY`` places;
-- plus every itinerary of the run with a place the judge put outside the destination,
-  for the destination check only (``destination_only``), so both of the judge's
-  answers get reviewed.
+  ``PLACES_PER_ITINERARY`` places, and every preference check and added requirement
+  when the run has the preference judge;
+- plus every other itinerary of the run with a place the judge put outside the
+  destination, a preference it called not followed, or an added requirement, for those
+  items only (``destination_only``), since a random sample holds too few of them for
+  the judge's less common answers to get reviewed.
 
-The reviewer marks each item: for a claim, is it one of the four claim kinds
+Citation accuracy is calibrated on its own (``citation_only`` records, see
+:func:`citation_template`): for each sampled itinerary, up to ``CITATIONS_SUPPORTED`` of
+the (day, block) citations the judge called supported and up to ``CITATIONS_UNSUPPORTED``
+it called unsupported, plus the unsupported ones of the other itineraries
+(``CITATIONS_UNSUPPORTED_EXTRA`` each). The reviewer answers ``supports``: does the block
+state at least one specific thing the day plans.
+
+The reviewer marks each item: for a claim, is it one of the judge's claim kinds
 (``is_claim``) and is it supported by the knowledge context (``supported``); for a
-place, is it in the destination (``in_destination``); claims the judge missed go in
-``missed_claims``. The answers are written in a Markdown review sheet
+place, is it in the destination (``in_destination``); for a preference, does the
+itinerary follow it (``followed``); for an added requirement, is it really one the
+traveller did not state (``added``); claims the judge missed go in ``missed_claims``. The answers are written in a Markdown review sheet
 (``eval/calibration/<run id>.review.md``, see :func:`render_review`) and stored as one
 JSON object per itinerary in ``eval/calibration/<run id>.jsonl``.
 
@@ -35,6 +45,9 @@ from pydantic import BaseModel, ConfigDict, Field
 MIN_SAMPLE = 20
 UNSUPPORTED_PER_ITINERARY = 5
 PLACES_PER_ITINERARY = 4
+CITATIONS_SUPPORTED = 2
+CITATIONS_UNSUPPORTED = 3
+CITATIONS_UNSUPPORTED_EXTRA = 2
 # Below this, improve the judge prompt before trusting the judge's numbers.
 MIN_AGREEMENT = 0.8
 
@@ -57,15 +70,46 @@ class PlaceScore(BaseModel):
     in_destination: bool | None = None  # None until reviewed
 
 
+class PreferenceScore(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    preference: str
+    judge_followed: bool
+    followed: bool | None = None  # None until reviewed
+
+
+class AddedRequirementScore(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    requirement: str
+    quote: str
+    added: bool | None = None  # None until reviewed
+
+
+class CitationScore(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    day: int
+    id: str
+    judge_supported: bool
+    supports: bool | None = None  # None until reviewed
+
+
 class ItineraryScore(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     entry_id: str
-    # True for itineraries added only to review the judge's "outside the destination" answers.
+    # True for itineraries added only to review the judge's less common answers: outside the
+    # destination, a preference not followed, an added requirement. No claims are reviewed.
     destination_only: bool = False
+    # True for records that review citations only (citation accuracy is calibrated on its own).
+    citation_only: bool = False
     claims: list[ClaimScore] = Field(default_factory=list)
     missed_claims: list[str] = Field(default_factory=list)
     places: list[PlaceScore] = Field(default_factory=list)
+    preferences: list[PreferenceScore] = Field(default_factory=list)
+    added_requirements: list[AddedRequirementScore] = Field(default_factory=list)
+    citations: list[CitationScore] = Field(default_factory=list)
 
 
 def load_scores(path: Path) -> list[ItineraryScore]:
@@ -80,7 +124,7 @@ def load_scores(path: Path) -> list[ItineraryScore]:
 
 
 def stratified_template(entry_id: str, faithfulness_verdict: dict, destination_verdict: dict,
-                        rng: random.Random) -> ItineraryScore:
+                        rng: random.Random, preference_verdict: dict | None = None) -> ItineraryScore:
     """A blank score record for one sampled itinerary, pre-filled with the judge's verdicts."""
     claims = faithfulness_verdict.get("claims", [])
     supported = [c for c in claims if c["supported"]]
@@ -96,16 +140,63 @@ def stratified_template(entry_id: str, faithfulness_verdict: dict, destination_v
                 for c in claims if id(c) in keep_claims],  # original order
         places=[PlaceScore(name=p["name"], judge_in_destination=p["in_destination"])
                 for p in places if id(p) in keep_places],
+        preferences=[PreferenceScore(preference=p["preference"], judge_followed=p["followed"])
+                     for p in (preference_verdict or {}).get("preferences", [])],
+        added_requirements=[AddedRequirementScore(requirement=a["requirement"], quote=a["quote"])
+                            for a in (preference_verdict or {}).get("added_requirements", [])],
     )
 
 
-def destination_only_template(entry_id: str, destination_verdict: dict) -> ItineraryScore:
-    """A record reviewing every place the judge put outside the destination."""
+def faithfulness_template(entry_id: str, faithfulness_verdict: dict, rng: random.Random,
+                          supported_cap: int | None = None) -> ItineraryScore:
+    """A faithfulness-only record: the judge's supported claims (at most *supported_cap*, drawn at
+    random, when given) and up to ``UNSUPPORTED_PER_ITINERARY`` unsupported ones, in the judge's order.
+
+    For recalibrating faithfulness alone, e.g. after a corpus change: the destination and
+    preference judges do not read the knowledge context.
+    """
+    claims = faithfulness_verdict.get("claims", [])
+    supported = [c for c in claims if c["supported"]]
+    unsupported = [c for c in claims if not c["supported"]]
+    if supported_cap is not None:
+        supported = rng.sample(supported, min(supported_cap, len(supported)))
+    chosen_unsupported = rng.sample(unsupported, min(UNSUPPORTED_PER_ITINERARY, len(unsupported)))
+    keep = {id(c) for c in supported + chosen_unsupported}
+    return ItineraryScore(
+        entry_id=entry_id,
+        claims=[ClaimScore(text=c["text"], category=c["category"], judge_supported=c["supported"])
+                for c in claims if id(c) in keep],
+    )
+
+
+def destination_only_template(entry_id: str, destination_verdict: dict,
+                              preference_verdict: dict | None = None) -> ItineraryScore:
+    """A record reviewing every place outside the destination, preference not followed and added requirement."""
+    fit = preference_verdict or {}
     return ItineraryScore(
         entry_id=entry_id,
         destination_only=True,
         places=[PlaceScore(name=p["name"], judge_in_destination=False)
                 for p in destination_verdict.get("places", []) if not p["in_destination"]],
+        preferences=[PreferenceScore(preference=p["preference"], judge_followed=False)
+                     for p in fit.get("preferences", []) if not p["followed"]],
+        added_requirements=[AddedRequirementScore(requirement=a["requirement"], quote=a["quote"])
+                            for a in fit.get("added_requirements", [])],
+    )
+
+
+def citation_template(entry_id: str, citation_verdict: dict, rng: random.Random,
+                      supported: int = CITATIONS_SUPPORTED, unsupported: int = CITATIONS_UNSUPPORTED) -> ItineraryScore:
+    """A citation-only record: a random few of the judge's supported and unsupported citations, in day order."""
+    checks = citation_verdict.get("checks", [])
+    yes = [c for c in checks if c["supported"]]
+    no = [c for c in checks if not c["supported"]]
+    keep = {id(c) for c in rng.sample(yes, min(supported, len(yes))) + rng.sample(no, min(unsupported, len(no)))}
+    return ItineraryScore(
+        entry_id=entry_id,
+        citation_only=True,
+        citations=[CitationScore(day=c["day"], id=c["id"], judge_supported=c["supported"])
+                   for c in checks if id(c) in keep],
     )
 
 
@@ -117,6 +208,12 @@ def unreviewed_items(scores: list[ItineraryScore]) -> list[str]:
                     if c.is_claim is None or (c.is_claim and c.supported is None)]
         missing += [f"{itinerary.entry_id} place {i}" for i, p in enumerate(itinerary.places, 1)
                     if p.in_destination is None]
+        missing += [f"{itinerary.entry_id} preference {i}" for i, p in enumerate(itinerary.preferences, 1)
+                    if p.followed is None]
+        missing += [f"{itinerary.entry_id} added requirement {i}" for i, a in enumerate(itinerary.added_requirements, 1)
+                    if a.added is None]
+        missing += [f"{itinerary.entry_id} citation {i}" for i, c in enumerate(itinerary.citations, 1)
+                    if c.supports is None]
     return missing
 
 
@@ -132,11 +229,16 @@ def agreement(scores: list[ItineraryScore]) -> dict:
     claims = [c for s in scores for c in s.claims]
     accepted = [c for c in claims if c.is_claim]
     places = [p for s in scores for p in s.places]
-    faithfulness_scores = [s for s in scores if not s.destination_only]
+    preferences = [p for s in scores for p in s.preferences]
+    added = [a for s in scores for a in s.added_requirements]
+    citations = [c for s in scores for c in s.citations]
+    faithfulness_scores = [s for s in scores if not s.destination_only and not s.citation_only]
+    citation_scores = [s for s in scores if s.citation_only]
     return {
         "sample_size": len(faithfulness_scores),
         "sample_meets_minimum": len(faithfulness_scores) >= MIN_SAMPLE,
-        "destination_only_itineraries": len(scores) - len(faithfulness_scores),
+        "destination_only_itineraries": len(scores) - len(faithfulness_scores) - len(citation_scores),
+        "citation_itineraries": len(citation_scores),
         "faithfulness": {
             # Of the claims the judge called supported, how many the reviewer also calls supported.
             "judge_supported": _stratum([c.supported for c in accepted if c.judge_supported], True),
@@ -150,6 +252,15 @@ def agreement(scores: list[ItineraryScore]) -> dict:
             "judge_in": _stratum([p.in_destination for p in places if p.judge_in_destination], True),
             "judge_out": _stratum([p.in_destination for p in places if not p.judge_in_destination], False),
         },
+        "preference": {
+            "judge_followed": _stratum([p.followed for p in preferences if p.judge_followed], True),
+            "judge_not_followed": _stratum([p.followed for p in preferences if not p.judge_followed], False),
+            "judge_added": _stratum([a.added for a in added], True),
+        },
+        "citation": {
+            "judge_supported": _stratum([c.supports for c in citations if c.judge_supported], True),
+            "judge_unsupported": _stratum([c.supports for c in citations if not c.judge_supported], False),
+        },
         "min_agreement": MIN_AGREEMENT,
     }
 
@@ -159,6 +270,9 @@ def agreement(scores: list[ItineraryScore]) -> dict:
 _YES, _NO, _SKIP, _OPEN = "y", "n", "-", "?"
 _CLAIM_LINE = re.compile(r"^c(\d+)\s+\[claim:\s*(\S)\]\s+\[supported:\s*(\S)\]")
 _PLACE_LINE = re.compile(r"^p(\d+)\s+\[in:\s*(\S)\]")
+_PREFERENCE_LINE = re.compile(r"^pr(\d+)\s+\[followed:\s*(\S)\]")
+_ADDED_LINE = re.compile(r"^ar(\d+)\s+\[added:\s*(\S)\]")
+_CITATION_LINE = re.compile(r"^ci(\d+)\s+\[supports:\s*(\S)\]")
 _ENTRY_LINE = re.compile(r"^## (\S+)")
 _MISSED_LINE = re.compile(r"^missed:(.*)$")
 
@@ -174,8 +288,22 @@ def render_review(run_id: str, scores: list[ItineraryScore], records: dict[str, 
     are carried over; ``supported`` is pre-filled ``n`` when there was no knowledge
     context, since no claim can be supported then.
     """
+    if scores and all(s.citation_only for s in scores):
+        lines = [f"# Citation calibration review: `{run_id}`", "",
+                 "For each `ci` line replace `?` with `y` when the block states at least one specific thing "
+                 "the day plans (a named place, venue, attraction, tour or event, or a specific fact the day "
+                 "relies on; a shortened or reworded name of the same place counts), or `n` when it only "
+                 "shares the day's theme, names the same kind of thing elsewhere, or states nothing the day "
+                 f"plans. Then run `python scripts/eval_calibration.py score {run_id}`.",
+                 "Rules: docs/evaluation.md, \"Judge calibration\" → \"How to review\" → \"Citations\". "
+                 "Decide only from the block text shown here, never from what you know about the place, "
+                 "and ignore whether the rest of the day is accurate.", ""]
+        for score in scores:
+            lines += _render_citations(score, records[score.entry_id])
+        return "\n".join(lines)
     lines = [f"# Judge calibration review: `{run_id}`", "",
-             "Replace each `?` with `y` or `n` (`supported` is `-` when the item is not a claim), "
+             "Replace each `?` with `y` or `n` (`supported` is `-` when the item is not a claim; "
+             "`supports`: does the block state at least one specific thing the day plans), "
              "add missed claims after `missed:` separated by `;`, then run "
              f"`python scripts/eval_calibration.py score {run_id}`.",
              "Rules: docs/evaluation.md, \"Judge calibration\" → \"How to review\". "
@@ -183,10 +311,13 @@ def render_review(run_id: str, scores: list[ItineraryScore], records: dict[str, 
              "about the place; decide `in` with your own geographic knowledge.", ""]
     for score in scores:
         record = records[score.entry_id]
+        if score.citation_only:
+            lines += _render_citations(score, record)
+            continue
         faith, place = record["judge"]["faithfulness"], record["judge"]["destination"]
         form = record["form"]
         reasons = {p["name"]: p["reason"] for p in place["verdict"]["places"]}
-        suffix = " (destination check only)" if score.destination_only else ""
+        suffix = " (only the judge's less common answers)" if score.destination_only else ""
         lines += [f"## {score.entry_id}{suffix}", "",
                   f"Request: {form['destination']}, {form['trip_length']} days, {form['budget']}, "
                   f"\"{form['travel_style']}\"" + (f" · notes: {form['notes']}" if form.get("notes") else ""), ""]
@@ -210,13 +341,52 @@ def render_review(run_id: str, scores: list[ItineraryScore], records: dict[str, 
                           "a claim in neither list is a missed claim):*", ""]
                 lines += [f"- {c['category']} · {c['text']}" for c in others]
             lines += ["", "missed: " + "; ".join(score.missed_claims), ""]
-        lines += ["**Places**", ""]
+        lines += ["**Places**", ""] if score.places else []
         for i, p in enumerate(score.places, 1):
             verdict = "in" if p.judge_in_destination else "OUTSIDE"
             lines.append(f"p{i}  [in: {_mark(p.in_destination)}]   judge: {verdict} · {p.name} — "
                          f"{reasons.get(p.name, '')}")
         lines.append("")
+        if score.preferences or score.added_requirements:
+            fit = record["judge"]["preference"]["verdict"]
+            why = {p["preference"]: p["reason"] for p in fit["preferences"]}
+            lines += ["**Preferences** (does the itinerary follow it?)", ""]
+            for i, p in enumerate(score.preferences, 1):
+                verdict = "followed" if p.judge_followed else "NOT followed"
+                lines.append(f"pr{i}  [followed: {_mark(p.followed)}]   judge: {verdict} · {p.preference} — "
+                             f"{why.get(p.preference, '')}")
+            lines += ["", "**Added requirements** (is it one the traveller did not state?)", ""]
+            for i, a in enumerate(score.added_requirements, 1):
+                lines.append(f"ar{i}  [added: {_mark(a.added)}]   {a.requirement} — \"{a.quote}\"")
+            lines.append("")
     return "\n".join(lines)
+
+
+def _render_citations(score: ItineraryScore, record: dict) -> list[str]:
+    """One itinerary's sampled citations: each day's plan, then each cited block with its answer slot."""
+    form = record["form"]
+    cite = record["judge"]["citation"]
+    checks = {(c["day"], c["id"]): c for c in cite["verdict"]["checks"]}
+    final = next(e for e in record["outcome"]["events"] if e.get("step") == "validate_output")
+    days = {d["day"]: d for d in final["data"]["itinerary"]["daily_itinerary"]}
+    lines = [f"## {score.entry_id} (citations)", "",
+             f"Request: {form['destination']}, {form['trip_length']} days, {form['budget']}, "
+             f"\"{form['travel_style']}\"" + (f" · notes: {form['notes']}" if form.get("notes") else ""), ""]
+    shown_day = None
+    for i, c in enumerate(score.citations, 1):
+        if c.day != shown_day:
+            day = days[c.day]
+            lines += [f"**Day {c.day}**", "", "```",
+                      f"morning: {day.get('morning')}", f"afternoon: {day.get('afternoon')}",
+                      f"evening: {day.get('evening')}", "```", ""]
+            shown_day = c.day
+        judged = checks.get((c.day, c.id), {})
+        verdict = "SUPPORTED" if c.judge_supported else "not supported"
+        item = f" · item: \"{judged['item']}\"" if judged.get("item") else ""
+        lines += [f"Block {c.id}:", "", "```", cite["cited_blocks"].get(c.id, "(missing)"), "```", "",
+                  f"ci{i}  [supports: {_mark(c.supports)}]   judge: {verdict} · day {c.day} · {c.id}{item} — "
+                  f"{judged.get('reason', '')}", ""]
+    return lines
 
 
 def _unsampled_claims(all_claims: list[dict], sampled: list[ClaimScore]) -> list[dict]:
@@ -253,6 +423,15 @@ def parse_review(text: str, scores: list[ItineraryScore]) -> list[ItineraryScore
         elif match := _PLACE_LINE.match(line):
             place = _item(current.places, int(match.group(1)), number)
             place.in_destination = _answer(match.group(2), number, allow_skip=False)
+        elif match := _PREFERENCE_LINE.match(line):
+            preference = _item(current.preferences, int(match.group(1)), number)
+            preference.followed = _answer(match.group(2), number, allow_skip=False)
+        elif match := _ADDED_LINE.match(line):
+            requirement = _item(current.added_requirements, int(match.group(1)), number)
+            requirement.added = _answer(match.group(2), number, allow_skip=False)
+        elif match := _CITATION_LINE.match(line):
+            citation = _item(current.citations, int(match.group(1)), number)
+            citation.supports = _answer(match.group(2), number, allow_skip=False)
         elif match := _MISSED_LINE.match(line):
             current.missed_claims = [m.strip() for m in match.group(1).split(";") if m.strip()]
     return [by_id[s.entry_id] for s in scores]

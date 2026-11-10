@@ -32,6 +32,26 @@ This file records the effect of every change that affects quality, behaviour or 
 
 | Date | Change | What changed | Key result | Record |
 | --- | --- | --- | --- | --- |
+| 2026-11-10 | `rebuild-rag` | Final: corpus v2, retrieval on every request, one template with citations, against the baseline | Faithfulness with context 20.5% (v0.1.0) / 17.2% (harden) → 56.3%, calibrated on corpus v2; former high-confidence requests 0% → 54.6%; preferences followed 95.0%; citation validity 100%; destination rate 95.8% → 90.6%; gate reset | [Final](#2026-11-10--rebuild-rag-final--corpus-v2-retrieval-on-every-request-one-template-with-citations-the-full-change-against-the-baseline) |
+| 2026-11-09 | `rebuild-rag` | Citation accuracy judge calibrated: v1 strict on named places, v2 adopted | v2 agreement 88.9% (supported) and 87.2% (unsupported); v1 passed narrowly (81.4%) and fails with one later answer. Citations supported 86.7%: `city` 91.7%, `national_only` 66.7% | [Citation judge](#2026-11-09--rebuild-rag--citation-accuracy-judge-v1-strict-on-named-places-v2-calibrated) |
+| 2026-11-09 | `rebuild-rag` | Budget sentences diagnosis (task 5.6) and citations against support | Without the cost-unit and ceiling sentences faithfulness with context 56.3% → 58.2% (below the 2-point criterion) and retry 0% → 18.6%; sentences kept. Places on citing days that appear in a cited chunk: `city` 77.2%, `national_only` 26.7% | [Budget sentences](#2026-11-09--rebuild-rag--the-budget-sentences-cost-no-clear-faithfulness-and-stay-citations-against-support) |
+| 2026-11-09 | `rebuild-rag` | No invented exclusive arrangements: `itinerary_with_context` v4 (task 5.5) | Activity claims supported 27.4% → 39.7%, faithfulness with context 48.1% → 56.3%; preferences followed 97.2% → 93.8%, criterion not met, mostly on contradictory requests; adopted with the user | [No exclusives](#2026-11-09--rebuild-rag--no-invented-exclusive-arrangements-v4-adopted-although-preferences-followed-fell-more-than-the-criterion-allowed) |
+| 2026-11-09 | `rebuild-rag` | Request description in the template: variants A, B, C (task 5.4) | C chosen: preferences followed 85.6% (A) / 92.4% (B) / 97.7% (C), faithfulness with context 41.8% / 52.4% / 48.0%, within budget 100% for all; C's destination rate is lower (89.0% against 93.2% for A) | [Variants](#2026-11-09--rebuild-rag--request-description-in-the-template-variants-a-b-and-c-c-chosen) |
+| 2026-11-09 | `rebuild-rag` | Control: corpus v2 and the chosen retrieval on the old workflow | Faithfulness with context 17.2% → 34.1% on the same 43 itineraries (means of two runs) | [Control](#2026-11-09--rebuild-rag--control-corpus-v2-and-the-chosen-retrieval-on-the-old-workflow) |
+| 2026-11-08 | `rebuild-rag` | Judge calibration of the re-judged baseline, and preference v4 | Faithfulness v2 and destination v2 pass every stratum; preferences followed passes (83.3% (20 / 24) for "not followed"); added requirements fail (66.7% (6 / 9)) and are reported as a count only | [Calibration](#2026-11-08--rebuild-rag--judge-calibration-of-the-re-judged-baseline-and-preference-v4) |
+| 2026-11-05 | `rebuild-rag` | Preference v3: being able to do a planned activity is not an added requirement | Added requirements 21 and 18 → 13 and 17; preferences followed about 82% and 83%; to be calibrated | [Preference v3](#2026-11-05--rebuild-rag--preference-v3-being-able-to-do-a-planned-activity-is-not-an-added-requirement) |
+| 2026-11-05 | `rebuild-rag` | Preference v2 narrows added requirements | Added requirements 94 and 86 → 21 and 18 on the two baselines; preferences followed stays about 81% to 82%; not calibrated yet | [Preference v2](#2026-11-05--rebuild-rag--preference-v2-narrows-added-requirements) |
+| 2026-11-05 | `rebuild-rag` | v0.1.0 baseline re-judged with faithfulness v2, destination v2 and preference v1 | Faithfulness with context 23.0% under v1, 20.5% under v2 (mean of two runs); not calibrated yet | [Re-judged baseline](#2026-11-05--rebuild-rag--v010-baseline-re-judged-with-faithfulness-v2-destination-v2-and-preference-v1) |
+| 2026-11-05 | `rebuild-rag` | BM25, Agno hybrid and reranking removed from the code | No numbers changed; commit `2901b5c` can re-run them | [Removal](#2026-11-05--rebuild-rag--bm25-agno-hybrid-and-reranking-removed-from-the-code) |
+| 2026-11-05 | `rebuild-rag` | Chunk size and embedding task types | No chunk size met the criteria, so 800 / 80 stays. `retrieval` task types beat `semantic`: `city` Recall@5 0.514 against 0.438, MRR@5 0.788 against 0.751 | [Chunking](#2026-11-05--rebuild-rag--chunk-size-and-embedding-task-types) |
+| 2026-11-05 | `rebuild-rag` | Step d: Cross-Encoder reranking on the chosen query | Not better: `city` Recall@5 0.514 to 0.501, MRR@5 0.788 to 0.772 with vector candidates (0.490 / 0.772 with BM25 candidates too); adds 286 ms p50 and about 890 MB of memory | [Step d](#2026-11-05--rebuild-rag-step-d--cross-encoder-reranking-on-the-chosen-query) |
+| 2026-11-05 | `rebuild-rag` | Query chosen: notes, style and destination, without the category | Group 11 of the comparison; search stays as in step b. The category still sets the generation prompt's tone and constraints | [Query chosen](#2026-11-05--rebuild-rag--query-chosen-notes-style-and-destination-without-the-category) |
+| 2026-11-05 | `rebuild-rag` | Query construction: 12 groups of notes, category and search | Best on `city`: notes, no category, vector search, Recall@5 0.457 to 0.514 and MRR@5 0.730 to 0.788 against step b; the gain depends partly on one weakly labelled entry. Notes with today's category lower MRR to 0.692. Decision pending | [Query groups](#2026-11-05--rebuild-rag--query-construction-12-groups-of-notes-category-and-search) |
+| 2026-11-04 | `rebuild-rag` | Step c: BM25 + vector + RRF, and Agno hybrid as control | Not better than step b: `city` Recall@5 0.457 to 0.423, MRR@5 0.730 to 0.740. Agno hybrid returned the same chunks as step b for all 54 entries | [Step c](#2026-11-04--rebuild-rag-step-c--bm25-and-vector-fused-with-rrf-and-agno-hybrid-as-control) |
+| 2026-11-04 | `rebuild-rag` | Step b: destination filtering | Recall@5 0.519 to 0.609, MRR@5 0.699 to 0.782; all of it from `national_only`, whose 0.969 is inflated by a pool of 9 documents; `city` unchanged at 0.457 / 0.730 | [Step b](#2026-11-04--rebuild-rag-step-b--filter-by-destination) |
+| 2026-11-04 | `rebuild-rag` | Step a: vector-only retrieval on corpus v2 | Recall@5 0.519, MRR@5 0.699 (`city` 0.457 / 0.730, `national_only` 0.667 / 0.625); not comparable with corpus v1 numbers | [Step a](#2026-11-04--rebuild-rag-step-a--vector-only-retrieval-on-corpus-v2) |
+| 2026-11-04 | `rebuild-rag` | Dataset v3: labels moved to corpus v2. Check before the switch that corpus v1 still gives the same retrieval after the corpus left the code and embedding task types became configurable | Recall@5 0.951 and MRR@5 0.884, unchanged from the final `harden-workflow-guardrails` runs; later v1 configs need a commit from before dataset v3 | [Labels v2](#2026-11-04--rebuild-rag--dataset-v3-labels-for-corpus-v2-and-the-check-before-the-switch) |
+| 2026-11-04 | Repository history rewrite | Corpus v1 text removed from all of git history; every commit hash changed | No numbers changed. `git_commit` in earlier run summaries refers to the old hashes | [History rewrite](#2026-11-04--repository-history-rewrite--git_commit-values-in-earlier-runs-use-old-hashes) |
 | 2026-11-01 | `true-sse-streaming` | Events streamed as each step finishes; routing decision moved from a Condition evaluator to a plain Step | No evaluation run (not quality-affecting). Manual check: early panels appear quickly, then a visible pause at generate | [Streaming](#2026-11-01--true-sse-streaming--no-evaluation-run-delivery-timing-only) |
 | 2026-10-31 | `harden-workflow-guardrails` | Final: input guards, budget amount, 14-day limit (dataset v2, `dataset-v1` subset ×2 + `budget-amount` ×2) | Behaviour correctness 74.0% → 87.7% (`out_of_scope` and `prompt_injection` 0% → 83.3%); days and budget 100%; retry 0.8%, error 0%; faithfulness with context 19.6% on the same itineraries (baseline 23.0%, not met); a loose budget amount raises spending | [Final](#2026-10-31--harden-workflow-guardrails-final--input-guards-budget-amount-and-the-full-change-against-the-baseline) |
 | 2026-10-31 | `harden-workflow-guardrails` | (c) response schema + business rules (two runs) | Days and budget 100%, enforced by code; retry 4.8%, all corrections pass, error 0%; p50 3.98 s and $0.00114 per request (both lower than baseline); faithfulness with context 21.5% (baseline 23.0%, not improved) | [(c) rules](#2026-10-31--harden-workflow-guardrails-c--structured-output-and-business-rules) |
@@ -79,6 +99,595 @@ Copy the template below, fill it in, and put it at the **top** of the "Records" 
 ---
 
 ## Records
+
+### 2026-11-10 · rebuild-rag (final) · corpus v2, retrieval on every request, one template with citations: the full change against the baseline
+
+- **What changed** (the whole of `rebuild-rag`, each step recorded above): knowledge base corpus v2 (Wikivoyage city pages and the Australia-wide handwritten documents, chunks 800 / 80, `retrieval` task types); retrieval with a destination filter and a query of notes, style and destination (group 11); every request retrieves (no confidence routing); one generation template, `itinerary_with_context` v4 (variant C plus the instruction against invented exclusive arrangements), with the traveller's notes and numbered chunks; each day cites its chunks, checked by a business rule; the frontend shows the sources.
+- **Runs**: final `20261109T094040Z-rebuild-rag-gen-c-no-exclusives` and `20261109T101151Z-rebuild-rag-gen-c-no-exclusives` (commit `beda5f8`, config `rebuild-rag-gen-c-no-exclusives`: the final configuration with the template pinned to the active v4, all 79 entries). `20261109T095412Z-rebuild-rag-gen-c-no-exclusives` was replaced: the judge's API credit ran out on its last five entries (e075 to e079, the `budget-amount` subset), which were generated but not judged. Smoke runs for the gate: `20261109T102449Z-rebuild-rag-gen-c-no-exclusives-smoke`, `20261109T102634Z-rebuild-rag-gen-c-no-exclusives-smoke`. Compared with the v0.1.0 baseline `20261108T103031Z-v010-baseline-rejudge`, `20261108T103120Z-v010-baseline-rejudge` and the final `harden-workflow-guardrails` runs `20261108T115256Z-harden-workflow-guardrails-rejudge`, `20261108T115919Z-harden-workflow-guardrails-rejudge`, all re-judged with faithfulness v2, destination v2 and preference v4. Every run: no uncommitted changes.
+- **Conditions that differ**: corpus v1 (baseline, harden) against v2; dataset v1 / v2 / v3, whose forms and expected behaviours are the same for the 73 compared entries (later versions add entries and change retrieval labels only); generation `gemini-3.1-flash-lite` and judge `gpt-6-luna` throughout. The comparison below uses the 73 entries of `dataset-v1`, the ones every run has; metrics are recomputed from each run's `results.jsonl` by `eval/scratch/analyse_81.py` (local).
+- **Results, 73 entries** (each cell: run 1 / run 2):
+
+| Metric (73 entries of `dataset-v1`) | v0.1.0 baseline (re-judged) | `harden-workflow-guardrails` final (re-judged) | `rebuild-rag` final |
+| --- | --- | --- | --- |
+| Planned itineraries, of which with knowledge context | 73, 52 in both runs | 60, 43 in both runs | 58, 58 / 59, 59 |
+| Faithfulness with context | 20.3% / 20.7% (mean 20.5%) | 17.4% / 17.1% (mean 17.2%) | 57.3% / 55.4% (mean 56.3%) |
+| Faithfulness, all planned itineraries | 13.6% / 14.0% (mean 13.8%) | 12.0% / 12.3% (mean 12.2%) | 57.3% / 55.4% (mean 56.3%) |
+| Preferences followed | 81.7% / 82.7% (mean 82.2%) | 73.6% / 72.8% (mean 73.2%) | 93.6% / 96.3% (mean 95.0%) |
+| Attractions in destination | 94.5% / 91.8% (mean 93.2%) | 95.0% / 96.7% (mean 95.8%) | 91.4% / 89.8% (mean 90.6%) |
+| Trip length correct | 100.0% / 100.0% (mean 100.0%) | 100.0% / 100.0% (mean 100.0%) | 100.0% / 100.0% (mean 100.0%) |
+| Within budget | 57.7% / 61.5% (mean 59.6%) | 100.0% / 100.0% (mean 100.0%) | 100.0% / 100.0% (mean 100.0%) |
+| Behaviour correctness | 74.0% / 74.0% (mean 74.0%) | 87.7% / 87.7% (mean 87.7%) | 87.7% / 89.0% (mean 88.4%) |
+| Retry rate | 0.0% / 0.0% (mean 0.0%) | 1.7% / 0.0% (mean 0.8%) | 1.7% / 0.0% (mean 0.8%) |
+| Error rate | 0.0% / 0.0% (mean 0.0%) | 0.0% / 0.0% (mean 0.0%) | 1.4% / 0.0% (mean 0.7%) |
+| Latency p50 | 4.56 s / 4.51 s (mean 4.53 s) | 4.22 s / 4.18 s (mean 4.20 s) | 4.44 s / 4.55 s (mean 4.50 s) |
+| Mean cost per request | $0.00118 / $0.00118 (mean $0.00118) | $0.00093 / $0.00091 (mean $0.00092) | $0.00101 / $0.00102 (mean $0.00101) |
+
+- **Former high-confidence requests** (17 entries that planned without knowledge context in the final `harden-workflow-guardrails` runs; the old routing sent them past retrieval):
+
+| Metric (17 former high-confidence entries) | v0.1.0 baseline | `harden-workflow-guardrails` final | `rebuild-rag` final |
+| --- | --- | --- | --- |
+| Planned, of which with context | 17, 0 in both runs | 17, 0 in both runs | 15, 15 / 16, 16 (e016 failed in run 1; e058, a prompt injection in its notes, is refused in both: `notes` reaches the API since task 7.1, with the injection guard; the earlier runs planned it) |
+| Faithfulness, all planned | 0.0% / 0.0% (mean 0.0%) | 0.0% / 0.0% (mean 0.0%) | 55.7% / 53.4% (mean 54.6%) |
+| Preferences followed | 86.7% / 90.0% (mean 88.3%) | 79.3% / 82.8% (mean 81.0%) | 92.3% / 100.0% (mean 96.2%) |
+| Latency p50 | 4.12 s / 4.11 s (mean 4.11 s) | 3.85 s / 3.62 s (mean 3.74 s) | 4.58 s / 4.51 s (mean 4.55 s) |
+| Mean cost per request | $0.00108 / $0.00107 (mean $0.00107) | $0.00101 / $0.00097 (mean $0.00099) | $0.00119 / $0.00124 (mean $0.00121) |
+
+- **Results, all 79 entries** (the final configuration only; Recall and MRR use dataset v3's corpus v2 labels and cannot be compared with corpus v1 numbers):
+
+| Metric (all 79 entries, dataset v3) | Run 1 | Run 2 |
+| --- | --- | --- |
+| Recall@5 | 0.643 | 0.643 |
+| MRR@5 | 0.823 | 0.823 |
+| Behaviour correctness | 88.6% | 89.9% |
+| Faithfulness with context | 57.8% | 56.9% |
+| Faithfulness, `city` | 73.8% | 76.1% |
+| Faithfulness, `national_only` | 23.2% | 21.1% |
+| Faithfulness, `none` | 1.0% | 2.9% |
+| Citations supported (citation v2) | 85.5% | 87.9% |
+| Days citing a source, with context | 87.0% | 84.6% |
+| Within budget | 100.0% | 100.0% |
+| Retry rate | 1.5% | 0.0% |
+| Error rate | 1.3% | 0.0% |
+| Latency p50 / p95 | 4.45 s / 5.65 s | 4.55 s / 5.39 s |
+| Mean cost per request | $0.00103 | $0.00104 |
+| Judge cost | $0.211 | $0.212 |
+| Final itineraries citing an id not in the context / citation-rule errors | 0 of 64 / 0 | 0 of 65 / 0 |
+
+- **Judge calibration on corpus v2**: the faithfulness judge was calibrated on corpus v1 only, and docs/evaluation.md asks for a new calibration with a new corpus. Faithfulness alone was recalibrated, on `20261109T101151Z-rebuild-rag-gen-c-no-exclusives`: 20 itineraries, every claim the judge called unsupported up to 5 and at most 6 of those it called supported per itinerary (over 300 items otherwise). The destination and preference judges do not read the knowledge context and keep their corpus v1 calibration (2026-11-08); citation v2 was calibrated on corpus v2 (record above: 88.9% and 87.2%).
+
+| Stratum | `20261109T101151Z-rebuild-rag-gen-c-no-exclusives` (faithfulness v2, corpus v2) |
+| --- | --- |
+| `faithfulness.judge_supported` | 98.9% (91 / 92) |
+| `faithfulness.judge_unsupported` | 86.8% (66 / 76) |
+| `extraction_precision` (claims reviewed) | 95.5% (176) |
+| `missed_claims` | 18 |
+
+  All but 1 of the 11 disagreements are claims the judge called unsupported and the reviewer supported (8 activity, 2 price), so faithfulness on corpus v2 is, if anything, understated. `missed_claims` is a lower bound, as before.
+- **Success criteria of the proposal**:
+  - Retrieval: Recall@5 and MRR of every step a → b → c → d are in the records above; the final configuration beats vector-only on the same corpus (`city` Recall@5 0.457 → 0.514, MRR@5 0.730 → 0.788 in the query-construction record). Met.
+  - Generation: faithfulness with context 56.3% against 20.5% for the v0.1.0 baseline and 17.2% for `harden-workflow-guardrails`, all judged with faithfulness v2. Met. The former high-confidence requests go from 0% (no context) to 54.6%.
+  - Citation validity: no final itinerary cites an id outside its context, and no request failed on the citation rule. Met (100%).
+  - System: reranking was not adopted, so its latency limit does not apply; the golden tests pass (task 8.2).
+- **Other changes**:
+  - Preferences followed rises to 95.0%, mostly from variant C (task 5.4).
+  - Attractions in destination falls from 95.8% to 90.6%: the generator follows requests that lead outside the city (task 5.4 record); request parsing (roadmap item 3) takes this up.
+  - Every former high-confidence request now retrieves: p50 latency 3.74 s → 4.55 s, cost $0.00099 → $0.00121 per request for those entries.
+  - Run 1 has one error: e016's generation call got a Gemini `ServerError` (a 5xx), which the system reports as designed; run 2 has none.
+  - Coverage drives faithfulness: `city` itineraries are far better grounded than `national_only` and `none` ones (by-coverage records above); more corpus coverage, not the template, is the next lever.
+  - `added_requirements` is not calibrated (2026-11-08) and is not used here.
+- **Gate**: thresholds reset for the final configuration and corpus v2 (threshold change log); both smoke runs pass.
+
+---
+
+### 2026-11-09 · rebuild-rag · citation accuracy judge: v1 strict on named places, v2 calibrated
+
+The citation-accuracy judge (task 8.1's "citation accuracy") under rule A, decided with the user: a cited chunk supports a day when it states at least one specific thing the day plans. Both prompts re-judged `20261109T030056Z-rebuild-rag-gen-c-no-exclusives-dataset-v1` (template v4, the active configuration; no regeneration): v1 on commit `f7dc3fd` ($0.036), v2 on commit `3a20197` ($0.047). Sample for v1: 20 itineraries citing something, up to 2 citations judged supported and 3 judged unsupported in each, plus up to 2 unsupported citations from every other itinerary (77 items). For v2 the reviewer's answers were carried over item by item, since itineraries and cited chunks are identical, and the 15 citations whose verdict changed from v1 to v2 without having been reviewed were added. Agreement figures: `eval/calibration/<run id>.agreement.json`. Cell: agreement (agreeing / compared), ❌ below 0.8.
+
+| Stratum | `20261109T055046Z-rebuild-rag-gen-c-no-exclusives-rejudge` (v1) | v1, with the later answer to e008 day 3 S2 | `20261109T083456Z-rebuild-rag-gen-c-no-exclusives-rejudge` (v2) |
+| --- | --- | --- | --- |
+| `citation.judge_supported` | 97.1% (33 / 34) | 97.1% (33 / 34) | 88.9% (40 / 45) |
+| `citation.judge_unsupported` | 81.4% (35 / 43) | 79.1% (34 / 43) ❌ | 87.2% (41 / 47) |
+
+- **v1 was strict on named places.** Of the first review's 13 disagreements, 12 were citations the judge called unsupported. Six followed one pattern: the chunk names the place the day goes, or what that place offers that the day does there (surfing lessons in a beach town for a morning surfing at one of its beaches; seals on an island for a day watching seals there; a city's street-art lanes for a street-art walk), and v1 asked for the exact spot or activity. Five of the reviewer's answers were changed on re-reading against the written rule (a different building with a similar name, a themed bushwalk for a spa, a general restaurant scene, vineyards in another area, shopping for a market); v1 then passed at 81.4%, one item above the threshold. During the v2 review the reviewer also changed e008 day 3 S2 to "supports", which v1 had marked unsupported; with that answer v1 fails (79.1%).
+- **v2** (commit `3a20197`) states the case: a named river, beach, island, lane or park the day visits, or what a named town or island offers that the day does there, counts; the destination's name alone and another place with a similar name do not. Its examples are generic, not the calibrated items. 26 of the 376 verdicts changed from v1 to v2: 11 to supported, all among the reviewed items, and 15 to unsupported, none reviewed before, which are the items added for review; some changes are the judge's run-to-run variation rather than the new wording. v2 passes both strata with more margin, and its remaining disagreements go both ways: too lenient on e025 day 4 S2, e038 day 2 S3, e038 day 3 S3, e050 day 2 S1, e059 day 4 S1 (a transport operator for a train or ferry ride, "harbour views" for a harbour outing, a route's distance for a drive, a coast's surf for one beach), too strict on e004 day 1 S1, e012 day 2 S2, e060 day 5 S4, e062 day 5 S5, e065 day 4 S4, e069 day 1 S1 (towns on a peninsula the chunk names, a guided walk at a landmark the chunk names). e012 day 2 S2 and e025 day 4 S2 were disagreements in both reviews and are counted as contested.
+- **Numbers from the calibrated run** (the configuration of task 5.5, v4):
+
+| Coverage | Citations | Supported, v1 | Supported, v2 | Days citing a source (with context) |
+| --- | --- | --- | --- | --- |
+| all | 376 | 87.8% | 86.7% | 85.0% |
+| `city` | 278 | 93.2% | 91.7% | 98.0% |
+| `national_only` | 66 | 66.7% | 66.7% | 85.2% |
+| `none` | 5 | 20.0% | 20.0% | 13.3% |
+
+  `city` citations are mostly supported; in `national_only` two in three are, and in the reviewed items the unsupported ones are Australia-wide documents that name the region but not what the day does there; `none` (Gold Coast) has only 5 citations. These shares count a citation as supported when the chunk states one thing the day plans: whether the rest of the day is grounded is faithfulness's measure.
+- **How far the calibration reaches**: `days_citing_share` needs no judge. The v2 sample is the v1 sample plus the changed verdicts, not a fresh random draw from v2's answers, and the strata are not split by coverage, so the coverage figures above are the judge's without a per-group agreement.
+
+---
+
+### 2026-11-09 · rebuild-rag · the budget sentences cost no clear faithfulness and stay; citations against support
+
+- **What changed**: the diagnosis of task 5.6. v5 is the active template v4 without the two sentences `harden-workflow-guardrails` added: the per-person AUD cost unit and the daily budget ceiling. The business rules still check the budget and ask for one correction when it fails. v5 is never active.
+- **Why**: faithfulness with context fell from 23.0% to 19.6% over `harden-workflow-guardrails` on corpus v1 (20.8% after the cost unit, 19.1% after the ceiling), and the cause was never found. Suspected: the sentences turn the generator towards keeping numbers low rather than using the context.
+- **Criteria, set before the runs** (means of two runs): remove the sentences only if faithfulness with context rises by at least 2 points and within budget does not fall; otherwise keep them.
+- **Runs**: v4 `20261109T030056Z-rebuild-rag-gen-c-no-exclusives-dataset-v1`, `20261109T032500Z-rebuild-rag-gen-c-no-exclusives-dataset-v1` (commit `12f6d7b`, the v4 runs of task 5.5, reused) → v5 `20261109T034905Z-rebuild-rag-gen-v4-no-budget-sentences-dataset-v1`, `20261109T040011Z-rebuild-rag-gen-v4-no-budget-sentences-dataset-v1` (commit `703140c`, config `rebuild-rag-gen-v4-no-budget-sentences`). Between the two commits only `seed.py` (v5 added, v4 made active), tests and documents changed; the saved v4 prompt is identical to the current v4 text and the code, dataset, judge prompts and correction template v3 are the same. The v5 runs started about 45 minutes after the second v4 run, not interleaved with it. Both on the `dataset-v1` subset (73 entries, dataset v3), corpus v2 / `travel_docs_v2_c800`, generation `gemini-3.1-flash-lite`, judge `gpt-6-luna` (faithfulness v2, destination v2, preference v4). Every run: no uncommitted changes, error rate 0, no judge errors.
+- **Results**:
+
+| Metric | v4, with the sentences (run 1 / run 2) | v5, without (run 1 / run 2) | Change of the means |
+| --- | --- | --- | --- |
+| Faithfulness with context (primary) | 57.0% / 55.6% | 56.2% / 60.2% | +1.9 points |
+| Within budget | 100.0% / 100.0% | 100.0% / 100.0% | +0.0 points |
+| Retry rate (corrective call needed) | 0.0% / 0.0% | 22.0% / 15.3% | +18.6 points |
+| Named places that appear in the retrieved context | 56.3% / 55.3% | 56.0% / 58.6% | +1.5 points |
+| Median `estimated_cost_aud` per day | 140 AUD / 150 AUD | 180 AUD / 180 AUD | +35 AUD |
+| Preferences followed | 93.0% / 94.5% | 92.7% / 91.0% | -1.9 points |
+| Destination rate | 94.9% / 93.2% | 94.9% / 89.8% | -1.7 points |
+| Latency p50 | 4.21 s / 4.43 s | 4.54 s / 4.30 s | +0.10 s |
+| Mean cost per request | $0.00102 / $0.00103 | $0.00119 / $0.00113 | $+0.00014 |
+
+- **Decision: keep the sentences; v4 stays active.** Faithfulness with context 56.3% → 58.2% (+1.9 points) is below the 2-point criterion and within the run-to-run variation (v5 alone: 56.2% / 60.2%). Within budget stays 100%, but only because the business rules correct the itinerary: without the sentences 18.6% of planned requests need the corrective call, against none with them, and estimated daily spending rises.
+- **What this says about the drop under `harden-workflow-guardrails`**: on corpus v2 with the current template the sentences cost at most about 2 points of faithfulness, and the share of named places that appear in the context barely moves. The 23.0% → 19.6% fall on corpus v1 is therefore not explained by these sentences on today's set-up; with a corpus of a few handwritten documents most claims had no source either way. Not investigated further.
+- **Citations against support** (v4, both runs pooled; the task 5.6 follow-up from the coverage breakdown). A named place counts as in a chunk when its name appears in the chunk text; "judged supported" is the faithfulness judge's verdict on the same places, which also accepts a reworded mention.
+
+| Coverage | Days that cite a source | Claims supported | Named places on citing days | In a cited chunk | In any retrieved chunk | Judged supported |
+| --- | --- | --- | --- | --- | --- | --- |
+| `city` | 97.7% (297 / 304) | 75.6% | 806 | 77.2% | 79.4% | 91.7% |
+| `national_only` | 87.0% (94 / 108) | 20.4% | 277 | 26.7% | 30.3% | 35.0% |
+| `none` | 11.7% (7 / 60) | 1.8% | 9 | 22.2% | 22.2% | 22.2% |
+
+  - In `city`, 77.2% of the places on a day that cites sources are named in one of the cited chunks, close to the share named anywhere in the context (79.4%): when the context covers the city, the cited ids point at the right chunks.
+  - In `national_only`, days cite a source as often (87.0%), but only 26.7% of their places appear in the cited chunks: the generator cites the Australia-wide documents for places those documents do not describe. A citation there marks the day as drawing on the context without saying which claims it backs.
+  - The citation rule checks only that the ids exist (design decision "Source citations", 4: citation accuracy belongs to the evaluation harness). A citation-accuracy measure in the harness, or a template instruction to cite a block only for what it names, would be a later change; corpus coverage for the `national_only` destinations is the larger lever.
+- **Cost**: v5 costs more per request and in latency, from the corrective calls.
+
+---
+
+### 2026-11-09 · rebuild-rag · no invented exclusive arrangements: v4 adopted although preferences followed fell more than the criterion allowed
+
+- **What changed**: one sentence added to variant C (`itinerary_with_context` v3 → v4, design decision 4): "Do not invent exclusive or private arrangements, such as private tours, after-hours access, private viewings or charters, unless the reference information above offers them or the traveller asks for them."
+- **Why**: luxury itineraries are full of private tours, after-hours access and charters that no corpus can confirm can be booked (v0.1.0 baseline e065).
+- **Criteria, set before the runs** (means of two runs, C re-run in the same batch): keep v4 only if activity claims supported rise by at least 3 points, preferences followed fall by no more than 1 point, and within budget does not fall.
+- **Runs**: commit `12f6d7b`, configs `rebuild-rag-gen-c` and `rebuild-rag-gen-c-no-exclusives` (identical except `template_version` 3 and 4), `dataset-v1` subset (73 entries, dataset v3), corpus v2 / `travel_docs_v2_c800`, generation `gemini-3.1-flash-lite`, judge `gpt-6-luna` (faithfulness v2, destination v2, preference v4), correction template v3. Order C, v4, C, v4: C `20261109T024954Z-rebuild-rag-gen-c-dataset-v1`, `20261109T031348Z-rebuild-rag-gen-c-dataset-v1`; v4 `20261109T030056Z-rebuild-rag-gen-c-no-exclusives-dataset-v1`, `20261109T032500Z-rebuild-rag-gen-c-no-exclusives-dataset-v1`. Every run: no uncommitted changes, error rate 0, no judge errors.
+- **Results**:
+
+| Metric | C, v3 (run 1 / run 2) | v4 (run 1 / run 2) | Change of the means |
+| --- | --- | --- | --- |
+| Activity claims supported (primary) | 25.1% / 29.7% | 39.1% / 40.3% | +12.3 points |
+| Preferences followed | 97.2% / 97.2% | 93.0% / 94.5% | -3.5 points |
+| Within budget | 100.0% / 100.0% | 100.0% / 100.0% | +0.0 points |
+| Faithfulness with context | 47.0% / 49.2% | 57.0% / 55.6% | +8.2 points |
+| Activity claims judged | 362 / 374 | 335 / 347 | -27.0 |
+| Itineraries with "private", "exclusive", "after-hours", "charter", "chauffeur", "VIP" or "behind the scenes" | 21 / 20 | 16 / 16 | -4.5 |
+| Occurrences of those words | 245 / 256 | 75 / 64 | -181.0 |
+| Destination rate | 93.2% / 88.1% | 94.9% / 93.2% | +3.4 points |
+| Added requirements (count, reference only) | 7 / 6 | 5 / 3 | -2.5 |
+| Retry rate | 0.0% / 0.0% | 0.0% / 0.0% | +0.0 points |
+| Mean cost per request | $0.00102 / $0.00101 | $0.00102 / $0.00103 | $+0.00001 |
+| Preferences followed, entries expected to be planned only (post hoc) | 100.0% / 100.0% | 99.0% / 99.0% | -1.0 points |
+
+- **Criteria**: activity claims supported 27.4% → 39.7% (+12.3 points, met); within budget unchanged (met); preferences followed 97.2% → 93.8% (-3.5 points, **not met**).
+- **Where the preference drop comes from**: preferences not followed, by entry, C: e014, e032, e050; e032, e049, e050; v4: e014, e032, e032, e032, e049, e049, e050, e061; e010, e032, e032, e049, e049, e050. Most are in e014, e032, e049 and e050, contradictory requests the dataset expects to be clarified, not planned; no plan can follow them. e032 also counts two or three times in the v4 runs because the judge split "see Perth, Cairns and Hobart in the same day" into several preferences there and kept it as one in the C runs. In e049 ("five-star hotel and a private chauffeur every day" on a `budget` budget) v4 drops the chauffeur although the instruction lets a traveller's request through. Outside these entries v4 misses "indigenous culture" (e061) and "free museums and galleries only" (e010) once each.
+- **Decision (with the user): v4 is adopted** and is now the active version, although the criterion was not met. Reason: the drop is almost entirely on requests that should not be planned, while every measure of grounding improved. The breakdown that leaves those entries out (100.0% → 99.0%) was made after seeing the results, so it is an explanation, not a passed criterion. The criterion itself is unchanged; once request parsing (roadmap item 3) asks for clarification on contradictory requests, preferences followed no longer includes them.
+- **Run-to-run variation of C**: faithfulness with context 47.0% / 49.2% here against 48.1% / 48.0% in the 5.4 runs, activity claims supported 25.1% to 29.7% across the four C runs.
+- **Cost**: unchanged per request; judge cost about $0.16 per run.
+
+---
+
+### 2026-11-09 · rebuild-rag · request description in the template: variants A, B and C, C chosen
+
+- **What changed**: only the request description in `itinerary_with_context` (design decision 3): A describes the style by the matched category's preset tone and constraints, B by the traveller's own `travel_style`, C gives both and says the preset applies only where the traveller's words say nothing. All three carry notes, the numbered knowledge chunks and the citation instruction.
+- **Why**: in v0.1.0 the traveller's words never reach the generator, and a preset can bring constraints nobody asked for (baseline e039).
+- **Criteria, set before the runs** (means of two runs): a variant replaces A only if preferences followed rises by at least 3 points, faithfulness with context falls by no more than 2 points, and within budget does not fall; if B and C both qualify, the higher preferences followed wins. Added requirements are reference only (not calibrated); cost is recorded.
+- **Runs**: commit `46ecfb2`, configs `rebuild-rag-gen-a`, `-b`, `-c` (the group 11 retrieval plus `template_version` 1, 2, 3), `dataset-v1` subset (73 entries, dataset v3), corpus v2 / `travel_docs_v2_c800`, generation `gemini-3.1-flash-lite`, judge `gpt-6-luna` (faithfulness v2, destination v2, preference v4), correction template v3, price table 2026-10-25. Run in the order A, B, C, A, B, C: A `20261108T123232Z-rebuild-rag-gen-a-dataset-v1`, `20261108T130747Z-rebuild-rag-gen-a-dataset-v1`; B `20261108T124333Z-rebuild-rag-gen-b-dataset-v1`, `20261108T132042Z-rebuild-rag-gen-b-dataset-v1`; C `20261108T125508Z-rebuild-rag-gen-c-dataset-v1`, `20261108T133245Z-rebuild-rag-gen-c-dataset-v1`. Every run: no uncommitted changes, error rate 0, no judge errors.
+- **Results** (each cell: run 1 / run 2):
+
+| Metric | A: preset + notes (v1) | B: own words + notes (v2) | C: both, own words first (v3) |
+| --- | --- | --- | --- |
+| Preferences followed (primary) | 85.5% / 85.7% (mean 85.6%) | 93.6% / 91.2% (mean 92.4%) | 97.2% / 98.2% (mean 97.7%) |
+| Faithfulness with context | 42.1% / 41.5% (mean 41.8%) | 52.5% / 52.2% (mean 52.4%) | 48.1% / 48.0% (mean 48.0%) |
+| Within budget | 100.0% / 100.0% (mean 100.0%) | 100.0% / 100.0% (mean 100.0%) | 100.0% / 100.0% (mean 100.0%) |
+| Added requirements (count, reference only) | 6 / 6 | 1 / 2 | 3 / 3 |
+| Destination rate | 91.5% / 94.9% (mean 93.2%) | 93.2% / 93.2% (mean 93.2%) | 89.8% / 88.1% (mean 89.0%) |
+| Behaviour correct | 89.0% / 89.0% (mean 89.0%) | 89.0% / 89.0% (mean 89.0%) | 89.0% / 89.0% (mean 89.0%) |
+| Retry rate | 0.0% / 0.0% (mean 0.0%) | 1.7% / 1.7% (mean 1.7%) | 1.7% / 0.0% (mean 0.8%) |
+| Latency p50 | 4.46 s / 5.02 s | 4.29 s / 4.93 s | 4.65 s / 4.92 s |
+| Mean cost per request | $0.00101 / $0.00101 | $0.00099 / $0.00098 | $0.00104 / $0.00102 |
+| Days that cite a source | 205 of 246 / 208 of 246 | 223 of 246 / 210 of 246 | 211 of 246 / 215 of 246 |
+
+- **Decision: C** (`itinerary_with_context` v3 is now the active version). Against A, preferences followed rises +6.8 points for B and +12.1 for C, faithfulness with context +10.6 and +6.2 points, and within budget stays 100.0%; both qualify, and C follows more preferences (97.7% against 92.4%).
+- **What C gives up against B**: faithfulness with context 48.0% against 52.4%, and destination rate 89.0% against 93.2% (A 93.2%). Neither was a criterion. The destination misses found in both C runs and in neither A run (e007, e008, e065) come from following the traveller beyond the city: a Perth trip for wine goes to Margaret River (e007), koalas and seals in the wild from Adelaide go to Kangaroo Island (e008), and wildlife and seafood from Adelaide go to Coffin Bay (e065). "Drive the whole coast from Perth to Darwin" in two days (e050) leaves Perth in both C runs and in one A run. Whether a trip beyond the destination city should be planned, and how a request like e050 should be answered, belongs to request parsing (roadmap item 3).
+- **Effect of the workflow changes (tasks 5.1 to 5.3), from the control**: retrieving on every request, the single template with notes, and numbered chunks with citations. The breakdown below compares the same entries. On the entries that retrieved before, variant A reaches 42.6% against 34.1% on the old workflow with the same corpus; this mixes the citation instruction with notes now reaching the template, which these runs cannot separate. The entries that used to skip retrieval go from 0% to 40.1% for A.
+
+| Runs | Faithfulness on the 43 entries that retrieved before | On the 16 that retrieve only now |
+| --- | --- | --- |
+| Corpus v1, old workflow (control, before) | 17.4% / 17.1% (mean 17.2%) | 0.0% / 0.0% (mean 0.0%) |
+| Corpus v2, old workflow (control, after) | 33.8% / 34.4% (mean 34.1%) | 0.0% / 0.0% (mean 0.0%) |
+| Variant A | 43.8% / 41.5% (mean 42.6%) | 38.4% / 41.7% (mean 40.1%) |
+| Variant B | 54.1% / 54.3% (mean 54.2%) | 48.9% / 47.0% (mean 47.9%) |
+| Variant C | 49.1% / 49.3% (mean 49.2%) | 45.9% / 44.6% (mean 45.2%) |
+
+- **Step by step on the same 43 entries** (the entries that retrieved in every run, old workflow included, so each step compares the same requests; means of two runs). Step 1 to 2 is the knowledge base and retrieval; step 2 to 3 mixes the citation instruction with notes reaching the template, which these runs cannot separate; step 3 to 4 is the request description alone.
+
+| Step | What it is | Runs | Faithfulness on the 43 entries | Change from the previous step |
+| --- | --- | --- | --- | --- |
+| 1. Old workflow, old retrieval | The final `harden-workflow-guardrails` code (re-judged): high-confidence requests skip retrieval; two templates (`high_confidence_minimal_context` v3, `low_confidence_with_retrieval` v3) that describe the request by the matched category's preset tone and constraints and have no place for `travel_style` or notes; no citations; corpus v1 with the v0.1.0 retrieval | `20261108T115256Z`, `20261108T115919Z` | 17.2% | — |
+| 2. Old workflow, new retrieval | Same workflow and templates (commit `cca44de`); corpus v2 with the final retrieval configuration: chunks 800 / 80, `retrieval` task types, destination filter, vector search, query of notes, style and destination | `20261108T120935Z`, `20261108T122045Z` | 34.1% | +16.9 points |
+| 3. Tasks 5.1 to 5.3, variant A | Same retrieval; every request retrieves (5.1); one template, `itinerary_with_context`, which adds notes (5.2); chunks numbered `[S1]`, `[S2]`, ... and each day lists the ids it relies on, checked by a business rule (5.3). Variant A (v1) still describes the style by the category preset | `20261108T123232Z`, `20261108T130747Z` | 42.6% | +8.5 points |
+| 4. Variant C | As step 3, but the request is described by the traveller's own `travel_style` and notes first, with the category preset only as a default where they say nothing (`itinerary_with_context` v3, the chosen version) | `20261108T125508Z`, `20261108T133245Z` | 49.2% | +6.6 points |
+
+- **Faithfulness with context is now measured over every planned itinerary** (59), against 43 on the old workflow, because every request retrieves; compare like with like through the breakdown above.
+- **By corpus coverage** (the dataset's `corpus_coverage` label: `city` has sections about the city itself, `national_only` only the Australia-wide handwritten documents, `none` nothing relevant; means of two runs; 5 planned entries without the label, which expect a refusal or a question, are left out). Destinations: `city` Sydney 7, Melbourne 5, Brisbane 5, Hobart 5, Perth 4, Cairns 3, 悉尼 1, 墨尔本 1, 霍巴特 1, 凯恩斯 1; `national_only` Darwin 4, Adelaide 3, Canberra 3, Uluru 2, Kangaroo Island 1, Byron Bay 1, Great Ocean Road 1, Blue Mountains 1; `none` Gold Coast 4, 黄金海岸 1.
+
+| Metric (variant C unless named) | `city` (33) | `national_only` (16) | `none` (5) |
+| --- | --- | --- | --- |
+| Faithfulness, old workflow with corpus v2 (includes the requests that skipped retrieval) | 30.1% | 9.4% | 0.0% |
+| Faithfulness, A | 54.9% | 15.8% | 3.5% |
+| Faithfulness, B | 68.7% | 19.2% | 2.3% |
+| Faithfulness, C | 63.1% | 17.7% | 1.4% |
+| Claims supported: named places (both runs pooled) | 83% (687 / 830) | 28% (82 / 295) | 1% (2 / 136) |
+| Claims supported: activities (both runs pooled) | 39% (191 / 492) | 8% (16 / 204) | 1% (1 / 72) |
+| Claims supported: transport (both runs pooled) | 36% (54 / 152) | 0% (0 / 41) | 0% (0 / 7) |
+| Preferences followed | 99.2% | 100.0% | 100.0% |
+| Destination rate | 93.9% | 81.2% | 90.0% |
+| Days that cite a source | 96.7% | 91.7% | 21.7% |
+| Recall@5 | 0.515 | 0.948 | — |
+
+  - **Faithfulness follows coverage**: 63.1%, 17.7% and 1.4% for C. The gain over the old workflow is mostly in `city` (30.1% → 63.1%); `national_only` goes 9.4% → 17.7% and `none` stays near zero. More coverage, not the template, is what would lift the other two.
+  - **Preferences followed does not depend on coverage**: it is close to 100% in every group, so what the knowledge base decides is whether claims have a source, not whether the plan fits the request.
+  - **Destination rate is lowest in `national_only`** (81.2%): with no city sections to plan from, C more often goes beyond the city (e008 and e065, Adelaide).
+  - **A citation does not mean support**: in `national_only` 91.7% of days cite a source while 17.7% of claims are supported; the cited Australia-wide documents do not contain the places named. The citation rule checks only that the ids exist. In `none` only 21.7% of days cite anything. Followed up in task 5.6.
+  - **`national_only` Recall@5 is inflated** by a pool of 9 documents, as in step b.
+
+- **Added requirements** fall from 6 and 6 (A) to 3 and 3 (C), in line with the preset no longer imposing constraints, but this count is not calibrated.
+- **Cost**: per request about the same for all three (the request description is a few lines); judge cost about $0.16 per run.
+
+---
+
+### 2026-11-09 · rebuild-rag · control: corpus v2 and the chosen retrieval on the old workflow
+
+- **What changed**: only the knowledge base and how it is searched: corpus v1 → v2, with the final retrieval configuration (chunks 800 / 80, `retrieval` task types, destination filter, query of notes, style and destination). The workflow is the one before tasks 5.1 to 5.3: high-confidence requests skip retrieval, two generation templates (`high_confidence_minimal_context` v3, `low_confidence_with_retrieval` v3), no citations.
+- **Why**: to separate what the new knowledge base brings from what the changes to the workflow and template bring (the variant record above starts from this run).
+- **Runs compared**: `20261108T115256Z-harden-workflow-guardrails-rejudge`, `20261108T115919Z-harden-workflow-guardrails-rejudge` (the final `harden-workflow-guardrails` runs `20261031T114451Z-harden-workflow-guardrails-dataset-v1` and `20261031T115436Z-harden-workflow-guardrails-dataset-v1`, re-judged with faithfulness v2, destination v2 and preference v4, no regeneration) → `20261108T120935Z-rebuild-rag-q11-dataset-v1`, `20261108T122045Z-rebuild-rag-q11-dataset-v1` (commit `cca44de`, config `rebuild-rag-q11`).
+- **Run conditions**: both on the `dataset-v1` subset (73 entries), generation `gemini-3.1-flash-lite`, judge `gpt-6-luna` with the same judge prompts, correction template v2 in both (made active in the evaluation database for the after runs, then set back to v3). Differences: dataset v2 → v3 (labels only, which affect Recall and not the generation metrics); source commit `f77b603` is a hash from before the history rewrite.
+- **Results** (each cell: run 1 / run 2):
+
+| Metric | Corpus v1, v0.1.0 retrieval | Corpus v2, chosen retrieval | Change of the means |
+| --- | --- | --- | --- |
+| Faithfulness with context | 17.4% / 17.1% | 33.8% / 34.4% | +16.9 points |
+| Preferences followed | 73.6% / 72.8% | 77.4% / 76.8% | +3.9 points |
+| Added requirements (count) | 9 / 8 | 7 / 8 | -1.0 |
+| Destination rate | 95.0% / 96.7% | 98.3% / 96.6% | +1.6 points |
+| Within budget | 100.0% / 100.0% | 100.0% / 100.0% | +0.0 points |
+| Behaviour correct | 87.7% / 87.7% | 89.0% / 89.0% | +1.4 points |
+| Retry rate | 1.7% / 0.0% | 0.0% / 1.7% | +0.0 points |
+| Mean cost per request | $0.00093 / $0.00091 | $0.00089 / $0.00091 | $-0.00002 |
+
+- **Conclusion**: the new knowledge base and retrieval alone roughly double faithfulness with context, 17.2% → 34.1% (mean of two runs). Both sides retrieved for the same 43 entries, so the figure compares the same requests. The other 16 planned entries had no context on either side and every claim in them is unsupported.
+- **Not comparable**: Recall@5 and MRR@5 (different corpus and labels); the step-by-step retrieval records cover retrieval.
+- **Cost**: unchanged within run-to-run variation.
+
+---
+
+### 2026-11-08 · rebuild-rag · judge calibration of the re-judged baseline, and preference v4
+
+First calibration of faithfulness v2, destination v2 and the preference judge. The sample was drawn from `20261105T111852Z-v010-baseline-rejudge` (preference v3): 20 itineraries in full plus 23 more for the judge's less common answers only (a place outside the destination, a preference not followed, an added requirement). The added requirements failed, so preference v4 (commit `c051f22`) re-judged the preference verdicts of both baselines, faithfulness and destination verdicts carried over unchanged, and was calibrated on `20261108T103031Z-v010-baseline-rejudge`: the same 20 itineraries plus 17. Answers to items with identical text were carried over from the first review; the reviewer answered the 20 new or reworded preference items and added requirements. Agreement figures: `eval/calibration/<run id>.agreement.json`. Cell: agreement (agreeing / compared), ❌ below 0.8.
+
+| Stratum | `20261105T111852Z-v010-baseline-rejudge` (preference v3) | `20261108T103031Z-v010-baseline-rejudge` (preference v4) |
+| --- | --- | --- |
+| `faithfulness.judge_supported` | 100.0% (107 / 107) | 100.0% (107 / 107) |
+| `faithfulness.judge_unsupported` | 99.0% (98 / 99) | 99.0% (98 / 99) |
+| `destination.judge_in` | 100.0% (80 / 80) | 100.0% (80 / 80) |
+| `destination.judge_out` | 100.0% (8 / 8) | 100.0% (8 / 8) |
+| `preference.judge_followed` | 100.0% (31 / 31) | 100.0% (30 / 30) |
+| `preference.judge_not_followed` | 82.6% (19 / 23) | 83.3% (20 / 24) |
+| `preference.judge_added` | 46.2% (6 / 13) ❌ | 66.7% (6 / 9) ❌ |
+| `extraction_precision` (claims reviewed) | 97.2% (212) | 97.2% (212) |
+| `missed_claims` | 14 | 14 |
+
+Preference v4 re-judging, all 146 itineraries, no errors:
+
+| Source (preference v3) | Re-judged (preference v4) | Preferences followed, v3 → v4 | Added requirements, v3 → v4 | Itineraries with any, v3 → v4 | Judge cost |
+| --- | --- | --- | --- | --- | --- |
+| `20261105T111852Z-v010-baseline-rejudge` | `20261108T103031Z-v010-baseline-rejudge` | 82.0% → 81.7% | 13 → 9 | 12 → 8 | $0.022 |
+| `20261105T111942Z-v010-baseline-rejudge` | `20261108T103120Z-v010-baseline-rejudge` | 82.7% → 82.7% | 17 → 11 | 14 → 7 | $0.021 |
+
+- **Faithfulness v2 and destination v2 pass every stratum**, so the re-judged baseline's faithfulness with context (20.5%, mean of two runs) is the figure to beat. The strata are by verdict, not by claim kind: of the 212 claims reviewed, few are `season` or `opening_hours`, so those kinds on their own are hardly calibrated.
+- **Preferences followed passes, narrowly.** In the first review the reviewer disagreed with 6 of the judge's "not followed" answers; re-read against the written rule (a single-interest style must shape most of the trip), 2 answers changed (one surf session for `surfing`, a chauffeur on one day for "a private chauffeur every day"). One more disagreement would take the stratum below 0.8. Under v4 the 4 disagreements are e011 and e028 (whether the style shapes most of the trip), e035 ("relaxed") and e014 ("cheapest hostels only").
+- **Added requirements fail and are not improved further** (decided with the user). v4 added three examples from the first review (a celebratory dinner is a planned meal; what a chosen place offers describes the place; planning around a stated need is not an assumption) and removed the three celebratory dinners. Still disagreed: a hotel near the trains (e022) and "older kids" for a family (e042), the kinds v4 meant to exclude, and "a luxury traveller" (e056), which the judge cannot know is stated because the prompt receives `travel_style` and `notes` but not the budget level (`luxury` here). 9 items is a small stratum: one item moves it by 11 points.
+- **What this means for later comparisons**: `followed_share` is calibrated; `added_requirements` (9 and 11 on the two baselines) is reported as a count with this caveat and is not a decision criterion on its own; a change in it is checked by reading the listed items. Possible later fix: give the judge the budget level and exclude what it implies.
+- **v4's examples came from the calibrated items**, so its agreement on the same items is likely optimistic. The integration tests use made-up text.
+- **Preferences are split differently from run to run** although v4 did not change that part of the prompt: e027 gained "sports" next to "visit the Adelaide Oval", which the prompt says to list once, and e032 lists each city as well as the whole request. Preferences followed under v4: 81.7% and 82.7%.
+
+---
+
+### 2026-11-05 · rebuild-rag · preference v3: being able to do a planned activity is not an added requirement
+
+Preference verdicts of the two re-judged v0.1.0 baselines replaced on commit `d3671f4`; faithfulness v2 and destination v2 verdicts carried over unchanged. All 146 itineraries judged, no errors. These are the verdicts to calibrate; the prompt is not changed again before calibration.
+
+| Source (preference v2) | Re-judged (preference v3) | Preferences followed, v2 → v3 | Added requirements, v2 → v3 | Itineraries with any, v2 → v3 | Judge cost |
+| --- | --- | --- | --- | --- | --- |
+| `20261105T104907Z-v010-baseline-rejudge` | `20261105T111852Z-v010-baseline-rejudge` | 82.2% → 82.0% | 21 → 13 | 15 → 12 | $0.021 |
+| `20261105T105925Z-v010-baseline-rejudge` | `20261105T111942Z-v010-baseline-rejudge` | 80.6% → 82.7% | 18 → 17 | 15 → 14 | $0.023 |
+
+- In a look at 24 of the 30 under v3, none only says the traveller can physically do a planned activity. Most are assumptions about the traveller: business trips or remote work, accessibility needs, a celebration. Some are borderline, such as "an accessible space" written as a description. Calibration measures this; the look does not.
+- The run-to-run spread of added requirements is wide at these counts: 13 and 17 on the two baseline runs, which have different itineraries.
+
+---
+
+### 2026-11-05 · rebuild-rag · preference v2 narrows added requirements
+
+Preference verdicts of the two re-judged v0.1.0 baselines replaced on commit `efe4d6a`; faithfulness and destination verdicts carried over unchanged. All 146 itineraries judged, no errors. Not calibrated yet.
+
+| Source (preference v1) | Re-judged (preference v2) | Preferences followed, v1 → v2 | Added requirements, v1 → v2 | Itineraries with any, v1 → v2 | Judge cost |
+| --- | --- | --- | --- | --- | --- |
+| `20261105T101620Z-v010-baseline-rejudge` | `20261105T104907Z-v010-baseline-rejudge` | 82.0% → 82.2% | 94 → 21 | 48 → 15 | $0.025 |
+| `20261105T102424Z-v010-baseline-rejudge` | `20261105T105925Z-v010-baseline-rejudge` | 82.9% → 80.6% | 86 → 18 | 49 → 15 | $0.024 |
+
+- **Why**: in a look at 24 of the 180 requirements under v1, about a third were assumptions about the traveller; the rest were planned meals, etiquette or things the traveller had said. This count is a reading by hand, not a calibration result.
+- **Under v2**, the list fell by about four fifths while the share of preferences followed barely moved, as intended. e039's wheelchair and step-free assumption is still listed.
+- **What remains**: in a look at 24 of the 39 under v2, most are real assumptions, above all remote work and business trips, a pattern in several itineraries that the matched `bleisure` category may explain. About 7 of the 24 say only that the traveller can physically do a planned walk, hike or surf lesson, which the prompt meant to exclude.
+
+---
+
+### 2026-11-05 · rebuild-rag · v0.1.0 baseline re-judged with faithfulness v2, destination v2 and preference v1
+
+The two full v0.1.0 baseline runs, re-judged on commit `ccbcdf4` with no regeneration, so later runs can be compared with them on the same prompts. All 146 itineraries judged, no errors. These prompts are **not calibrated yet**.
+
+| Source run | Re-judged run | Faithfulness with context, v1 → v2 | Claims v1 → v2 | Destination rate v1 → v2 | Preferences followed | Added requirements (itineraries) | Judge cost |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `20261026T111928Z-v010-baseline` | `20261105T101620Z-v010-baseline-rejudge` | 22.2% → 20.3% | 962 → 1359 | 91.8% → 94.5% | 82.0% of 128 | 94 (48) | $0.219 |
+| `20261026T113131Z-v010-baseline` | `20261105T102424Z-v010-baseline-rejudge` | 23.8% → 20.7% | 919 → 1365 | 90.4% → 91.8% | 82.9% of 129 | 86 (49) | $0.223 |
+
+- **The faithfulness baseline to beat under v2 is 20.5% with context** (mean of the two runs), against 23.0% under v1. The fall comes from the new kinds: claims rose by more than a third, and `activity` claims, about 28% of them, are supported about 14% of the time. Without context every claim stays unsupported.
+- **`activity` catches what v1 could not.** In e065 the private tours and charters v1 passed over are now extracted and unsupported, as design decision 4 expected.
+- **Destination rate moved for reasons other than notes.** The verdict changed for e017 and e070 in one run, and for e019, e037 and e046 in the other; only e037 has notes, and they name no place. This is judge variation between prompts on the same itineraries, about 2 to 3 entries in 73.
+- **Preference numbers are provisional.** Added requirements look over-listed, with suggestions of what to do counted as requirements. Calibration has not measured this yet.
+
+---
+
+### 2026-11-05 · rebuild-rag · BM25, Agno hybrid and reranking removed from the code
+
+- **What changed**: `hybrid_search.py`, `reranker.py`, their tests, the `search_mode` configuration, `KNOWLEDGE_SEARCH_MODE`, the configurations using those searches (`rebuild-rag-c`, `-c-agno`, `-d`, `-d-fused`, `-q4`, `-q6`, `-q8`, `-q10`, `-q12`), and the `rank-bm25` and `sentence-transformers` dependencies.
+- **Why**: none of them met the criteria, and the retrieval they would serve is vector search alone. Reranking also needed torch and about 890 MB of process memory.
+- **How to re-run them**: commit `2901b5c` has the code and configurations. Earlier records keep their numbers, run IDs and these configuration names; the run summaries stay in the repository.
+- **Effect on results**: none intended. The search used by the final configuration is unchanged.
+
+---
+
+### 2026-11-05 · rebuild-rag · chunk size and embedding task types
+
+Three new runs on commit `db904be` (retrieval only, dataset v3, chosen query, vector search, destination filter on), against group 11. 54 labelled entries, no errors. Labels name page and section, so they apply to every chunk size. Criteria as before: on `city`, Recall@5 at least 0.02 higher and MRR@5 not lower. Each cell is Recall@5 / MRR@5.
+
+| Chunks, task types | Chunk count | `city` (38) | `city` with notes (14) | `city` without notes (24) | `national_only` (16) | All (54) | Retrieval p50 / p95 | Run ID |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 800 / 80, `retrieval` (group 11) | 1602 | 0.514 / 0.788 | 0.465 / 0.651 | 0.543 / 0.868 | 0.948 / 0.906 | 0.643 / 0.823 | 619 / 669 ms | `20261105T070231Z-rebuild-rag-q11-retrieval` |
+| 500 / 50, `retrieval` | 2503 | 0.501 / 0.785 | 0.486 / 0.774 | 0.510 / 0.792 | 0.927 / 0.896 | 0.627 / 0.818 | 617 / 667 ms | `20261105T091845Z-rebuild-rag-c500-retrieval` |
+| 1200 / 120, `retrieval` | 1080 | 0.519 / 0.814 | 0.477 / 0.729 | 0.543 / 0.865 | 0.948 / 0.906 | 0.646 / 0.842 | 606 / 655 ms | `20261105T091923Z-rebuild-rag-c1200-retrieval` |
+| 800 / 80, `semantic` | 1602 | 0.438 / 0.751 | 0.401 / 0.669 | 0.459 / 0.799 | 0.979 / 0.875 | 0.598 / 0.788 | 605 / 651 ms | `20261105T092001Z-rebuild-rag-c800-semantic-retrieval` |
+
+Paired bootstrap on the 33 deduplicated `city` entries (10,000 samples, not part of the criteria), mean difference and 95% interval:
+
+| Comparison with 800 / 80, `retrieval` | Recall@5 | MRR@5 |
+| --- | --- | --- |
+| 1200 / 120 | 0.005 (−0.018 to 0.028) | 0.025 (−0.054 to 0.107) |
+| 500 / 50 | −0.023 (−0.071 to 0.023) | −0.024 (−0.111 to 0.065) |
+| `semantic` | −0.075 (−0.149 to −0.004) | −0.048 (−0.169 to 0.080) |
+
+- **No chunk size met the criteria.** 1200 / 120 raised `city` MRR@5 by 0.026 but Recall@5 by only 0.005; Recall changed for 3 of 38 entries. It would also put more text into the prompt: five chunks average about 4,340 characters against 2,950. 500 / 50 lowered both overall.
+- **The chunk size mattered less for section-level labels than it might for answers.** A label is met by any chunk of the section, so these numbers do not show whether a chunk holds the fact a claim needs. Faithfulness runs measure that.
+- **`RETRIEVAL_QUERY` / `RETRIEVAL_DOCUMENT` is better than `SEMANTIC_SIMILARITY` on the same text:** `city` Recall@5 0.514 against 0.438, MRR@5 0.788 against 0.751; Recall rose for 7 entries and fell for 16 under `semantic`. This is the first measurement of the task types on their own.
+- **Final retrieval configuration:** chunks of 800 characters with 80 overlap, `retrieval` task types, destination filter, vector search, the chosen query. On `city` it stands at 0.514 / 0.788 against step a's 0.457 / 0.730, and overall at 0.643 / 0.823 against 0.519 / 0.699, so both are higher than a as task 4.5 requires. No reranking, so its latency limit does not apply.
+- **BM25 and reranking were not re-run on other chunk sizes,** because no chunk size was clearly better.
+
+---
+
+### 2026-11-05 · rebuild-rag step d · Cross-Encoder reranking on the chosen query
+
+Runs on commit `410c6d0` (retrieval only, dataset v3, table `travel_docs_v2_c800`, query as group 11, model `cross-encoder/ms-marco-MiniLM-L6-v2` without fine-tuning, on the CPU). The baseline is group 11 re-run on commit `6115846`. 54 labelled entries, no errors. Reranking ran: no entry kept group 11's result and no fallback was logged. Each cell is Recall@5 / MRR@5.
+
+| Configuration | `city` (38) | `city` with notes (14) | `city` without notes (24) | `national_only` (16) | All (54) | Retrieval p50 / p95 | Run ID |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Group 11, no reranking | 0.514 / 0.788 | 0.465 / 0.651 | 0.543 / 0.868 | 0.948 / 0.906 | 0.643 / 0.823 | 619 / 669 ms | `20261105T070231Z-rebuild-rag-q11-retrieval` |
+| d, vector candidates | 0.501 / 0.772 | 0.489 / 0.726 | 0.508 / 0.799 | 0.969 / 0.859 | 0.640 / 0.798 | 905 / 1007 ms | `20261105T080155Z-rebuild-rag-d-retrieval` |
+| d, vector + BM25 candidates | 0.490 / 0.772 | 0.477 / 0.750 | 0.498 / 0.785 | 0.969 / 0.859 | 0.632 / 0.798 | 1074 / 1248 ms | `20261105T080256Z-rebuild-rag-d-fused-retrieval` |
+
+- **Reranking did not meet the criteria.** On `city`, Recall@5 fell from 0.514 to 0.501 (vector candidates) and 0.490 (vector + BM25 candidates), and MRR@5 from 0.788 to 0.772 in both. Against group 11, Recall rose for 9 entries and fell for 9 with vector candidates, and rose for 10 and fell for 12 with both candidate sets.
+- **The result depended on the query.** On `city` entries with notes it improved (vector candidates: 0.465 / 0.651 to 0.489 / 0.726); on those without notes it got worse (0.543 / 0.868 to 0.508 / 0.799). The model was trained on web search questions, so short keyword-like queries are a candidate cause, not an established one.
+- **More candidates did not help.** Adding BM25's candidates lowered Recall further, although a separate local check showed the candidates cover more labelled sections (Recall@20 0.699 for vector, 0.789 for both). That check and the figures below are not evaluation runs.
+- **Cost.** Added p50 latency was 286 ms with vector candidates and 455 ms with both, within the 1 second limit. On made-up 800-character text in a fresh process on this machine, process memory was about 890 MB working set and 1.3 GB committed, the import took 6 seconds, and the first model load 24 seconds including the download.
+- **Environment.** This ran with torch 2.10.0 and transformers 5.17.0 from conda, not the versions pip would resolve for the pin in `pyproject.toml`.
+
+---
+
+### 2026-11-05 · rebuild-rag · query chosen: notes, style and destination, without the category
+
+- **Decision**: the workflow's query is group 11 of the [12-group comparison](#2026-11-05--rebuild-rag--query-construction-12-groups-of-notes-category-and-search): `notes` (if any), `travel_style` and `travel in <destination>`. Search stays as in step b.
+- **Why**: no group met the criteria against it, and it is the simplest. The evidence is moderate, as that record says.
+- **What this leaves open**: the category still sets the tone and constraints of the generation prompt, matched on the same intent text as before, so a `moderate` request can still get `budget` constraints. Measuring a change there needs generation runs. e042 and the untranslated Chinese notes of e029 and e079 stay as recorded.
+- **Naming**: the configuration value `query_category: current` in the summaries of groups 3 to 12 is now called `matched`, because the workflow no longer sends that query. The two mean the same query.
+
+---
+
+### 2026-11-05 · rebuild-rag · query construction: 12 groups of notes, category and search
+
+Retrieval only, dataset v3, table `travel_docs_v2_c800`, destination filter on, 54 labelled entries, no errors. Groups 3 to 12 ran on commit `2d73f89` with `git_dirty` false; groups 1 and 2 are steps b and c. Exact vector scan and a deterministic BM25 order, so each group ran once rather than twice: groups 3 and 4 reproduced an earlier exploratory run's per-entry Recall, and the 30 entries without notes retrieved identical results across every pair of groups differing only in notes.
+
+Three variables: `notes` at the start of the query or not; the category as matched today, matched on an intent text without the budget phrase (`{style} trip to {destination}`), or left out with the word "itinerary"; and search as in step b or step c. The `no budget` and `none` variants exist only in the evaluation harness. Criteria set before the run: `city` Recall@5 and MRR@5 decide, `national_only` must not get worse; a group is better only with Recall at least 0.02 higher and MRR not lower; otherwise the simpler one wins. The 0.02 is a judgement, not a statistical test.
+
+**One entry across the 12 groups** (example added 2026-11-06; no number in this record changed). e022 asks for Melbourne, style `sports`, budget `moderate`, notes "I want to see a game at the MCG." The category comes from two different intent texts: `sports trip to melbourne with moderate budget` matches `budget`, and `sports trip to melbourne` matches `sports-active`. The search column changes how the query is searched, not its text, so each odd group and the even group after it send the same query.
+
+| Group | Notes | Category | Search | Query | Recall@5 | Sections retrieved, in rank order |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | no | as matched | vector | `sports travel in melbourne budget itinerary` | 0.50 | Do, Do, Sleep, See, See |
+| 2 | no | as matched | BM25 + RRF | `sports travel in melbourne budget itinerary` | 0.25 | Do, Sleep, Sleep, Get in, Sleep |
+| 3 | no | no budget | vector | `sports travel in melbourne sports-active itinerary` | 0.75 | Do, Do, Understand, Understand, See |
+| 4 | no | no budget | BM25 + RRF | `sports travel in melbourne sports-active itinerary` | 0.75 | Do, Understand, Understand, See, Introduction |
+| 5 | no | none | vector | `sports travel in melbourne` | 0.50 | Do, Understand, Understand, Do, Understand |
+| 6 | no | none | BM25 + RRF | `sports travel in melbourne` | 0.50 | Do, Understand, Understand, Introduction, Understand |
+| 7 | yes | as matched | vector | `I want to see a game at the MCG. sports travel in melbourne budget itinerary` | 0.50 | Do, Do, See, See, Do |
+| 8 | yes | as matched | BM25 + RRF | `I want to see a game at the MCG. sports travel in melbourne budget itinerary` | 0.75 | Do, Do, Do, Understand, See |
+| 9 | yes | no budget | vector | `I want to see a game at the MCG. sports travel in melbourne sports-active itinerary` | 0.75 | Do, Do, See, Understand, Do |
+| 10 | yes | no budget | BM25 + RRF | `I want to see a game at the MCG. sports travel in melbourne sports-active itinerary` | 0.75 | Do, Understand, Do, Do, See |
+| 11 | yes | none | vector | `I want to see a game at the MCG. sports travel in melbourne` | 0.75 | Do, See, Do, Do, Understand |
+| 12 | yes | none | BM25 + RRF | `I want to see a game at the MCG. sports travel in melbourne` | 0.75 | Do, Do, Do, Understand, See |
+
+Values are from each group's run in the second table below. e022 has 4 labelled sections, and the first result is relevant in all 12 groups (reciprocal rank 1.0). This shows what the groups send; it is one entry, not evidence for a choice: here group 3 scores above group 5, while over all `city` entries group 5 is slightly higher on Recall and higher on MRR.
+
+Each cell is Recall@5 / MRR@5.
+
+| Group | Notes | Category | Search | `city` (38) | `national_only` (16) | All (54) |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | no | as matched | vector | 0.457 / 0.730 | 0.969 / 0.906 | 0.609 / 0.782 |
+| 2 | no | as matched | BM25 + RRF | 0.423 / 0.740 | 0.969 / 0.875 | 0.585 / 0.780 |
+| 3 | no | no budget | vector | 0.476 / 0.755 | 0.969 / 0.938 | 0.622 / 0.809 |
+| 4 | no | no budget | BM25 + RRF | 0.437 / 0.797 | 0.969 / 0.938 | 0.595 / 0.839 |
+| 5 | no | none | vector | 0.477 / 0.772 | 0.969 / 0.906 | 0.623 / 0.812 |
+| 6 | no | none | BM25 + RRF | 0.433 / 0.829 | 0.969 / 0.906 | 0.592 / 0.852 |
+| 7 | yes | as matched | vector | 0.464 / 0.692 | 0.969 / 0.906 | 0.614 / 0.755 |
+| 8 | yes | as matched | BM25 + RRF | 0.441 / 0.659 | 0.979 / 0.896 | 0.600 / 0.729 |
+| 9 | yes | no budget | vector | 0.496 / 0.747 | 0.969 / 0.938 | 0.636 / 0.804 |
+| 10 | yes | no budget | BM25 + RRF | 0.447 / 0.776 | 0.979 / 0.906 | 0.605 / 0.815 |
+| 11 | yes | none | vector | 0.514 / 0.788 | 0.948 / 0.906 | 0.643 / 0.823 |
+| 12 | yes | none | BM25 + RRF | 0.455 / 0.812 | 0.979 / 0.927 | 0.610 / 0.846 |
+
+| Group | `city` with notes (14) | `city` without notes (24) | `Sleep` chunks of 190 | Retrieval p50 | Run ID |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 0.314 / 0.681 | 0.540 / 0.758 | 21 | 624 ms | `20261104T081045Z-rebuild-rag-b-retrieval` |
+| 2 | 0.358 / 0.774 | 0.461 / 0.720 | 32 | 656 ms | `20261104T091258Z-rebuild-rag-c-retrieval` |
+| 3 | 0.326 / 0.657 | 0.563 / 0.812 | 6 | 641 ms | `20261105T063238Z-rebuild-rag-q3-retrieval` |
+| 4 | 0.379 / 0.756 | 0.472 / 0.821 | 8 | 633 ms | `20261105T063352Z-rebuild-rag-q4-retrieval` |
+| 5 | 0.364 / 0.607 | 0.543 / 0.868 | 5 | 617 ms | `20261105T063525Z-rebuild-rag-q5-retrieval` |
+| 6 | 0.370 / 0.711 | 0.469 / 0.897 | 7 | 639 ms | `20261105T063602Z-rebuild-rag-q6-retrieval` |
+| 7 | 0.335 / 0.577 | 0.540 / 0.758 | 17 | 624 ms | `20261105T063641Z-rebuild-rag-q7-retrieval` |
+| 8 | 0.406 / 0.554 | 0.461 / 0.720 | 21 | 634 ms | `20261105T063754Z-rebuild-rag-q8-retrieval` |
+| 9 | 0.382 / 0.636 | 0.563 / 0.812 | 6 | 606 ms | `20261105T063908Z-rebuild-rag-q9-retrieval` |
+| 10 | 0.406 / 0.699 | 0.472 / 0.821 | 5 | 622 ms | `20261105T064017Z-rebuild-rag-q10-retrieval` |
+| 11 | 0.465 / 0.651 | 0.543 / 0.868 | 5 | 604 ms | `20261105T064128Z-rebuild-rag-q11-retrieval` |
+| 12 | 0.430 / 0.667 | 0.469 / 0.897 | 4 | 618 ms | `20261105T064205Z-rebuild-rag-q12-retrieval` |
+
+Reading across rows of the split table is not meaningful: entries with and without notes are different entries.
+
+Sensitivity of the leading groups (weak labels: e006, e012, e025, e036, e037, e038, e062; deduplicated: entries with the same destination, style and notes count once):
+
+| Group | `city` deduplicated (33) | `city` without weak labels (31) | Both (26) |
+| --- | --- | --- | --- |
+| 1 | 0.438 / 0.689 | 0.503 / 0.775 | 0.488 / 0.732 |
+| 2 | 0.423 / 0.731 | 0.442 / 0.778 | 0.446 / 0.774 |
+| 7 | 0.455 / 0.660 | 0.501 / 0.743 | 0.496 / 0.713 |
+| 9 | 0.494 / 0.724 | 0.532 / 0.797 | 0.536 / 0.777 |
+| 5 | 0.487 / 0.768 | 0.472 / 0.809 | 0.483 / 0.811 |
+| 11 | 0.515 / 0.776 | 0.518 / 0.831 | 0.519 / 0.824 |
+| 12 | 0.449 / 0.819 | 0.453 / 0.834 | 0.446 / 0.847 |
+
+Paired bootstrap on the deduplicated `city` entries (10,000 samples, not part of the criteria), mean difference and 95% interval:
+
+| Comparison | Recall@5 | MRR@5 |
+| --- | --- | --- |
+| Group 11 − group 1 | 0.076 (−0.012 to 0.173) | 0.087 (−0.030 to 0.205) |
+| Group 11 − group 7 | 0.060 (−0.022 to 0.154) | 0.116 (0.020 to 0.217) |
+| Group 11 − group 5 | 0.028 (−0.014 to 0.073) | 0.009 (−0.037 to 0.056) |
+| Group 11 − group 9 | 0.021 (−0.045 to 0.102) | 0.052 (−0.019 to 0.128) |
+| Group 11 − group 12 | 0.065 (0.015 to 0.115) | −0.043 (−0.143 to 0.061) |
+
+- **Group 11 (notes, no category, vector) has the highest `city` Recall, and no group meets the criteria against it.** It meets them against groups 1, 2, 3, 5, 7, 8 and 10. Against group 9, Recall is 0.018 higher (under 0.02) and MRR 0.041 higher, and group 9 is the more complex one. Against groups 4, 6 and 12 (search as in step c), Recall is 0.077, 0.081 and 0.059 higher but MRR 0.009, 0.041 and 0.024 lower, so neither side meets the criteria and the simpler one wins. Against group 1, Recall rose for 15 entries, fell for 10 and stayed the same for 13.
+- **The evidence is moderate.** e038 (a weak label, one labelled section, Recall 0 to 1) is 46% of group 11's net Recall gain over group 1. Without weak labels the Recall gain over group 1 is 0.015, under the criterion, while the MRR gain stays at 0.056. The 95% intervals for group 11 − group 1 include zero.
+- **Group 7, which the workflow currently sends after task 4.6, has a lower `city` MRR than group 1:** 0.692 against 0.730, with Recall 0.464 against 0.457. Notes helped when the category was left out (group 5 to 11, entries with notes: Recall 0.364 to 0.465, MRR 0.607 to 0.651), and much less when it stayed (group 1 to 7: Recall 0.314 to 0.335, MRR 0.681 to 0.577).
+- **Search as in step c stayed behind on Recall for all three category settings,** with or without notes. Group 12 − group 11 on `city`: Recall −0.059, MRR +0.024. Its MRR lead does not survive as a clear difference in the bootstrap, and the Recall deficit does.
+- **The category words were part of the `Sleep` effect:** without today's matched category, `Sleep` chunks fell from 21 to 5 or 6 (b) and from 32 to between 4 and 8 (c), but Recall of c did not catch up with b.
+- **`national_only`:** group 11 Recall 0.948 against 0.969, from e042 (Recall 1.0 to 0.67); MRR unchanged at 0.906.
+- **Chinese notes hurt:** e029 and e079 (same request, notes in Chinese, not translated) fell from Recall 0.50 to 0.25 once their notes entered the query.
+- **Not measured:** generation. These groups say nothing about itinerary quality. Leaving the category out of the query does not change the tone and constraints the category gives the generation prompt.
+- **Decision pending.** The query in use stays as task 4.6 built it until the choice is made.
+
+---
+
+### 2026-11-04 · rebuild-rag step c · BM25 and vector fused with RRF, and Agno hybrid as control
+
+Runs `20261104T091258Z-rebuild-rag-c-retrieval` and `20261104T091415Z-rebuild-rag-c-agno-retrieval` (commit `d1da012`, retrieval only, dataset v3, table `travel_docs_v2_c800`). Only change from step b: how the filtered candidates are ranked. 54 labelled entries, no errors. The query is still the fixed concatenation without `notes` (task 4.6).
+
+| Group | Entries | Recall@5 b / c / c′ | MRR@5 b / c / c′ |
+| --- | --- | --- | --- |
+| All | 54 | 0.609 / 0.585 / 0.609 | 0.782 / 0.780 / 0.782 |
+| `city` | 38 | 0.457 / 0.423 / 0.457 | 0.730 / 0.740 / 0.730 |
+| `national_only` | 16 | 0.969 / 0.969 / 0.969 | 0.906 / 0.875 / 0.906 |
+
+- **BM25 + RRF did not improve on vector search here.** Of 38 `city` entries, Recall rose for 7, fell for 12 and stayed the same for 19. The share of `Sleep` chunks rose (21 to 32 of 190) and `Go next` fell (30 to 15). Why was not investigated beyond this; the query's filler words ("travel", "itinerary") and missing `notes` are candidate causes, not established ones.
+- **Agno hybrid returned exactly step b's chunks for all 54 entries.** Its keyword part uses `websearch_to_tsquery`, which requires every query term, and it matched no chunk for any of the 38 `city` queries, so the score reduces to vector similarity. This says nothing about Agno hybrid on short queries.
+- Latency p50 656 ms (c), 648 ms (c′), against 624 ms (b). The c run includes building the BM25 index on first use per destination.
+
+---
+
+### 2026-11-04 · rebuild-rag step b · filter by destination
+
+Run `20261104T081045Z-rebuild-rag-b-retrieval` (commit `9663c0c`, retrieval only, dataset v3, table `travel_docs_v2_c800`). Only change from step a: candidates are restricted to the request's destination and the Australia-wide documents. 54 labelled entries, no errors.
+
+| Group | Entries | Recall@5 (a to b) | MRR@5 (a to b) |
+| --- | --- | --- | --- |
+| All | 54 | 0.519 to 0.609 | 0.699 to 0.782 |
+| `city` | 38 | 0.457 to 0.457 | 0.730 to 0.730 |
+| `national_only` | 16 | 0.667 to 0.969 | 0.625 to 0.906 |
+
+- The whole gain comes from `national_only`. Retrieval changed for 14 entries, none of them `city`, as step a predicted: no `city` entry had retrieved another city's chunks.
+- **The `national_only` numbers are inflated.** With the filter, these requests choose 5 chunks from only 9 Australia-wide documents, so most labels are found whatever the ranking. Read the rise as "chunks from other cities no longer take the places", not as ranking quality. Steps c and d should be judged on `city`.
+- Latency is unchanged: p50 624 ms, p95 652 ms.
+
+---
+
+### 2026-11-04 · rebuild-rag step a · vector-only retrieval on corpus v2
+
+Run `20261104T075807Z-rebuild-rag-a-retrieval` (commit `76a53dc`, retrieval only, dataset v3, table `travel_docs_v2_c800`, 800 characters with 80 overlap, `retrieval` task types). 54 labelled entries, no errors.
+
+| Group | Entries | Recall@5 | MRR@5 |
+| --- | --- | --- | --- |
+| All | 54 | 0.519 | 0.699 |
+| `city` | 38 | 0.457 | 0.730 |
+| `national_only` | 16 | 0.667 | 0.625 |
+
+- Retrieve latency p50 633 ms, p95 677 ms, including building the knowledge client on every query as the workflow does.
+- Six entries score 0: e010, e018, e020 (`national_only`), e034, e036, e038 (`city`). e036 and e038 are among the weak labels listed under dataset v3.
+- For `national_only` entries, 46 of 80 retrieved chunks came from other cities' pages, which step b removes. For `city` entries, none of the 190 page chunks came from another city.
+
+These numbers are not comparable with corpus v1: the corpus and the labels both changed.
+
+**Correction to earlier records**: from `harden-workflow-guardrails` on, the harness built retrieval queries without the destination guard, so the five Chinese-destination entries (e054, e055, e056, e057, e071) were measured with the untranslated name, a query the workflow never sends. This affects only the Recall and MRR of those five entries in those runs; generation and judging went through `POST /generate`. Fixed in `76a53dc`; the earlier numbers are left as recorded and were not recomputed.
+
+---
+
+### 2026-11-04 · rebuild-rag · dataset v3: labels for corpus v2, and the check before the switch
+
+**Check before the switch** (run `20261104T053245Z-harden-workflow-guardrails-dataset-v1`, config `harden-workflow-guardrails`, subset `dataset-v1`, commit `a650229`, no uncommitted code): corpus v1 moved from `scripts/seed.py` to a private file and embedding task types became selectable, with v1 tables staying `semantic`. Compared with the two final `harden-workflow-guardrails` runs:
+
+| Metric | This run | Final harden runs |
+| --- | --- | --- |
+| Recall@5 | 0.951 | 0.951 / 0.951 |
+| MRR@5 | 0.884 | 0.884 / 0.884 |
+| Behaviour correctness | 87.7% | 87.7% / 87.7% |
+| Days / budget constraints | 100% / 100% | 100% / 100% |
+| Faithfulness with context | 20.4% | 20.2% / 19.0% |
+| Retry rate | 1.7% | 1.7% / 0% |
+| Error rate | 0% | 0% / 0% |
+| Latency p50 | 4.64 s | 4.22 s / 4.18 s |
+
+Retrieval is unchanged. Latency is about 0.4 s higher in this single run; the cause was not investigated.
+
+**Budget-amount entries**: in the stored corpus v1 runs (three of the originals, two of the copies), e074–e079 have the same query and the same retrieved sections in the same order as e004, e024, e022, e001, e003 and e029, because the amount is not part of the query. A unit test now holds this. Not yet measured on corpus v2.
+
+**Dataset v3**: labels name a page and section. They were drafted from what the sections contain (lines matching each request's theme, not retrieval results) and reviewed by the user. Australia-wide labels kept from v1 were not re-examined. Coverage of the 60 plan entries: 38 `city`, 16 `national_only`, 6 `none` (all Gold Coast, left out of Recall). Known weak labels, where the corpus has little on the request: e006, e012, e025, e036, e037, e038, e062. Recall on v3 is not comparable with Recall on v2 labels: the corpus and the labels both changed.
+
+**To re-run a corpus v1 configuration** after this: check out a commit from before dataset v3 and restore `data/knowledge/v1/source_documents.json` from the private repository.
+
+---
+
+### 2026-11-04 · repository history rewrite · `git_commit` values in earlier runs use old hashes
+
+**What changed**: the text of corpus v1 was removed from every commit in the repository's history, because corpus text is no longer kept in git (`docs/evaluation.md`, "What is published"). The rewrite changed the hash of all 96 commits. No file under `eval/runs/` was edited, and no run was repeated.
+
+**Effect on earlier records**:
+- No recorded number changes. Every run summary, its numbers and its `git_commit` value are as they were.
+- The `git_commit` in every summary from before 2026-11-04 is an old hash and does not exist in this repository. The old-to-new mapping is `migration/commit-map` in the private repository.
+- Checking out a commit from before the rewrite gives `SOURCE_DOCUMENTS = []` in `scripts/seed.py`: the code of that commit, without its corpus. To re-run an earlier configuration, also restore `data/knowledge/v1/source_documents.json` from the private repository and seed from it. The earlier evaluation database tables are unaffected.
+- Pull request numbers in earlier commit messages do not match this repository's pull requests.
+
+---
 
 ### 2026-11-01 · true-sse-streaming · no evaluation run (delivery timing only)
 
@@ -345,19 +954,24 @@ Copy the template below, fill it in, and put it at the **top** of the "Records" 
 
 | Configuration | Description | Run ID | Recall@5 | MRR@5 | Retrieval p50 / p95 | Memory usage |
 | --- | --- | --- | --- | --- | --- | --- |
-| a | Vector-only retrieval (baseline on the new corpus) | | | | | |
-| b | a + destination filtering | | | | | |
-| c | b + BM25 hybrid + RRF | | | | | |
-| c′ | b + Agno `SearchType.hybrid` (control group) | | | | | |
-| d | c + Cross-Encoder reranking | | | | | |
+| a | Vector-only retrieval (baseline on the new corpus) | `20261104T075807Z-rebuild-rag-a-retrieval` | 0.519 | 0.699 | 633 / 677 ms | not measured |
+| b | a + destination filtering | `20261104T081045Z-rebuild-rag-b-retrieval` | 0.609 | 0.782 | 624 / 652 ms | not measured |
+| c | b + BM25 hybrid + RRF | `20261104T091258Z-rebuild-rag-c-retrieval` | 0.585 | 0.780 | 656 / 729 ms | not measured |
+| c′ | b + Agno `SearchType.hybrid` (control group) | `20261104T091415Z-rebuild-rag-c-agno-retrieval` | 0.609 | 0.782 | 648 / 729 ms | not measured |
+| q11 | b + the query chosen in the 12-group comparison | `20261105T070231Z-rebuild-rag-q11-retrieval` | 0.643 | 0.823 | 619 / 669 ms | not measured |
+| d | q11 + Cross-Encoder reranking of the vector candidates | `20261105T080155Z-rebuild-rag-d-retrieval` | 0.640 | 0.798 | 905 / 1007 ms | about 890 MB, see step d |
+| d′ | q11 + Cross-Encoder reranking of the vector and BM25 candidates | `20261105T080256Z-rebuild-rag-d-fused-retrieval` | 0.632 | 0.798 | 1074 / 1248 ms | about 890 MB, see step d |
 
 **Chunking configuration comparison** (retrieval configuration fixed to the best one chosen in the table above)
 
 | Chunking configuration | Chunk count | Run ID | Recall@5 | MRR@5 |
 | --- | --- | --- | --- | --- |
-| | | | | |
+| 800 / 80, `retrieval` (group 11) | 1602 | `20261105T070231Z-rebuild-rag-q11-retrieval` | 0.643 | 0.823 |
+| 500 / 50, `retrieval` | 2503 | `20261105T091845Z-rebuild-rag-c500-retrieval` | 0.627 | 0.818 |
+| 1200 / 120, `retrieval` | 1080 | `20261105T091923Z-rebuild-rag-c1200-retrieval` | 0.646 | 0.842 |
+| 800 / 80, `semantic` | 1602 | `20261105T092001Z-rebuild-rag-c800-semantic-retrieval` | 0.598 | 0.788 |
 
-**Final choice**: — (fill in the configuration and the reasons, and sync it to `openspec/changes/rebuild-rag/design.md`)
+**Final choice**: chunks of 800 characters with 80 overlap, `retrieval` task types, destination filter, vector search, query of `notes`, `travel_style` and destination. No other configuration met the criteria; see the [query](#2026-11-05--rebuild-rag--query-construction-12-groups-of-notes-category-and-search), [reranking](#2026-11-05--rebuild-rag-step-d--cross-encoder-reranking-on-the-chosen-query) and [chunking](#2026-11-05--rebuild-rag--chunk-size-and-embedding-task-types) records.
 
 ---
 
@@ -372,6 +986,11 @@ Every modification of `eval/thresholds.yaml` must be recorded here.
 | 2026-10-26 | `build-evaluation-harness` | `budget_rate` (min) | — | 0.375 | Initial setting. Both smoke runs 0.5; loosened by one of 8 capped itineraries (0.125) |
 | 2026-10-26 | `build-evaluation-harness` | `recall_at_5` (min) | — | 0.809 | Initial setting. Both smoke runs 0.952; loosened by one of 7 labelled entries (1/7 ≈ 0.143) |
 | 2026-10-26 | `build-evaluation-harness` | `error_rate` (max) | — | 0.1 | Initial setting. Both smoke runs 0.0; loosened by one of 10 requests |
+| 2026-11-10 | `rebuild-rag` | `config` | `v010-baseline` | `rebuild-rag-gen-c-no-exclusives` | The gate ran the v0.1.0 configuration on corpus v1; it now runs the final configuration |
+| 2026-11-10 | `rebuild-rag` | `format_pass_rate` (min) | 0.9 | 0.875 | Both smoke runs 1.0; two smoke entries are now refused, so 8 requests reach validation; loosened by one of 8 |
+| 2026-11-10 | `rebuild-rag` | `trip_length_rate` (min) | 0.9 | 0.875 | Both smoke runs 1.0 on 8 planned itineraries; loosened by one of 8 |
+| 2026-11-10 | `rebuild-rag` | `budget_rate` (min) | 0.375 | 0.833 | Raised: both smoke runs 1.0 on 6 capped itineraries since the budget business rule (`harden-workflow-guardrails`); loosened by one of 6 |
+| 2026-11-10 | `rebuild-rag` | `recall_at_5` (min) | 0.809 | 0.444 | Lowered: both smoke runs 0.611 on 6 labelled entries, measured on corpus v2 with dataset v3's labels, which are not comparable with corpus v1's; retrieval improved step by step on corpus v2 (records above); loosened by one of 6 (1/6 ≈ 0.167) |
 
 ---
 
@@ -381,5 +1000,6 @@ Every modification of the evaluation dataset (`eval/dataset.jsonl`) must be reco
 
 | Date | Version | What changed | Reason | Entries affected |
 | --- | --- | --- | --- | --- |
+| 2026-11-04 | v3 | `relevant_sections` of all 60 plan entries relabelled for corpus v2 by page title + section; retired v1 city guides removed from labels; plan entries gain `corpus_coverage`; `corpus_version` set to v2. Requests unchanged | `rebuild-rag` replaces the corpus (task 2.1). Labels name the page because destination + section would merge every district's `Eat` into one label and inflate Recall | e001–e012, e016–e029, e034–e044, e054–e057, e059–e071, e074–e079 |
 | 2026-10-31 | v2 | Added e074–e079 (tag `budget_amount`): each is a copy of a v1 plan entry — e074/e004, e075/e024, e076/e022, e077/e001, e078/e003, e079/e029 — with `form.max_daily_budget_aud` (50, 120, 120, 300, 1500, 600) and the amount added to the utterance, so each pair differs only in the amount; e079 keeps e029's `mixed_language` tag and mixed-language utterance. `gold_slots` has no amount field yet (added with a request parser, roadmap item 3). Subsets `dataset-v1` (e001–e073) and `budget-amount` (e074–e079) let runs compare with the v1 baseline and report the new entries separately. No v1 entry changed | `harden-workflow-guardrails` adds `max_daily_budget_aud` (task 6.5); the spec requires entries with an amount for every budget level, a `luxury` one and one above its level's default. Written and reviewed before the final evaluation of the change | e074–e079 (new) |
 | 2026-10-25 | v1 | Initial version: 73 entries (54 plan / 12 refuse / 7 clarify), labelled against corpus v1 (the 13 handwritten v0.1.0 documents); 24 entries carry `form.notes` | Written and reviewed entry by entry before any experiment | All (e001–e073) |

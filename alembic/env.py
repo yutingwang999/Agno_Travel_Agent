@@ -24,7 +24,6 @@ config.set_main_option("sqlalchemy.url", database_url)
 from app.models.base import Base  # noqa: E402
 import app.models.itinerary_category  # noqa: E402, F401
 import app.models.prompt_template  # noqa: E402, F401
-import app.models.source_document  # noqa: E402, F401
 import app.models.trace_event  # noqa: E402, F401
 
 target_metadata = Base.metadata

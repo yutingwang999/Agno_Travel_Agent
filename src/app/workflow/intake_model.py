@@ -15,6 +15,9 @@ Fields:
                            accommodation (>= 1, no upper bound); when given it
                            sets the request's daily budget ceiling instead of the
                            level's default (see app.workflow.budget)
+    notes                — optional free text for details the other fields cannot
+                           express; stripped, at most MAX_NOTES_LENGTH characters,
+                           None when absent or blank
 
 Validation errors raise ``pydantic.ValidationError``, which FastAPI maps to a
 422 Unprocessable Entity response.  The intake step must not swallow this
@@ -25,7 +28,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.workflow.config import MAX_TRIP_LENGTH_DAYS
+from app.workflow.config import MAX_NOTES_LENGTH, MAX_TRIP_LENGTH_DAYS
 
 
 class BudgetLevel(StrEnum):
@@ -52,6 +55,7 @@ class TravelRequest(BaseModel):
     travel_style: str
     # A fractional amount is rejected (422), like a fractional trip_length.
     max_daily_budget_aud: int | None = Field(default=None, ge=1)
+    notes: str | None = None
 
     @field_validator("destination")
     @classmethod
@@ -80,3 +84,14 @@ class TravelRequest(BaseModel):
         if not stripped:
             raise ValueError("travel_style must not be empty")
         return stripped
+
+    @field_validator("notes")
+    @classmethod
+    def normalise_notes(cls, value: str | None) -> str | None:
+        """Strip whitespace; blank notes count as none, and long ones are rejected."""
+        if value is None:
+            return None
+        stripped = value.strip()
+        if len(stripped) > MAX_NOTES_LENGTH:
+            raise ValueError(f"notes must be at most {MAX_NOTES_LENGTH} characters")
+        return stripped or None

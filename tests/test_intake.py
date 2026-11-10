@@ -362,3 +362,43 @@ def test_upper_bound_matches_config():
     from app.workflow.config import MAX_TRIP_LENGTH_DAYS
 
     assert MAX_TRIP_LENGTH_DAYS == 14
+
+
+# ---------------------------------------------------------------------------
+# notes (rebuild-rag task 7.1)
+# ---------------------------------------------------------------------------
+
+
+def test_absent_notes_are_null_in_the_intake_event():
+    from app.workflow.steps.intake import intake_executor
+
+    assert json.loads(intake_executor(_make_step_input()).content)["data"]["notes"] is None
+
+
+def test_blank_notes_are_null_in_the_intake_event():
+    """Spec scenario "Blank notes"."""
+    from app.workflow.steps.intake import intake_executor
+
+    data = json.loads(intake_executor(_make_step_input({"notes": "   "})).content)["data"]
+    assert data["notes"] is None
+
+
+def test_notes_are_stripped_and_carried_by_the_intake_event():
+    from app.workflow.steps.intake import intake_executor
+
+    data = json.loads(intake_executor(_make_step_input({"notes": "  kids love animals "})).content)["data"]
+    assert data["notes"] == "kids love animals"
+
+
+def test_notes_of_the_maximum_length_are_accepted():
+    from app.workflow.intake_model import TravelRequest
+
+    assert len(TravelRequest(**_BASE, notes="x" * 500).notes) == 500
+
+
+def test_notes_too_long_are_rejected():
+    """Spec scenario "Notes too long"."""
+    from app.workflow.intake_model import TravelRequest
+
+    with pytest.raises(ValidationError):
+        TravelRequest(**_BASE, notes="x" * 501)

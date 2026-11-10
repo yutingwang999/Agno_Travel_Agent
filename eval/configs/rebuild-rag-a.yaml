@@ -1,0 +1,16 @@
+# rebuild-rag step a: vector-only retrieval on corpus v2, the baseline for steps b to d.
+# Run with --retrieval-only: these steps compare Recall, MRR and retrieval latency.
+name: rebuild-rag-a
+description: Vector-only retrieval, corpus v2, chunks of 800 characters with 80 overlap
+generation_model: gemini-3.1-flash-lite
+embedding_model: gemini-embedding-001
+judge_model: gpt-6-luna
+corpus_version: v2
+knowledge_table: travel_docs_v2_c800
+embedding_task_types: retrieval
+destination_filter: false
+query_notes: false
+query_category: matched
+retrieval_k: 5
+judge_concurrency: 8
+request_parser: false

@@ -1,21 +1,18 @@
-"""Step 5: generate — resolves the active prompt template and calls the LLM.
+"""Step 5: generate — resolves the prompt template and calls the LLM.
 
 Reads upstream workflow state to build a fully resolved prompt:
 
-- ``destination``, ``trip_length``, ``budget``, ``travel_style`` and the
-  optional ``max_daily_budget_aud`` from intake (available in
-  ``step_input.additional_data``); the last two give ``daily_budget_ceiling``
-- ``matched_category``, ``confidence_score``, ``tone``, ``constraints`` from
-  the cag_match SSE event
-- ``retrieved_context`` from the rag_retrieve SSE event (empty string when
-  rag_retrieve was skipped due to high confidence)
+- ``destination``, ``trip_length``, ``budget``, ``travel_style``, ``notes`` and
+  the optional ``max_daily_budget_aud`` from intake (available in
+  ``step_input.additional_data``); budget and amount give ``daily_budget_ceiling``
+- ``matched_category``, ``tone``, ``constraints`` from the cag_match SSE event
+- ``retrieved_context`` from the rag_retrieve SSE event, each chunk numbered
+  with a citation id ``[S1]``, ``[S2]``, ... (empty string when retrieval
+  returned nothing); ``context_sources`` in the event maps each id to its chunk
 
-Template key selection:
-    confidence_score >= 0.85  →  ``high_confidence_minimal_context``
-    confidence_score <  0.85  →  ``low_confidence_with_retrieval``
-
-The active versioned template is fetched from ``prompt_templates`` by
-``template_key`` and ``is_active=True`` — never hardcoded.
+Every request uses the template key ``itinerary_with_context`` (rebuild-rag):
+the active version from ``prompt_templates``, or the exact version given by
+the ``template_version`` override — never hardcoded.
 
 Writes ``raw_llm_output`` and ``prompt_template_version`` to the SSE event
 ``data`` field for downstream steps.
@@ -31,7 +28,6 @@ from agno.workflow.types import StepInput, StepOutput
 from google import genai
 
 from app.workflow.budget import ceiling_text, daily_budget_ceiling
-from app.workflow.config import RETRIEVAL_CONFIDENCE_THRESHOLD
 from app.workflow.llm_usage import LLMResult, result_from_response
 from app.workflow.output_validator import STRUCTURED_OUTPUT_CONFIG
 from app.workflow.sse import build_sse_event, sse_event_to_json
@@ -39,8 +35,7 @@ from app.workflow.template_resolver import TemplateNotFoundError, resolve_templa
 from app.workflow.trace_logger import write_trace
 
 logger = logging.getLogger(__name__)
-HIGH_CONFIDENCE_TEMPLATE_KEY = "high_confidence_minimal_context"
-LOW_CONFIDENCE_TEMPLATE_KEY = "low_confidence_with_retrieval"
+TEMPLATE_KEY = "itinerary_with_context"
 DEFAULT_LLM_MODEL = "gemini-3.1-flash-lite"
 
 
@@ -65,74 +60,50 @@ def _extract_from_step(step_input: StepInput, step_name: str, field: str) -> str
         return ""
 
 
-def _extract_confidence_score(step_input: StepInput) -> float:
-    """Extract the numeric confidence_score from the cag_match SSE event.
-
-    Falls back to 0.0 (retrieval path) if the value is unavailable.
-
-    Args:
-        step_input: Agno step input carrying previous step outputs.
-
-    Returns:
-        The confidence_score float, or 0.0 on failure.
-    """
-    raw = _extract_from_step(step_input, "cag_match", "confidence_score")
-    try:
-        return float(raw)
-    except (ValueError, TypeError):
-        return 0.0
-
-
-def _extract_retrieved_context(step_input: StepInput) -> str:
-    """Build a plain-text block from the rag_retrieve chunk list.
-
-    Joins each retrieved chunk's title and text into a single string for
-    injection into the low-confidence prompt template.  Returns an empty
-    string if rag_retrieve did not run or returned no chunks.
-
-    Args:
-        step_input: Agno step input carrying previous step outputs.
-
-    Returns:
-        A newline-separated string of document chunks, or ``""`` if none.
-    """
+def _retrieved_chunks(step_input: StepInput) -> list[dict]:
+    """Return the chunk dicts of the rag_retrieve event, or [] when unavailable."""
     content = step_input.get_step_content("rag_retrieve")
     if content is None:
-        return ""
+        return []
     try:
-        event = json.loads(content)
-        chunks = event.get("data", {}).get("retrieved_context", [])
-    except (json.JSONDecodeError, TypeError):
-        return ""
-
-    if not chunks:
-        return ""
-
-    parts = []
-    for chunk in chunks:
-        title = chunk.get("title", "")
-        chunk_text = chunk.get("chunk_text", "")
-        if title:
-            parts.append(f"[{title}]\n{chunk_text}")
-        else:
-            parts.append(chunk_text)
-
-    return "\n\n".join(parts)
+        chunks = json.loads(content).get("data", {}).get("retrieved_context") or []
+    except (json.JSONDecodeError, TypeError, AttributeError):
+        return []
+    return [chunk for chunk in chunks if isinstance(chunk, dict)]
 
 
-def _select_template_key(confidence_score: float) -> str:
-    """Choose the prompt template key based on the CAG confidence score.
+def citation_id(position: int) -> str:
+    """The citation id of the chunk at 1-based *position*: ``S1``, ``S2``, ..."""
+    return f"S{position}"
+
+
+def _extract_retrieved_context(step_input: StepInput) -> tuple[str, list[dict]]:
+    """Number the retrieved chunks as citations and render them for the prompt.
+
+    Each chunk becomes ``"[S{n}] {title}\\n{chunk_text}"`` in retrieval order,
+    joined by blank lines, and gets an entry in the returned sources list.
 
     Args:
-        confidence_score: The cosine similarity score from the cag_match step.
+        step_input: Agno step input carrying previous step outputs.
 
     Returns:
-        ``"high_confidence_minimal_context"`` when confidence is at or above
-        the 0.85 threshold; ``"low_confidence_with_retrieval"`` otherwise.
+        ``(retrieved_context, context_sources)``: the rendered text, ``""`` when
+        no chunks were retrieved, and one ``{"id", "chunk_id", "title",
+        "source", "section"}`` dict per chunk placed in the prompt.
     """
-    if confidence_score >= RETRIEVAL_CONFIDENCE_THRESHOLD:
-        return HIGH_CONFIDENCE_TEMPLATE_KEY
-    return LOW_CONFIDENCE_TEMPLATE_KEY
+    blocks, sources = [], []
+    for position, chunk in enumerate(_retrieved_chunks(step_input), start=1):
+        cid = citation_id(position)
+        title = chunk.get("title") or ""
+        blocks.append(f"[{cid}] {title}\n{chunk.get('chunk_text') or ''}")
+        sources.append({
+            "id": cid,
+            "chunk_id": chunk.get("chunk_id"),
+            "title": title,
+            "source": chunk.get("source"),
+            "section": chunk.get("section"),
+        })
+    return "\n\n".join(blocks), sources
 
 
 def _format_template(template_text: str, variables: dict) -> str:
@@ -177,13 +148,12 @@ def _call_llm(prompt: str, api_key: str, model: str) -> LLMResult:
 
 
 def generate_executor(step_input: StepInput) -> StepOutput:
-    """Resolve the active prompt template and call the LLM.
+    """Resolve the prompt template and call the LLM.
 
     Reads normalised input fields from ``step_input.additional_data`` and
-    upstream step outputs to build the full set of template variables.
-    Selects the appropriate template key based on the CAG confidence score,
-    fetches the active template from ``prompt_templates``, formats it with
-    the resolved variables, and calls the Gemini LLM.
+    upstream step outputs to build the full set of template variables,
+    fetches the ``itinerary_with_context`` template from ``prompt_templates``,
+    formats it with the resolved variables, and calls the Gemini LLM.
 
     Writes ``raw_llm_output`` and ``prompt_template_version`` to the SSE
     event ``data`` field.
@@ -210,6 +180,7 @@ def generate_executor(step_input: StepInput) -> StepOutput:
     trip_length: str = str(additional_data.get("trip_length", ""))
     budget: str = additional_data.get("budget", "")
     travel_style: str = additional_data.get("travel_style", "")
+    notes: str = additional_data.get("notes") or ""
     daily_ceiling = daily_budget_ceiling(budget, additional_data.get("max_daily_budget_aud"))
 
     # Optional template version override forwarded from the API query parameter.
@@ -217,20 +188,17 @@ def generate_executor(step_input: StepInput) -> StepOutput:
     template_version_override: int | None = additional_data.get("template_version")
 
     # Read CAG output from the cag_match SSE event
-    confidence_score: float = _extract_confidence_score(step_input)
     matched_category: str = _extract_from_step(step_input, "cag_match", "matched_category")
     tone: str = _extract_from_step(step_input, "cag_match", "tone")
     constraints: str = _extract_from_step(step_input, "cag_match", "constraints")
 
-    # Read optional RAG context — empty string when rag_retrieve was skipped
-    retrieved_context: str = _extract_retrieved_context(step_input)
+    # Read the knowledge context, numbered for citations — "" when retrieval returned nothing
+    retrieved_context, context_sources = _extract_retrieved_context(step_input)
 
-    # Choose template based on confidence threshold
-    template_key: str = _select_template_key(confidence_score)
+    template_key: str = TEMPLATE_KEY
 
     # Fetch the prompt template from the database — never hardcode prompt text.
-    # When a version override is present, fetch that specific version.
-    # Otherwise, fetch the active version and fall back to low_confidence on failure.
+    # None means "use the active version"; an override fetches that exact version.
     try:
         template_text, template_version = resolve_template(
             template_key=template_key,
@@ -238,41 +206,22 @@ def generate_executor(step_input: StepInput) -> StepOutput:
             version=template_version_override,
         )
     except TemplateNotFoundError:
-        logger.error(
-            "generate: active template not found for template_key=%r — "
-            "falling back to low_confidence_with_retrieval",
-            template_key,
+        logger.error("generate: no template found for template_key=%r", template_key)
+        latency_ms = (time.monotonic() - start) * 1000
+        write_trace(
+            db_url=db_url,
+            session_id=session_id,
+            step_name="generate",
+            status="error",
+            latency_ms=latency_ms,
         )
-        fallback_key = LOW_CONFIDENCE_TEMPLATE_KEY
-        try:
-            if template_key != fallback_key:
-                template_text, template_version = resolve_template(
-                    template_key=fallback_key,
-                    db_url=db_url,
-                    version=template_version_override,
-                )
-                # Report the template actually used, in the event and the trace.
-                template_key = fallback_key
-            else:
-                raise TemplateNotFoundError(
-                    f"No active template found for template_key={template_key!r}"
-                )
-        except TemplateNotFoundError:
-            latency_ms = (time.monotonic() - start) * 1000
-            write_trace(
-                db_url=db_url,
-                session_id=session_id,
-                step_name="generate",
-                status="error",
-                latency_ms=latency_ms,
-            )
-            error_event = build_sse_event(
-                session_id=session_id,
-                step="generate",
-                status="error",
-                error=f"No active template found for key {template_key!r}",
-            )
-            return StepOutput(content=sse_event_to_json(error_event))
+        error_event = build_sse_event(
+            session_id=session_id,
+            step="generate",
+            status="error",
+            error=f"No active template found for key {template_key!r}",
+        )
+        return StepOutput(content=sse_event_to_json(error_event))
 
     # Format the template by substituting all known variables
     variables = {
@@ -280,6 +229,7 @@ def generate_executor(step_input: StepInput) -> StepOutput:
         "trip_length": trip_length,
         "budget": budget,
         "travel_style": travel_style,
+        "notes": notes,
         "matched_category": matched_category,
         "tone": tone,
         "constraints": constraints,
@@ -326,6 +276,7 @@ def generate_executor(step_input: StepInput) -> StepOutput:
             "raw_llm_output": raw_llm_output,
             "prompt_template_key": template_key,
             "prompt_template_version": template_version,
+            "context_sources": context_sources,
         },
     )
 

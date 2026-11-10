@@ -13,7 +13,9 @@ On second failure (retry also fails):
     - Sets ``degraded_mode=True``.
     - Does NOT raise an unhandled exception.
 
-Valid output is passed through unchanged with ``degraded_mode=False``.
+Valid output is passed through unchanged with ``degraded_mode=False``, together
+with ``citations``: every citation id the itinerary uses, resolved to its title,
+source and section from the generate event's ``context_sources``.
 
 If the generate step already failed, or the correction call itself raises, the
 step emits a structured error (``degraded_mode=True``) without validating or
@@ -88,12 +90,30 @@ def _step_data(step_input: StepInput, step_name: str) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
+def _context_sources(step_input: StepInput) -> list[dict]:
+    """The generate event's ``context_sources``, or [] when unavailable."""
+    sources = (_step_data(step_input, "generate") or {}).get("context_sources") or []
+    return [s for s in sources if isinstance(s, dict) and isinstance(s.get("id"), str)]
+
+
+def _citations(output, context_sources: list[dict]) -> dict:
+    """Map every citation id the itinerary uses to its title, source and section."""
+    by_id = {s["id"]: s for s in context_sources}
+    used = [cid for day in output.daily_itinerary for cid in day.sources]
+    return {
+        cid: {key: by_id[cid].get(key) for key in ("title", "source", "section")}
+        for cid in dict.fromkeys(used)
+        if cid in by_id
+    }
+
+
 def _build_validation_context(step_input: StepInput) -> ValidationContext:
-    """Collect what the business rules need from the intake and rag_retrieve events.
+    """Collect what the business rules need from the intake, rag_retrieve and generate events.
 
     The requested trip length and the daily budget ceiling come from the intake
     event (unknown if it cannot be read).  The knowledge context is the
     ``chunk_text`` of every retrieved chunk, or "" when retrieval did not run.
+    The citation ids are those of the generate event's ``context_sources``.
     """
     intake = _step_data(step_input, "intake") or {}
     trip_length = intake.get("trip_length")
@@ -109,7 +129,10 @@ def _build_validation_context(step_input: StepInput) -> ValidationContext:
         str(chunk.get("chunk_text", "")) for chunk in chunks if isinstance(chunk, dict)
     )
     return ValidationContext(
-        requested_trip_length=requested, daily_ceiling=ceiling, knowledge_context=knowledge
+        requested_trip_length=requested,
+        daily_ceiling=ceiling,
+        knowledge_context=knowledge,
+        citation_ids=frozenset(s["id"] for s in _context_sources(step_input)),
     )
 
 
@@ -225,6 +248,7 @@ def validate_output_executor(step_input: StepInput) -> StepOutput:
             data={
                 "itinerary": validated_output.model_dump(),
                 "degraded_mode": False,
+                "citations": _citations(validated_output, _context_sources(step_input)),
             },
         )
         latency_ms = (time.monotonic() - start) * 1000
@@ -325,6 +349,7 @@ def validate_output_executor(step_input: StepInput) -> StepOutput:
             data={
                 "itinerary": retry_output.model_dump(),
                 "degraded_mode": True,
+                "citations": _citations(retry_output, _context_sources(step_input)),
             },
         )
         latency_ms = (time.monotonic() - start) * 1000

@@ -5,7 +5,9 @@ Inserts:
   - 3 itinerary_categories  (family, budget, adventure)
   - prompt_templates          (every version in TEMPLATE_DEFINITIONS; the version in
                                ACTIVE_TEMPLATE_VERSIONS is the only active one per key)
-  - 13 source documents into the Agno Knowledge base (travel_docs table via PgVector)
+  - the corpus into the Agno Knowledge base (travel_docs table via PgVector): the JSONL
+    file named by KNOWLEDGE_CORPUS (default DEFAULT_CORPUS), or "v1" for the corpus v1
+    documents; both are private local files, skipped with a warning when missing
 
 Idempotent — safe to run multiple times; existing rows are skipped, not duplicated.
 
@@ -13,6 +15,8 @@ Usage:
     python scripts/seed.py
 """
 
+import hashlib
+import json
 import os
 import sys
 import time
@@ -31,7 +35,8 @@ load_dotenv(os.path.join(ROOT_DIR, ".env"))
 
 from google import genai  # noqa: E402
 from google.genai import types  # noqa: E402
-from sqlalchemy import create_engine, make_url, select  # noqa: E402
+from agno.knowledge.document.base import Document  # noqa: E402
+from sqlalchemy import create_engine, make_url, select, text  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from app.models.itinerary_category import ItineraryCategory  # noqa: E402
@@ -369,9 +374,10 @@ ITINERARY_CATEGORIES = [
 ]
 
 # ---- Prompt templates -------------------------------------------------------
-# Variables available in both templates:
-#   {destination}, {trip_length}, {budget}, {matched_category},
-#   {tone}, {constraints}, {retrieved_context}, {daily_budget_ceiling} (from version 3)
+# Variables the generate step fills:
+#   {destination}, {trip_length}, {budget}, {travel_style}, {notes}, {matched_category},
+#   {tone}, {constraints}, {retrieved_context}, {daily_budget_ceiling}
+# (the two v0.1.0 generation keys use a subset; {daily_budget_ceiling} from their version 3)
 # ---------------------------------------------------------------------------
 
 HIGH_CONFIDENCE_TEMPLATE = """\
@@ -518,6 +524,130 @@ LOW_CONFIDENCE_TEMPLATE_V3 = _insert_after(
     LOW_CONFIDENCE_TEMPLATE_V2, COST_UNIT_SENTENCE, BUDGET_CEILING_SENTENCE
 )
 
+# ---- itinerary_with_context (rebuild-rag) -----------------------------------
+# One template for every request, since every request now retrieves knowledge.
+# Its three versions differ only in how the request is described (design
+# decision 3); the evaluation picks one and ACTIVE_TEMPLATE_VERSIONS activates it.
+#   v1 (A): the matched category's preset tone and constraints, plus the notes
+#   v2 (B): the traveller's own travel_style and notes, no preset
+#   v3 (C): both, the traveller's words taking precedence over the preset
+# All three keep harden's cost unit and budget ceiling, number the knowledge
+# blocks for citations ([S1], [S2], ...), and write the JSON example with single
+# braces: the v1-v3 templates above double them, which _format_template never
+# unescapes, so the model received "{{" literally.
+
+REQUEST_PRESET = """\
+Travel style: {matched_category}
+Tone: {tone}
+Planning constraints: {constraints}
+Traveller's notes: {notes}"""
+
+REQUEST_OWN_WORDS = """\
+Travel style, in the traveller's words: {travel_style}
+Traveller's notes: {notes}"""
+
+REQUEST_BOTH = """\
+Travel style, in the traveller's words: {travel_style}
+Traveller's notes: {notes}
+Default suggestions for this kind of trip, to use only where the traveller's words above say nothing: \
+style {matched_category}; tone {tone}; planning constraints: {constraints}"""
+
+ITINERARY_WITH_CONTEXT_FRAME = """\
+You are an expert Australian travel planner.
+
+Plan a {trip_length}-day itinerary to {destination} for a traveller with a {budget} budget.
+
+<<request>>
+<<cost_unit>>
+<<ceiling>>
+
+Use the following reference information to enrich your plan with accurate, specific details. \
+Each block starts with a source id in square brackets, such as [S1]:
+---
+{retrieved_context}
+---
+
+For each day, list in "sources" the ids of the blocks that day's plan draws on, such as ["S1", "S3"]. \
+Use only ids that appear above. Give an empty list for a day that draws on none of them, \
+and for every day when there is no reference information.
+
+Return ONLY a valid JSON object with this exact structure — no prose, no markdown fences:
+{
+  "destination": string,
+  "trip_length_days": integer,
+  "budget_level": string,
+  "travel_style": string,
+  "daily_itinerary": [
+    {
+      "day": integer,
+      "morning": string,
+      "afternoon": string,
+      "evening": string,
+      "estimated_cost_aud": number,
+      "sources": [string]
+    }
+  ],
+  "total_estimated_cost_aud": number,
+  "key_tips": [string]
+}
+"""
+
+
+def _itinerary_with_context(request: str) -> str:
+    """The itinerary_with_context template with *request* as its request description."""
+    return (
+        ITINERARY_WITH_CONTEXT_FRAME.replace("<<request>>", request)
+        .replace("<<cost_unit>>", COST_UNIT_SENTENCE)
+        .replace("<<ceiling>>", BUDGET_CEILING_SENTENCE)
+    )
+
+
+ITINERARY_WITH_CONTEXT_A = _itinerary_with_context(REQUEST_PRESET)
+ITINERARY_WITH_CONTEXT_B = _itinerary_with_context(REQUEST_OWN_WORDS)
+ITINERARY_WITH_CONTEXT_C = _itinerary_with_context(REQUEST_BOTH)
+
+# itinerary_with_context v4 (rebuild-rag task 5.5, design decision 4): variant C plus
+# one instruction against invented exclusive or private arrangements, which no
+# corpus can confirm can be booked. A traveller who asks for one still gets it.
+NO_INVENTED_EXCLUSIVES_SENTENCE = (
+    "Do not invent exclusive or private arrangements, such as private tours, after-hours access, "
+    "private viewings or charters, unless the reference information above offers them or the "
+    "traveller asks for them."
+)
+ITINERARY_WITH_CONTEXT_C_NO_EXCLUSIVES = _insert_before(
+    ITINERARY_WITH_CONTEXT_C, "Return ONLY a valid JSON object", NO_INVENTED_EXCLUSIVES_SENTENCE
+)
+
+
+def _remove_line(template: str, line: str) -> str:
+    """Return *template* without *line* and its line break."""
+    assert template.count(f"{line}\n") == 1, line
+    return template.replace(f"{line}\n", "")
+
+
+# itinerary_with_context v5 (rebuild-rag task 5.6, diagnosis only, never active): v4
+# without harden-workflow-guardrails' cost-unit and budget-ceiling sentences, to see
+# whether they cost faithfulness. The business rules still check the budget.
+ITINERARY_WITH_CONTEXT_V4_NO_BUDGET_SENTENCES = _remove_line(
+    _remove_line(ITINERARY_WITH_CONTEXT_C_NO_EXCLUSIVES, COST_UNIT_SENTENCE), BUDGET_CEILING_SENTENCE
+)
+
+# validate_output_correction v3 (rebuild-rag): v2 with "sources" in the JSON example,
+# an instruction on citations, and single braces (v1 and v2 double them, and
+# _build_correction_prompt never unescapes them either). The correction call has no
+# knowledge context, so it keeps the original citations and drops only invalid ones.
+CITATION_CORRECTION_SENTENCE = (
+    'Keep each day\'s "sources" (citation ids such as "S1") as they are, unless an error above '
+    "says a citation is invalid: then remove the ids it names."
+)
+_SOURCES_IN_EXAMPLE = ('      "estimated_cost_aud": number\n', '      "estimated_cost_aud": number,\n      "sources": [string]\n')
+assert CORRECTION_TEMPLATE_V2.count(_SOURCES_IN_EXAMPLE[0]) == 1
+CORRECTION_TEMPLATE_V3 = _insert_before(
+    CORRECTION_TEMPLATE_V2.replace("{{", "{").replace("}}", "}").replace(*_SOURCES_IN_EXAMPLE),
+    "Return ONLY a corrected valid JSON object",
+    CITATION_CORRECTION_SENTENCE,
+)
+
 # Every version ever defined, append-only: a new wording is a new entry, so
 # earlier results stay reproducible with ?template_version=N.
 TEMPLATE_DEFINITIONS = [
@@ -561,21 +691,82 @@ TEMPLATE_DEFINITIONS = [
         "version": 3,
         "template_text": LOW_CONFIDENCE_TEMPLATE_V3,
     },
+    {
+        "template_key": "itinerary_with_context",
+        "version": 1,
+        "template_text": ITINERARY_WITH_CONTEXT_A,
+    },
+    {
+        "template_key": "itinerary_with_context",
+        "version": 2,
+        "template_text": ITINERARY_WITH_CONTEXT_B,
+    },
+    {
+        "template_key": "itinerary_with_context",
+        "version": 3,
+        "template_text": ITINERARY_WITH_CONTEXT_C,
+    },
+    {
+        "template_key": "itinerary_with_context",
+        "version": 4,
+        "template_text": ITINERARY_WITH_CONTEXT_C_NO_EXCLUSIVES,
+    },
+    {
+        "template_key": "itinerary_with_context",
+        "version": 5,
+        "template_text": ITINERARY_WITH_CONTEXT_V4_NO_BUDGET_SENTENCES,
+    },
+    {
+        "template_key": "validate_output_correction",
+        "version": 3,
+        "template_text": CORRECTION_TEMPLATE_V3,
+    },
 ]
 
 # The version of each key that requests use by default. Seed makes exactly this
-# version active; change the number to upgrade or roll back.
+# version active; change the number to upgrade or roll back. Since rebuild-rag the
+# generate step uses only itinerary_with_context; the two older generation keys
+# stay active but are no longer selected. itinerary_with_context v3 (variant C:
+# the traveller's words first, the category preset as a default) was chosen by
+# the comparison of task 5.4; v4 adds the instruction against invented exclusive
+# arrangements and was adopted in task 5.5 (docs/experiments.md, 2026-11-09).
 ACTIVE_TEMPLATE_VERSIONS = {
     "high_confidence_minimal_context": 3,
     "low_confidence_with_retrieval": 3,
-    "validate_output_correction": 2,
+    "validate_output_correction": 3,
+    "itinerary_with_context": 4,
 }
 
 # ---- Source documents -------------------------------------------------------
-# Handwritten for v0.1.0; corpus v1 is replaced in rebuild-rag.
+# Corpus v1 (the 13 v0.1.0 documents) is kept out of the repository: a local
+# file, backed up to the private repository. Without it the knowledge base stays
+# empty and the app still runs, generating without retrieved context.
 # ---------------------------------------------------------------------------
 
-SOURCE_DOCUMENTS = []  # corpus kept private
+SOURCE_DOCUMENTS_PATH = os.path.join(ROOT_DIR, "data", "knowledge", "v1", "source_documents.json")
+EMBEDDING_CACHE_DIR = os.path.join(ROOT_DIR, ".cache", "embeddings")
+
+# Which corpus goes into the knowledge base: "v1", or a JSONL file from
+# scripts/build_corpus.py, relative to the repository root.
+CORPUS_V1 = "v1"
+DEFAULT_CORPUS = os.path.join("data", "knowledge", "corpus_c800_o80.jsonl")
+CHECKSUM_KEY = "corpus_sha256"
+INSERT_BATCH_SIZE = 100
+
+
+def load_source_documents(path: str = SOURCE_DOCUMENTS_PATH) -> list[dict]:
+    """Return the corpus v1 documents, or an empty list when the local file is missing."""
+    try:
+        with open(path, encoding="utf-8") as file:
+            return json.load(file)
+    except FileNotFoundError:
+        print(
+            f"  [warn] corpus file not found: {path}\n"
+            "  [warn] the knowledge base stays empty; itineraries are generated without "
+            "retrieved context. The corpus is private: see docs/evaluation.md, "
+            '"What is published".'
+        )
+        return []
 
 
 # ---------------------------------------------------------------------------
@@ -653,6 +844,7 @@ def seed_source_documents() -> None:
         api_key=GEMINI_API_KEY,
         embedding_model=EMBEDDING_MODEL,
         table_name=table_name,
+        cache_dir=EMBEDDING_CACHE_DIR,
     )
 
     if not _travel_docs_has_embedding_column(DATABASE_URL, table_name):
@@ -667,7 +859,7 @@ def seed_source_documents() -> None:
     # the correct schema, and is required after a drop to recreate it.
     knowledge.vector_db.create()
 
-    for data in SOURCE_DOCUMENTS:
+    for data in load_source_documents():
         print(f"  [insert] title={data['title']!r}")
         knowledge.insert(
             name=data["title"],
@@ -675,6 +867,104 @@ def seed_source_documents() -> None:
             metadata={"destination": data["destination"], **data["metadata_json"]},
             skip_if_exists=True,
         )
+
+
+def load_corpus(path: str) -> tuple[list[dict], str]:
+    """Return a JSONL corpus and its checksum; no chunks when the local file is missing."""
+    try:
+        with open(path, "rb") as file:
+            raw = file.read()
+    except FileNotFoundError:
+        print(
+            f"  [warn] corpus file not found: {path}\n"
+            "  [warn] the knowledge base stays empty; itineraries are generated without "
+            "retrieved context. Build it with scripts/build_corpus.py; the corpus is private: "
+            'see docs/evaluation.md, "What is published".'
+        )
+        return [], ""
+    chunks = [json.loads(line) for line in raw.decode("utf-8").splitlines()]
+    return chunks, hashlib.sha256(raw).hexdigest()
+
+
+def _seeded_chunks(db_url: str, table_name: str, checksum: str) -> int:
+    """Return how many rows of the table carry this corpus checksum, or -1 if others remain."""
+    if not _travel_docs_has_embedding_column(db_url, table_name):
+        return -1
+    query = text(
+        f'SELECT count(*), count(*) FILTER (WHERE meta_data->>:key = :checksum) FROM ai."{table_name}"'
+    )
+    with create_engine(db_url).connect() as connection:
+        total, matching = connection.execute(query, {"key": CHECKSUM_KEY, "checksum": checksum}).one()
+    return matching if total == matching else -1
+
+
+def _stored_with_embedding(db_url: str, table_name: str) -> int:
+    query = text(f'SELECT count(embedding) FROM ai."{table_name}"')
+    with create_engine(db_url).connect() as connection:
+        return connection.execute(query).scalar_one()
+
+
+def seed_corpus(path: str) -> None:
+    """Make the knowledge-base table hold exactly this corpus file.
+
+    A table already holding it is left alone, before any embedding call. Anything
+    else (another chunking configuration, changed text, an interrupted seed, the
+    documents of corpus v1) is dropped and rebuilt; the embedding cache makes that
+    free for chunks embedded before.
+    """
+    table_name = knowledge_table_name()
+    print(f"Seeding knowledge base ({table_name}) from {path}...")
+    chunks, checksum = load_corpus(path)
+    if not chunks:
+        return
+    if _seeded_chunks(DATABASE_URL, table_name, checksum) == len(chunks):
+        print(f"  [skip] the table already holds these {len(chunks)} chunks")
+        return
+
+    knowledge = build_knowledge(
+        db_url=DATABASE_URL,
+        api_key=GEMINI_API_KEY,
+        embedding_model=EMBEDDING_MODEL,
+        table_name=table_name,
+        cache_dir=EMBEDDING_CACHE_DIR,
+    )
+    vector_db = knowledge.vector_db
+    if vector_db.table_exists():
+        print("  [rebuild] dropping the previous contents")
+        vector_db.drop()
+    vector_db.create()
+
+    documents = [
+        Document(
+            id=chunk["chunk_id"],
+            name=chunk["title"],
+            content=chunk["chunk_text"],
+            meta_data={
+                **{key: chunk[key] for key in ("chunk_id", "destination", "state", "topic", "source", "section")},
+                CHECKSUM_KEY: checksum,
+            },
+        )
+        for chunk in chunks
+    ]
+    for start in range(0, len(documents), INSERT_BATCH_SIZE):
+        vector_db.insert(checksum, documents[start : start + INSERT_BATCH_SIZE])
+        print(f"  [insert] {min(start + INSERT_BATCH_SIZE, len(documents))}/{len(documents)}")
+
+    # Agno logs a document it could not embed and carries on, so count what arrived.
+    stored = _stored_with_embedding(DATABASE_URL, table_name)
+    if stored != len(chunks):
+        raise SystemExit(
+            f"ERROR: {stored} of {len(chunks)} chunks were stored; see the errors logged above. "
+            "Run the seed again: chunks embedded so far come from the cache."
+        )
+
+
+def seed_knowledge_base() -> None:
+    corpus = os.environ.get("KNOWLEDGE_CORPUS") or DEFAULT_CORPUS
+    if corpus == CORPUS_V1:
+        seed_source_documents()
+    else:
+        seed_corpus(os.path.join(ROOT_DIR, corpus))
 
 
 # ---------------------------------------------------------------------------
@@ -691,7 +981,7 @@ def main() -> None:
         seed_itinerary_categories(session)
         seed_prompt_templates(session)
 
-    seed_source_documents()
+    seed_knowledge_base()
 
     print("Seed complete.")
 

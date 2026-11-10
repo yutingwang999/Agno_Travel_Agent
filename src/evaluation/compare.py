@@ -106,6 +106,8 @@ METRIC_ROWS: list[Row] = [
     ("Trip length correct", lambda s: percent(get(s, "metrics.constraints.trip_length_rate"))),
     ("Within budget", lambda s: percent(get(s, "metrics.constraints.budget_rate"))),
     ("Attractions in destination", lambda s: percent(get(s, "metrics.constraints.destination_rate"))),
+    ("Citations supported", lambda s: percent(get(s, "metrics.citation.supported_share"))),
+    ("Days citing a source (with context)", lambda s: percent(get(s, "metrics.citation.days_citing_share"))),
     ("Format pass rate", lambda s: percent(get(s, "metrics.system.format_pass_rate"))),
     ("Retry rate", lambda s: percent(get(s, "metrics.system.retry_rate"))),
     ("Error rate", lambda s: percent(get(s, "metrics.system.error_rate"))),

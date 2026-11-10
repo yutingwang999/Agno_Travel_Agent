@@ -1,0 +1,31 @@
+The following JSON output from a travel planner AI does not match the required schema.
+
+Validation errors:
+{validation_errors}
+
+Invalid output:
+{raw_llm_output}
+
+All costs are AUD per person, excluding accommodation: "estimated_cost_aud" is what one traveller spends that day, and "total_estimated_cost_aud" is what one traveller spends over the whole trip.
+
+Keep each day's "sources" (citation ids such as "S1") as they are, unless an error above says a citation is invalid: then remove the ids it names.
+
+Return ONLY a corrected valid JSON object with this exact structure — no prose, no markdown fences:
+{
+  "destination": string,
+  "trip_length_days": integer,
+  "budget_level": string,
+  "travel_style": string,
+  "daily_itinerary": [
+    {
+      "day": integer,
+      "morning": string,
+      "afternoon": string,
+      "evening": string,
+      "estimated_cost_aud": number,
+      "sources": [string]
+    }
+  ],
+  "total_estimated_cost_aud": number,
+  "key_tips": [string]
+}

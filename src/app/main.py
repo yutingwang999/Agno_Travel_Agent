@@ -83,6 +83,7 @@ def build_additional_data(
         "budget": travel_request.budget,
         "travel_style": travel_request.travel_style,
         "max_daily_budget_aud": travel_request.max_daily_budget_aud,
+        "notes": travel_request.notes,
         "template_version": template_version,
     }
 
@@ -94,10 +95,9 @@ def _run_workflow(
 ) -> Iterator[dict]:
     """Run the Agno workflow and yield each step's SSE event as the step finishes.
 
-    Uses Agno's streaming run: every step, including ``rag_retrieve`` inside the
-    ``retrieval_branch`` Condition, yields a ``StepCompletedEvent`` carrying its
-    ``StepOutput`` content.  Events come out in execution order:
-    intake → cag_match → retrieval_decision → (rag_retrieve) → generate
+    Uses Agno's streaming run: every step yields a ``StepCompletedEvent``
+    carrying its ``StepOutput`` content.  Events come out in execution order:
+    intake → cag_match → retrieval_decision → rag_retrieve → generate
     → validate_output.
 
     This is a blocking generator — each ``next()`` runs the workflow up to the

@@ -5,10 +5,7 @@
 # cut off at the model's output limit, and repeated long requests would run up the
 # Gemini bill of a public deployment. Longer requests are rejected with 422.
 MAX_TRIP_LENGTH_DAYS: int = 14
-
-# Minimum CAG confidence score to skip RAG retrieval.
-# Raise to require retrieval more often; lower to rely more on cached answers.
-RETRIEVAL_CONFIDENCE_THRESHOLD: float = 0.85
+MAX_NOTES_LENGTH: int = 500
 
 # Upper bound on itinerary cost per budget level, in AUD per person per day,
 # EXCLUDING accommodation (itineraries contain no stay). The trip cap is this value

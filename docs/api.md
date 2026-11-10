@@ -48,12 +48,13 @@ Executes the 6-step CAG + RAG travel itinerary workflow and streams one Server-S
 | `budget` | string | Yes | One of `"budget"`, `"moderate"`, `"luxury"` |
 | `travel_style` | string | Yes | Non-empty free text (e.g. `"family"`, `"adventure"`) |
 | `max_daily_budget_aud` | integer | No | Daily budget per person in whole AUD, excluding accommodation; at least 1, no upper bound. Sets the request's daily budget ceiling (see below). A fractional value is a 422 |
+| `notes` | string | No | Free text for details the other fields cannot express, added to the retrieval query and to the generation prompt. Surrounding whitespace is stripped, at most 500 characters (longer is a 422), and blank counts as absent |
 
 **Daily budget ceiling.** All costs in the itinerary are AUD per person, excluding accommodation. The ceiling is `max_daily_budget_aud` when given, otherwise the budget level's default: `budget` 70, `moderate` 200, `luxury` none. The amount wins over the level when they seem to disagree (`budget` with 500 a day is accepted, with a ceiling of 500); the level still describes the travel style. The generation prompt states the ceiling, and an itinerary whose total exceeds the ceiling times the number of days fails validation and gets one correction call. Whether an amount is realistic for the destination is not checked.
 
 **Input guards.** After field validation and before the workflow starts, two checks run; neither calls an external API, and a refused request runs no workflow step:
 
-1. **Prompt injection.** `destination` and `travel_style` are matched against a configurable list of patterns (English and Chinese, e.g. "ignore previous instructions", "system prompt", `<|im_start|>`, "忽略之前的指令"). A match is refused with reason `input_rejected`.
+1. **Prompt injection.** `destination`, `travel_style` and `notes` are matched against a configurable list of patterns (English and Chinese, e.g. "ignore previous instructions", "system prompt", `<|im_start|>`, "忽略之前的指令"). A match is refused with reason `input_rejected`.
 2. **Destination.** The destination must be in the Australian place list (`data/places/australia.tsv`: Australian places from GeoNames with at least 1,000 people, states and territories, major tourist destinations, and one Chinese name per major place in Simplified and Traditional script). Trailing state, territory or country qualifiers are ignored (`"Sydney, NSW"`, `"Perth, WA, Australia"`). Anything else is refused with reason `destination_out_of_scope`, including:
    - places outside Australia (`"Paris"`);
    - destinations too vague to look up (`"Australia"`, `"the east coast"`);
@@ -88,7 +89,7 @@ The response body is a stream of SSE `data:` lines. Each line is a JSON object. 
 1. `intake`
 2. `cag_match`
 3. `retrieval_decision`
-4. `rag_retrieve` _(only when confidence score < 0.85)_
+4. `rag_retrieve`
 5. `generate`
 6. `validate_output`
 
@@ -122,7 +123,7 @@ Every event shares the same outer shape:
 
 #### `intake`
 
-Input fields after normalisation, validation and the input guards: `destination` is the canonical name from the place list, and `max_daily_budget_aud` is `null` when the request has none.
+Input fields after normalisation, validation and the input guards: `destination` is the canonical name from the place list, and `max_daily_budget_aud` and `notes` are `null` when the request has none.
 
 ```json
 {
@@ -135,7 +136,8 @@ Input fields after normalisation, validation and the input guards: `destination`
     "trip_length":          3,
     "budget":               "moderate",
     "travel_style":         "cultural",
-    "max_daily_budget_aud": null
+    "max_daily_budget_aud": null,
+    "notes":                null
   },
   "error": null
 }
@@ -170,11 +172,11 @@ Result of embedding-based intent classification against `itinerary_categories`.
 | `constraints` | string | Constraint hint from the matched category |
 | `is_fallback` | boolean | `true` when no match exceeded the minimum threshold and the default category was used |
 
-If the embedding call or loading the categories fails, the step still completes with `matched_category` = `"family"`, `confidence_score` = `0.0` and `is_fallback` = `true`, so the request takes the retrieval path; the trace row records `error_type` = `"embedding_failed"`.
+If the embedding call or loading the categories fails, the step still completes with `matched_category` = `"family"`, `confidence_score` = `0.0` and `is_fallback` = `true`, and the request continues as usual; the trace row records `error_type` = `"embedding_failed"`.
 
 #### `retrieval_decision`
 
-Routing decision based on the confidence threshold (0.85).
+The routing step. Every request is routed to `rag_retrieve`: confidence measures similarity to an itinerary category, not whether destination knowledge is needed. A redesigned routing rule may use this step later.
 
 ```json
 {
@@ -183,22 +185,19 @@ Routing decision based on the confidence threshold (0.85).
   "status":     "completed",
   "timestamp":  "2026-04-08T04:12:02.345678+00:00",
   "data": {
-    "routing_decision":  "generate",
-    "confidence_score":  0.91,
-    "threshold":         0.85
+    "routing_decision":  "rag_retrieve",
+    "confidence_score":  0.91
   },
   "error": null
 }
 ```
 
-| `routing_decision` | Meaning |
-|--------------------|---------|
-| `"rag_retrieve"` | Confidence was below threshold; the RAG step will run |
-| `"generate"` | Confidence was at or above threshold; RAG step is skipped |
+| Field | Type | Notes |
+|-------|------|-------|
+| `routing_decision` | string | Always `"rag_retrieve"` |
+| `confidence_score` | float | The `cag_match` score, for information only |
 
 #### `rag_retrieve`
-
-_(Only present when `routing_decision` is `"rag_retrieve"`.)_
 
 Top-k source document chunks retrieved from PgVector.
 
@@ -211,13 +210,18 @@ Top-k source document chunks retrieved from PgVector.
   "data": {
     "retrieved_context": [
       {
-        "destination": "Sydney",
+        "chunk_id":    "example-chunk-id",
+        "destination": "sydney",
+        "state":       "New South Wales",
         "title":       "Guide to Sydney",
-        "chunk_text":  "Example chunk text: a few sentences about the destination from the knowledge base..."
+        "chunk_text":  "Example chunk text: a few sentences about the destination from the knowledge base...",
+        "source":      "https://example.com/guide-to-sydney",
+        "section":     "See"
       }
     ],
     "chunks_retrieved":  5,
-    "query_text":        "cultural travel in sydney cultural itinerary"
+    "query_text":        "cultural travel in sydney",
+    "destination_matched": true
   },
   "error": null
 }
@@ -225,9 +229,10 @@ Top-k source document chunks retrieved from PgVector.
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `retrieved_context` | array | List of chunk objects. Empty array if retrieval failed (graceful degradation). |
+| `retrieved_context` | array | List of chunk objects. Empty array if retrieval failed (graceful degradation). `state` is `null` for Australia-wide documents, and `source` is a URL or `"handwritten"`. |
 | `chunks_retrieved` | integer | Number of chunks returned |
-| `query_text` | string | The query string sent to the vector search |
+| `query_text` | string | The query string sent to the search: the request's `notes` (if any), `travel_style` and `travel in <destination>` |
+| `destination_matched` | boolean | Whether the knowledge base holds chunks for the destination. Retrieval searches that destination plus the Australia-wide documents; when this is false, only the Australia-wide documents |
 
 #### `generate`
 
@@ -241,8 +246,11 @@ Raw LLM response and the prompt template that was used.
   "timestamp":  "2026-04-08T04:12:06.567890+00:00",
   "data": {
     "raw_llm_output":          "{ \"destination\": \"sydney\", ... }",
-    "prompt_template_key":     "high_confidence_minimal_context",
-    "prompt_template_version": 1
+    "prompt_template_key":     "itinerary_with_context",
+    "prompt_template_version": 4,
+    "context_sources": [
+      {"id": "S1", "chunk_id": "...", "title": "Sydney", "source": "https://...", "section": "See"}
+    ]
   },
   "error": null
 }
@@ -251,8 +259,11 @@ Raw LLM response and the prompt template that was used.
 | Field | Type | Notes |
 |-------|------|-------|
 | `raw_llm_output` | string | Raw text from the LLM before validation |
-| `prompt_template_key` | string | `"high_confidence_minimal_context"` or `"low_confidence_with_retrieval"` |
+| `prompt_template_key` | string | Always `"itinerary_with_context"` |
 | `prompt_template_version` | integer | The version of the template that was resolved |
+| `context_sources` | array | One entry per retrieved chunk placed in the prompt, in order: `id` (the citation id `S1`, `S2`, ...), `chunk_id`, `title`, `source` (URL), `section`. Empty when retrieval returned nothing |
+
+In the prompt each chunk is written as `[S1] <title>` followed by its text, and the model lists, for each day, the ids that day draws on.
 
 On error (template not found):
 
@@ -263,11 +274,11 @@ On error (template not found):
   "status":     "error",
   "timestamp":  "2026-04-08T04:12:06.567890+00:00",
   "data":       {},
-  "error":      "No active template found for key 'high_confidence_minimal_context'"
+  "error":      "No active template found for key 'itinerary_with_context'"
 }
 ```
 
-If the selected template is missing but `low_confidence_with_retrieval` exists, that template is used and reported in `prompt_template_key` / `prompt_template_version`.
+There is no fallback template: the LLM is not called.
 
 On error (LLM call failed) the event has the same shape, with `"error": "LLM call failed: <exception type>"`. Only the exception type is included; details stay in the server log.
 
@@ -293,21 +304,24 @@ Validated and structured itinerary. This is the final consumable output.
           "morning":               "Visit the Sydney Opera House and join a guided backstage tour.",
           "afternoon":             "Walk across the Harbour Bridge and explore The Rocks heritage precinct.",
           "evening":               "Dinner at a waterfront restaurant in Circular Quay.",
-          "estimated_cost_aud":    180.0
+          "estimated_cost_aud":    180.0,
+          "sources":               ["S1"]
         },
         {
           "day":                   2,
           "morning":               "Aboriginal Bush Tucker Tour at the Royal Botanic Gardens.",
           "afternoon":             "Art Gallery of NSW — permanent collection and Aboriginal art wing.",
           "evening":               "Live performance at the Sydney Opera House.",
-          "estimated_cost_aud":    160.0
+          "estimated_cost_aud":    160.0,
+          "sources":               ["S1", "S2"]
         },
         {
           "day":                   3,
           "morning":               "Coastal walk from Bondi Beach to Coogee.",
           "afternoon":             "Sydney Jewish Museum or Museum of Sydney.",
           "evening":               "Dinner in Surry Hills.",
-          "estimated_cost_aud":    140.0
+          "estimated_cost_aud":    140.0,
+          "sources":               []
         }
       ],
       "total_estimated_cost_aud": 480.0,
@@ -317,11 +331,17 @@ Validated and structured itinerary. This is the final consumable output.
         "Many galleries have free entry; check before paying at the door."
       ]
     },
-    "degraded_mode": false
+    "degraded_mode": false,
+    "citations": {
+      "S1": {"title": "Sydney", "source": "https://...", "section": "See"},
+      "S2": {"title": "Sydney/City Centre", "source": "https://...", "section": "Do"}
+    }
   },
   "error": null
 }
 ```
+
+Each day's `sources` lists the citation ids it draws on, possibly none. `citations` maps every id used in the itinerary to its `title`, `source` and `section` from the `generate` event's `context_sources`, so a client can show the sources under each day.
 
 `degraded_mode: true` means the first LLM response failed validation and a corrective retry was needed — the itinerary is still valid but was produced on the second attempt.
 
@@ -392,16 +412,14 @@ flowchart TD
     B --> C{cag_match:<br/>embed intent,<br/>load categories}
     C -- ok --> C1[completed:<br/>best category and score]
     C -- raises --> C2["completed: family, confidence 0.0,<br/>is_fallback true<br/>trace: embedding_failed"]
-    C1 --> D["retrieval_decision (Step):<br/>routing_decision = rag_retrieve<br/>if confidence < 0.85, else generate"]
+    C1 --> D["retrieval_decision:<br/>routing_decision = rag_retrieve"]
     C2 --> D
-    D --> R{"retrieval_branch (Condition):<br/>routing_decision?"}
-    R -- rag_retrieve --> E["rag_retrieve<br/>(a failed search continues<br/>with empty context)"]
-    R -- generate --> F[generate]
-    E --> F
+    D --> E["rag_retrieve<br/>(a failed search continues<br/>with empty context)"]
+    E --> F[generate]
     F --> G[validate_output]
 ```
 
-An embedding failure is treated as "no match": confidence 0.0 sends the request down the retrieval path. `retrieval_branch` emits no event of its own; it only reads the `retrieval_decision` event, and falls back to running `rag_retrieve` if that event is missing or malformed.
+An embedding failure is treated as "no match": the request continues with the default category and confidence 0.0. Every request runs `rag_retrieve`.
 
 #### Client disconnects
 
@@ -418,13 +436,9 @@ The stream simply ends; there is no error event, because there is no client left
 
 ```mermaid
 flowchart TD
-    S[select template by confidence] --> T{template found?}
+    S[resolve itinerary_with_context:<br/>active version, or template_version] --> T{template found?}
     T -- yes --> L
-    T -- no --> U{selected key is<br/>high_confidence_minimal_context?}
-    U -- yes --> V{low_confidence_with_retrieval<br/>found?}
-    V -- yes --> V1[report low_confidence_with_retrieval<br/>as the template used] --> L
-    V -- no --> X
-    U -- no --> X["error: No active template found<br/>for key '#lt;selected key#gt;'<br/>(LLM not called)"]
+    T -- no --> X["error: No active template found<br/>for key 'itinerary_with_context'<br/>(LLM not called)"]
     L{call Gemini} -- ok --> OK[completed:<br/>raw_llm_output, template key and version]
     L -- raises --> Y["error: LLM call failed: #lt;exception type#gt;<br/>trace: llm_call_failed"]
 ```
@@ -445,21 +459,24 @@ flowchart TD
     V2 -- no --> E3["error: Validation failed after retry<br/>trace: validation_failed_after_retry"]
 ```
 
-"Validation" means JSON parsing, the `ItineraryOutput` schema, and the business rules: the day count (internally and against the requested `trip_length`), daily costs adding up to the total, the total within the request's daily budget ceiling times the days, and no opening hours or prices in the text that the retrieved chunks do not state. A failed rule is reported in the correction prompt and, if the correction also fails, in `error` (messages begin `Content guardrail failed:` or `Business rule failed: cost` / `budget` / `unsupported`).
+"Validation" means JSON parsing, the `ItineraryOutput` schema, and the business rules: the day count (internally and against the requested `trip_length`), daily costs adding up to the total, the total within the request's daily budget ceiling times the days, no opening hours or prices in the text that the retrieved chunks do not state, and every citation id in a day's `sources` being one of the `generate` event's `context_sources` (all `sources` empty when there were none). A failed rule is reported in the correction prompt and, if the correction also fails, in `error` (messages begin `Content guardrail failed:` or `Business rule failed: cost` / `budget` / `unsupported` / `citation`).
 
 Every `validate_output` error event has `"data": { "degraded_mode": true }`. A reply blocked by Gemini's safety filter arrives as empty text, not as an exception, so it ends as "Validation failed after retry".
 
 #### Event sequences
 
-| Situation | `cag_match` | `generate` | `validate_output` |
-|---|---|---|---|
-| Everything works | completed | completed | completed, `degraded_mode` false |
-| Gemini fails during embedding | completed (fallback, `embedding_failed`) | completed | completed |
-| Gemini fails during generation (429, 503, network) | completed | error: `LLM call failed: ClientError` | error: `Generation failed upstream` |
-| No active template | completed | error: `No active template found for key ...` | error: `Generation failed upstream` |
-| First output invalid (schema or a business rule), correction valid | completed | completed | completed, `degraded_mode` true |
-| First output invalid, correction call fails | completed | completed | error: `Correction call failed: ServerError` |
-| First output and correction both invalid | completed | completed | error: `Validation failed after retry: ...` |
+`retrieval_decision` always completes with `routing_decision` = `"rag_retrieve"` and is left out of the table.
+
+| Situation | `cag_match` | `rag_retrieve` | `generate` | `validate_output` |
+|---|---|---|---|---|
+| Everything works | completed | completed | completed | completed, `degraded_mode` false |
+| Gemini fails during embedding | completed (fallback, `embedding_failed`) | completed | completed | completed |
+| The search fails | completed | completed, `retrieved_context` empty (logged; no `error_type`) | completed, `context_sources` empty | completed; every day's `sources` empty, `citations` empty |
+| Gemini fails during generation (429, 503, network) | completed | completed | error: `LLM call failed: ClientError` | error: `Generation failed upstream` |
+| No active `itinerary_with_context` (there is no fallback template) | completed | completed | error: `No active template found for key ...` | error: `Generation failed upstream` |
+| First output invalid (schema or a business rule, e.g. a citation id not in `context_sources`), correction valid | completed | completed | completed | completed, `degraded_mode` true |
+| First output invalid, correction call fails | completed | completed | completed | error: `Correction call failed: ServerError` |
+| First output and correction both invalid | completed | completed | completed | error: `Validation failed after retry: ...` |
 
 ---
 
@@ -495,7 +512,7 @@ Returns all `trace_events` rows written during a workflow run, ordered by `creat
     "step_name":                "generate",
     "status":                   "completed",
     "latency_ms":               3201.7,
-    "prompt_template_key":      "high_confidence_minimal_context",
+    "prompt_template_key":      "itinerary_with_context",
     "prompt_template_version":  1,
     "degraded_mode":            null,
     "error_type":               null,

@@ -1,0 +1,61 @@
+{
+  "run_id": "20261105T064205Z-rebuild-rag-q12-retrieval",
+  "retrieval_only": true,
+  "subset": "all",
+  "entries": 79,
+  "started_at": "2026-11-05T06:42:05.305321+00:00",
+  "finished_at": "2026-11-05T06:42:40.727551+00:00",
+  "phase_seconds": {
+    "total": 35.42
+  },
+  "conditions": {
+    "dataset_version": 3,
+    "corpus_version": "v2",
+    "knowledge_table": "travel_docs_v2_c800",
+    "config": {
+      "name": "rebuild-rag-q12",
+      "description": "BM25 and vector search fused with RRF, query with notes and with no category, filtered by destination, corpus v2, chunks of 800 characters with 80 overlap",
+      "generation_model": "gemini-3.1-flash-lite",
+      "embedding_model": "gemini-embedding-001",
+      "judge_model": "gpt-6-luna",
+      "corpus_version": "v2",
+      "knowledge_table": "travel_docs_v2_c800",
+      "embedding_task_types": "retrieval",
+      "destination_filter": true,
+      "search_mode": "bm25_rrf",
+      "query_notes": true,
+      "query_category": "no_category",
+      "retrieval_k": 5,
+      "judge_concurrency": 8,
+      "request_parser": false
+    },
+    "embedding_model": "gemini-embedding-001",
+    "git_commit": "2d73f89f56042d43fafa3c99ff305ab1963bdb70",
+    "git_dirty": false
+  },
+  "metrics": {
+    "retrieval": {
+      "k": 5,
+      "entries": 54,
+      "recall_at_k": 0.610185185185185,
+      "mrr_at_k": 0.8462962962962962,
+      "errors": 0,
+      "by_corpus_coverage": {
+        "city": {
+          "k": 5,
+          "entries": 38,
+          "recall_at_k": 0.4548245614035088,
+          "mrr_at_k": 0.8122807017543859
+        },
+        "national_only": {
+          "k": 5,
+          "entries": 16,
+          "recall_at_k": 0.9791666666666666,
+          "mrr_at_k": 0.9270833333333334
+        }
+      },
+      "retrieve_latency_p50_ms": 617.8649500002393,
+      "retrieve_latency_p95_ms": 673.092609999685
+    }
+  }
+}

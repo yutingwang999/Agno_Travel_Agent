@@ -46,7 +46,7 @@ def _get_mock_match_result():
 _VALID_ITINERARY_JSON = (
     '{"destination": "Sydney", "trip_length_days": 1, "budget_level": "moderate",'
     ' "travel_style": "family", "daily_itinerary": [{"day": 1, "morning": "Bondi Beach",'
-    ' "afternoon": "Lunch", "evening": "Dinner", "estimated_cost_aud": 150.0}],'
+    ' "afternoon": "Lunch", "evening": "Dinner", "estimated_cost_aud": 150.0, "sources": []}],'
     ' "total_estimated_cost_aud": 150.0, "key_tips": ["Book ahead"]}'
 )
 
@@ -94,7 +94,6 @@ def test_all_step_executors_importable():
         cag_match_executor,
         generate_executor,
         intake_executor,
-        needs_retrieval,
         rag_retrieve_executor,
         retrieval_decision_executor,
         validate_output_executor,
@@ -240,13 +239,6 @@ def test_validate_output_executor_returns_sse_event():
     _assert_sse_step_output(output, "validate_output")
 
 
-def test_needs_retrieval_returns_bool():
-    from app.workflow.steps.retrieval_decision import needs_retrieval
-
-    result = needs_retrieval(_make_step_input())
-    assert isinstance(result, bool)
-
-
 def test_retrieval_decision_executor_returns_sse_event():
     from app.workflow.steps.retrieval_decision import retrieval_decision_executor
 
@@ -260,17 +252,14 @@ def test_retrieval_decision_executor_returns_sse_event():
 
 
 def _collect_sse_events(step_results) -> list[dict]:
-    """Walk step_results (including nested Condition sub-steps) and collect SSE events.
+    """Walk step_results (including any nested sub-steps) and collect SSE events.
 
-    Skips any content that is not valid JSON — Agno inserts plain-text
-    placeholder strings (e.g. "Condition … not met - skipped N steps") when
-    a Condition branch is not taken.
+    Skips any content that is not valid JSON.
     """
     events = []
     for step_result in step_results:
         if step_result.steps:
-            # Condition node — collect events from sub-steps (e.g. rag_retrieve)
-            # if they ran.
+            # A node with sub-steps — collect their events.
             for sub in step_result.steps:
                 if sub.content:
                     try:
@@ -286,13 +275,12 @@ def _collect_sse_events(step_results) -> list[dict]:
 
 
 def test_workflow_run_produces_six_sse_events():
-    """All 6 steps emit one SSE event when the low-confidence path is taken."""
+    """All 6 steps emit one SSE event."""
     from unittest.mock import patch
 
     from app.workflow.cag_matcher import MatchResult
     from app.workflow.travel_workflow import travel_workflow
 
-    # Use low confidence (<0.85) so rag_retrieve runs and all 6 events are emitted.
     low_confidence_result = MatchResult(
         category_key="family",
         confidence_score=0.50,
@@ -375,7 +363,6 @@ def test_workflow_run_all_six_step_names_present():
     from app.workflow.cag_matcher import MatchResult
     from app.workflow.travel_workflow import travel_workflow
 
-    # Use low confidence so rag_retrieve runs and all 6 step names are present.
     low_confidence_result = MatchResult(
         category_key="family",
         confidence_score=0.50,

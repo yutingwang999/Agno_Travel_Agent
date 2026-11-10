@@ -32,7 +32,7 @@ def _itinerary(
         travel_style="family",
         daily_itinerary=[
             {"day": d + 1, "morning": text, "afternoon": "Lunch", "evening": "Dinner",
-             "estimated_cost_aud": daily_cost}
+             "estimated_cost_aud": daily_cost, "sources": []}
             for d in range(days)
         ],
         total_estimated_cost_aud=daily_cost * days if total is None else total,

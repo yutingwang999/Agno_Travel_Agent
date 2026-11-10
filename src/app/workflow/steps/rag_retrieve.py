@@ -23,7 +23,7 @@ import time
 
 from agno.workflow.types import StepInput, StepOutput
 
-from app.workflow.retrieval_service import retrieve_documents
+from app.workflow.retrieval_service import destination_in_knowledge_base, retrieve_documents
 from app.workflow.sse import build_sse_event, sse_event_to_json
 from app.workflow.trace_logger import write_trace
 
@@ -33,12 +33,12 @@ DEFAULT_TOP_K = 5
 
 
 def _build_query_text(step_input: StepInput) -> str:
-    """Construct a retrieval query from intake and cag_match step outputs.
+    """Construct a retrieval query from the intake step output.
 
-    Reads ``destination`` and ``travel_style`` from the intake SSE event and
-    ``matched_category`` from the cag_match SSE event to form a targeted
-    retrieval query.  Falls back to using just the destination if earlier step
-    outputs are unavailable.
+    Reads ``notes``, ``travel_style`` and ``destination`` from the intake SSE
+    event.  The matched category is left out: the 12-group comparison in
+    ``docs/experiments.md`` found it pulled retrieval away from the request.
+    Falls back to Australia if the destination is unavailable.
 
     Args:
         step_input: Agno step input carrying previous step outputs.
@@ -46,16 +46,16 @@ def _build_query_text(step_input: StepInput) -> str:
     Returns:
         A free-text query string for the knowledge-base search.
     """
+    notes = _extract_field_from_step(step_input, "intake", "notes")
     destination = _extract_field_from_step(step_input, "intake", "destination")
     travel_style = _extract_field_from_step(step_input, "intake", "travel_style")
-    matched_category = _extract_field_from_step(step_input, "cag_match", "matched_category")
 
     parts = []
+    if notes:
+        parts.append(notes)
     if travel_style:
         parts.append(travel_style)
     parts.append(f"travel in {destination}" if destination else "travel in Australia")
-    if matched_category:
-        parts.append(f"{matched_category} itinerary")
 
     return " ".join(parts)
 
@@ -69,14 +69,15 @@ def _extract_field_from_step(step_input: StepInput, step_name: str, field: str) 
         field:      Key to extract from the SSE event ``data`` dict.
 
     Returns:
-        The string value, or an empty string if unavailable or malformed.
+        The string value, or an empty string if unavailable, null or malformed.
     """
     content = step_input.get_step_content(step_name)
     if content is None:
         return ""
     try:
         event = json.loads(content)
-        return str(event.get("data", {}).get(field, ""))
+        value = event.get("data", {}).get(field)
+        return "" if value is None else str(value)
     except (json.JSONDecodeError, TypeError):
         return ""
 
@@ -84,9 +85,8 @@ def _extract_field_from_step(step_input: StepInput, step_name: str, field: str) 
 def rag_retrieve_executor(step_input: StepInput) -> StepOutput:
     """Retrieve top-k source document chunks relevant to the user's travel query.
 
-    Reads normalised input fields from the ``intake`` step and the matched
-    category from the ``cag_match`` step to build a targeted retrieval query.
-    Searches the Agno-managed knowledge base (``ai.travel_docs`` by default)
+    Reads normalised input fields from the ``intake`` step to build a targeted
+    retrieval query.  Searches the Agno-managed knowledge base (``ai.travel_docs`` by default)
     and writes the results to the SSE event ``data`` field as
     ``retrieved_context``.
 
@@ -111,6 +111,7 @@ def rag_retrieve_executor(step_input: StepInput) -> StepOutput:
 
     start = time.monotonic()
     query_text = _build_query_text(step_input)
+    destination = _extract_field_from_step(step_input, "intake", "destination") or None
 
     try:
         chunks = retrieve_documents(
@@ -119,6 +120,7 @@ def rag_retrieve_executor(step_input: StepInput) -> StepOutput:
             api_key=api_key,
             embedding_model=embedding_model,
             top_k=DEFAULT_TOP_K,
+            destination=destination,
         )
     except Exception as exc:  # noqa: BLE001
         logger.error(
@@ -130,9 +132,13 @@ def rag_retrieve_executor(step_input: StepInput) -> StepOutput:
 
     retrieved_context = [
         {
+            "chunk_id": chunk.metadata.get("chunk_id"),
             "destination": chunk.destination,
+            "state": chunk.metadata.get("state"),
             "title": chunk.title,
             "chunk_text": chunk.chunk_text,
+            "source": chunk.metadata.get("source"),
+            "section": chunk.metadata.get("section"),
         }
         for chunk in chunks
     ]
@@ -145,6 +151,7 @@ def rag_retrieve_executor(step_input: StepInput) -> StepOutput:
             "retrieved_context": retrieved_context,
             "chunks_retrieved": len(retrieved_context),
             "query_text": query_text,
+            "destination_matched": bool(destination) and destination_in_knowledge_base(destination, db_url),
         },
     )
 

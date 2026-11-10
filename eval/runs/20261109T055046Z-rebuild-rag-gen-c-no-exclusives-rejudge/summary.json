@@ -1,0 +1,229 @@
+{
+  "run_id": "20261109T055046Z-rebuild-rag-gen-c-no-exclusives-rejudge",
+  "subset": "dataset-v1",
+  "entries": 73,
+  "started_at": "2026-11-09T05:50:46.347301+00:00",
+  "finished_at": "2026-11-09T05:51:52.341503+00:00",
+  "phase_seconds": {
+    "total": 65.99
+  },
+  "conditions": {
+    "dataset_version": 3,
+    "corpus_version": "v2",
+    "knowledge_table": "travel_docs_v2_c800",
+    "config": {
+      "name": "rebuild-rag-gen-c-no-exclusives",
+      "description": "itinerary_with_context v4 (variant C plus \"do not invent exclusive or private arrangements unless the context offers them or the traveller asks\"); retrieval with notes, no category, vector search, destination filter, corpus v2, chunks 800/80",
+      "generation_model": "gemini-3.1-flash-lite",
+      "embedding_model": "gemini-embedding-001",
+      "judge_model": "gpt-6-luna",
+      "corpus_version": "v2",
+      "knowledge_table": "travel_docs_v2_c800",
+      "embedding_task_types": "retrieval",
+      "destination_filter": true,
+      "query_notes": true,
+      "query_category": "no_category",
+      "retrieval_k": 5,
+      "judge_concurrency": 8,
+      "request_parser": false,
+      "template_version": 4
+    },
+    "generation_model": "gemini-3.1-flash-lite",
+    "embedding_model": "gemini-embedding-001",
+    "judge_model": "gpt-6-luna",
+    "judge_prompts": {
+      "faithfulness": 2,
+      "destination": 2,
+      "preference": 4,
+      "citation": 1
+    },
+    "price_table_date": "2026-10-25",
+    "git_commit": "f7dc3fd739942276949328bab7111fe92b41925a",
+    "git_dirty": false,
+    "generation_templates": [
+      {
+        "key": "itinerary_with_context",
+        "version": 4
+      }
+    ],
+    "correction_template": {
+      "key": "validate_output_correction",
+      "version": 3
+    },
+    "source_git_commit": "12f6d7bfdc276f4c0ddc51241b4ea1f6b251e594"
+  },
+  "metrics": {
+    "slot_extraction": {
+      "value": null,
+      "reason": "no request parser"
+    },
+    "retrieval": {
+      "k": 5,
+      "entries": 49,
+      "recall_at_k": 0.6561224489795918,
+      "mrr_at_k": 0.8187074829931972,
+      "errors": 0
+    },
+    "behaviour": {
+      "overall": 0.8904109589041096,
+      "entries": 73,
+      "by_expected_behavior": {
+        "clarify": 0.0,
+        "plan": 1.0,
+        "refuse": 0.9166666666666666
+      },
+      "by_tag": {
+        "chinese_destination": 1.0,
+        "contradictory": 0.0,
+        "mixed_language": 1.0,
+        "out_of_scope": 0.8333333333333334,
+        "prompt_injection": 1.0,
+        "underspecified": 0.0,
+        "untagged": 1.0
+      }
+    },
+    "constraints": {
+      "planned": 59,
+      "trip_length_rate": 1.0,
+      "budget_rate": 1.0,
+      "budget_entries": 40,
+      "budget_not_applicable": 19,
+      "destination_rate": 0.9491525423728814,
+      "destination_judged": 59
+    },
+    "faithfulness": {
+      "overall": {
+        "itineraries": 59,
+        "claims": 1110,
+        "supported_share": 0.5702702702702702
+      },
+      "with_context": {
+        "itineraries": 59,
+        "claims": 1110,
+        "supported_share": 0.5702702702702702
+      },
+      "without_context": {
+        "itineraries": 0,
+        "claims": 0,
+        "supported_share": null
+      },
+      "by_corpus_coverage": {
+        "city": {
+          "itineraries": 33,
+          "claims": 679,
+          "supported_share": 0.7702503681885126
+        },
+        "national_only": {
+          "itineraries": 16,
+          "claims": 250,
+          "supported_share": 0.192
+        },
+        "none": {
+          "itineraries": 5,
+          "claims": 109,
+          "supported_share": 0.01834862385321101
+        }
+      },
+      "judge_errors": 0
+    },
+    "preference": {
+      "itineraries": 59,
+      "preferences": 114,
+      "followed_share": 0.9298245614035088,
+      "added_requirements": 5,
+      "itineraries_with_added_requirements": 5
+    },
+    "system": {
+      "requests": 73,
+      "format_pass_rate": 1.0,
+      "retry_rate": 0.0,
+      "error_rate": 0.0,
+      "latency_p50_ms": 4214.259400000174,
+      "latency_p95_ms": 5088.806229999864,
+      "step_latency_ms": {
+        "intake": {
+          "runs": 59,
+          "mean_ms": 0.0
+        },
+        "cag_match": {
+          "runs": 59,
+          "mean_ms": 650.8
+        },
+        "retrieval_decision": {
+          "runs": 59,
+          "mean_ms": 0.0
+        },
+        "rag_retrieve": {
+          "runs": 59,
+          "mean_ms": 678.5
+        },
+        "generate": {
+          "runs": 59,
+          "mean_ms": 2766.1
+        },
+        "validate_output": {
+          "runs": 59,
+          "mean_ms": 1.1
+        }
+      }
+    },
+    "cost": {
+      "currency": "USD",
+      "price_table_date": "2026-10-25",
+      "requests": 73,
+      "mean_generation_usd": 0.001018897260273973,
+      "mean_embedding_usd": 3.7921232876712325e-06,
+      "mean_request_usd": 0.0010226893835616436,
+      "requests_missing_usage": 0,
+      "judge_calls": 177,
+      "judge_total_usd": 0.14554279999999997
+    },
+    "citation": {
+      "itineraries": 59,
+      "itineraries_citing": 56,
+      "citations": 376,
+      "supported_share": 0.8776595744680851,
+      "missing_checks": 0,
+      "days_with_context": 246,
+      "days_citing_share": 0.8495934959349594,
+      "by_corpus_coverage": {
+        "city": {
+          "itineraries": 33,
+          "itineraries_citing": 33,
+          "citations": 278,
+          "supported_share": 0.9316546762589928,
+          "missing_checks": 0,
+          "days_with_context": 152,
+          "days_citing_share": 0.9802631578947368
+        },
+        "national_only": {
+          "itineraries": 16,
+          "itineraries_citing": 16,
+          "citations": 66,
+          "supported_share": 0.6666666666666666,
+          "missing_checks": 0,
+          "days_with_context": 54,
+          "days_citing_share": 0.8518518518518519
+        },
+        "none": {
+          "itineraries": 5,
+          "itineraries_citing": 2,
+          "citations": 5,
+          "supported_share": 0.2,
+          "missing_checks": 0,
+          "days_with_context": 30,
+          "days_citing_share": 0.13333333333333333
+        }
+      }
+    },
+    "rejudge": {
+      "judged": 59,
+      "judge_errors": 0,
+      "cost_usd": 0.03550619999999999
+    }
+  },
+  "rejudged_from": "20261109T030056Z-rebuild-rag-gen-c-no-exclusives-dataset-v1",
+  "rejudged_kinds": [
+    "citation"
+  ]
+}

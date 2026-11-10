@@ -1,0 +1,14 @@
+# rebuild-rag task 4.5: the chosen query and vector search, on chunks of 1200 characters. The baseline is rebuild-rag-q11.
+# Run with --retrieval-only: these configurations compare Recall, MRR and retrieval latency.
+name: rebuild-rag-c1200
+description: Vector search on the chosen query, filtered by destination, corpus v2, chunks of 1200 characters with 120 overlap
+generation_model: gemini-3.1-flash-lite
+embedding_model: gemini-embedding-001
+judge_model: gpt-6-luna
+corpus_version: v2
+knowledge_table: travel_docs_v2_c1200
+embedding_task_types: retrieval
+destination_filter: true
+retrieval_k: 5
+judge_concurrency: 8
+request_parser: false

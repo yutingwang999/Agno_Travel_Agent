@@ -56,7 +56,7 @@ def test_first_migration_enables_pgvector_extension():
 
 
 def test_migration_chain_is_contiguous():
-    """Revisions 0001-0006 must form an unbroken chain."""
+    """Revisions 0001-0007 must form an unbroken chain."""
     expected_chain = [
         ("0001", None),
         ("0002", "0001"),
@@ -64,6 +64,7 @@ def test_migration_chain_is_contiguous():
         ("0004", "0003"),
         ("0005", "0004"),
         ("0006", "0005"),
+        ("0007", "0006"),
     ]
     for revision, expected_down in expected_chain:
         files = list(MIGRATIONS_DIR.glob(f"{revision}_*.py"))
@@ -81,12 +82,11 @@ def test_migration_chain_is_contiguous():
 
 
 def test_models_import_without_error():
-    """All 4 models and Base must be importable."""
+    """All 3 models and Base must be importable."""
     from app.models import (  # noqa: F401
         Base,
         ItineraryCategory,
         PromptTemplate,
-        SourceDocument,
         TraceEvent,
     )
 
@@ -110,17 +110,6 @@ def test_prompt_template_model_columns():
     required = {"id", "template_key", "version", "template_text", "is_active", "created_at"}
     assert required == column_names, (
         f"PromptTemplate columns mismatch.\nExpected: {sorted(required)}\nGot: {sorted(column_names)}"
-    )
-
-
-def test_source_document_model_columns():
-    """SourceDocument must have all columns defined in DESIGN.md section 5."""
-    from app.models import SourceDocument
-
-    column_names = {col.key for col in SourceDocument.__table__.columns}
-    required = {"id", "destination", "title", "chunk_text", "embedding_vector", "metadata_json"}
-    assert required == column_names, (
-        f"SourceDocument columns mismatch.\nExpected: {sorted(required)}\nGot: {sorted(column_names)}"
     )
 
 
@@ -164,18 +153,18 @@ def test_pgvector_extension_is_active(db_engine):
 
 
 @pytest.mark.integration
-def test_all_four_tables_exist(db_engine):
-    """All 4 tables must exist after alembic upgrade head."""
+def test_all_three_tables_exist(db_engine):
+    """All 3 tables must exist after alembic upgrade head; source_documents is gone."""
     inspector = inspect(db_engine)
     existing_tables = set(inspector.get_table_names())
     expected_tables = {
         "itinerary_categories",
         "prompt_templates",
-        "source_documents",
         "trace_events",
     }
     missing = expected_tables - existing_tables
     assert not missing, f"Missing tables after upgrade head: {missing}"
+    assert "source_documents" not in existing_tables
 
 
 @pytest.mark.integration
@@ -197,17 +186,6 @@ def test_prompt_templates_db_columns(db_engine):
     required = {"id", "template_key", "version", "template_text", "is_active", "created_at"}
     assert required == columns, (
         f"prompt_templates DB columns mismatch.\nExpected: {sorted(required)}\nGot: {sorted(columns)}"
-    )
-
-
-@pytest.mark.integration
-def test_source_documents_db_columns(db_engine):
-    """Live source_documents columns must match DESIGN.md section 5."""
-    inspector = inspect(db_engine)
-    columns = {col["name"] for col in inspector.get_columns("source_documents")}
-    required = {"id", "destination", "title", "chunk_text", "embedding_vector", "metadata_json"}
-    assert required == columns, (
-        f"source_documents DB columns mismatch.\nExpected: {sorted(required)}\nGot: {sorted(columns)}"
     )
 
 
@@ -279,7 +257,7 @@ def test_trace_events_has_session_id_index(db_engine):
 
 @pytest.mark.destructive
 def test_downgrade_removes_all_tables(db_engine):
-    """alembic downgrade base must remove all 4 tables and the vector extension."""
+    """alembic downgrade base must remove all tables and the vector extension."""
     import subprocess
     import sys
 
@@ -329,9 +307,10 @@ def test_upgrade_head_reapplies_cleanly(db_engine):
     existing = set(inspector.get_table_names())
     fresh_engine.dispose()
 
-    expected = {"itinerary_categories", "prompt_templates", "source_documents", "trace_events"}
+    expected = {"itinerary_categories", "prompt_templates", "trace_events"}
     missing = expected - existing
     assert not missing, f"Tables missing after re-upgrade: {missing}"
+    assert "source_documents" not in existing
 
 
 @pytest.mark.destructive

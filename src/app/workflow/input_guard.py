@@ -34,7 +34,7 @@ REJECTION_MESSAGES: dict[str, str] = {
 }
 
 # The request fields users type freely; the others are enums and integers.
-FREE_TEXT_FIELDS = ("destination", "travel_style")
+FREE_TEXT_FIELDS = ("destination", "travel_style", "notes")
 
 _INJECTION = [re.compile(pattern, re.IGNORECASE | re.DOTALL) for pattern in PROMPT_INJECTION_PATTERNS]
 
@@ -55,7 +55,7 @@ def looks_like_injection(text: str) -> bool:
 def guard_request(request: TravelRequest) -> TravelRequest:
     """Return *request* with its canonical destination, or raise GuardRejection."""
     for field in FREE_TEXT_FIELDS:
-        if looks_like_injection(str(getattr(request, field))):
+        if looks_like_injection(getattr(request, field) or ""):
             raise GuardRejection(INPUT_REJECTED)
     canonical = canonical_destination(request.destination)
     if canonical is None:

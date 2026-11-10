@@ -7,12 +7,16 @@ and asserts that the check reports it. No database or API key is needed.
 import json
 
 import pytest
+from pydantic import ValidationError
 
 from evaluation.dataset import (
     DatasetEntry,
     DatasetError,
     DatasetMeta,
+    LOCAL_CORPUS_FILES,
+    _check_entry,
     check_dataset,
+    known_corpus_sections,
     load_dataset,
 )
 
@@ -210,13 +214,12 @@ def test_notes_are_optional_and_bounded():
         DatasetEntry.model_validate(raw[0])
 
 
-def test_v010_request_model_ignores_notes():
-    """The baseline sends form.notes too; v0.1.0's TravelRequest must drop it."""
+def test_request_model_keeps_notes():
+    """Entries send form.notes; rebuild-rag's TravelRequest keeps them (v0.1.0 dropped them)."""
     from app.workflow.intake_model import TravelRequest
 
     form = _entry(0)["form"] | {"notes": "kids are 6 and 9"}
-    request = TravelRequest.model_validate(form)
-    assert "notes" not in request.model_dump()
+    assert TravelRequest.model_validate(form).notes == "kids are 6 and 9"
 
 
 def test_prompt_injection_must_expect_refuse():
@@ -259,6 +262,57 @@ def test_unknown_section_fails():
     raw = _valid_raw()
     raw[0]["relevant_sections"] = [{"source": "handwritten", "section": "Guide to Perth"}]
     assert any("unknown section" in problem for problem in _check(raw))
+
+
+@pytest.mark.parametrize(
+    ("sections", "coverage", "valid"),
+    [
+        ([{"source": "Testville/Old Town", "section": "Eat"}], "city", True),
+        ([{"source": "handwritten", "section": "Made-up Topic"}], "national_only", True),
+        ([], "none", True),
+        ([{"source": "handwritten", "section": "Made-up Topic"}], "city", False),
+        ([{"source": "Testville/Old Town", "section": "Eat"}], "none", False),
+        ([], "national_only", False),
+    ],
+)
+def test_corpus_coverage_must_agree_with_the_labels(sections, coverage, valid):
+    entry = DatasetEntry.model_validate(_entry(1, relevant_sections=sections, corpus_coverage=coverage))
+
+    problems = _check_entry(entry, None)
+
+    assert bool(problems) is not valid
+
+
+def test_no_labels_are_allowed_for_coverage_none_without_needs_knowledge_false():
+    """A destination the corpus lacks still needs knowledge; it just has none to retrieve."""
+    entry = DatasetEntry.model_validate(_entry(1, relevant_sections=[], corpus_coverage="none"))
+
+    assert entry.needs_knowledge is True
+    assert _check_entry(entry, None) == []
+
+
+def test_unknown_corpus_coverage_value_is_rejected():
+    with pytest.raises(ValidationError):
+        DatasetEntry.model_validate(_entry(1, corpus_coverage="partly"))
+
+
+def test_local_corpus_sections_are_read_by_page_and_section(tmp_path, monkeypatch):
+    path = tmp_path / "corpus.jsonl"
+    path.write_text(
+        '{"source": "https://example.org/a", "title": "Testville/Old Town", "section": "Eat"}\n'
+        '{"source": "handwritten", "title": "Made-up Topic", "section": "Made-up Topic"}\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setitem(LOCAL_CORPUS_FILES, "v8", path)
+
+    assert known_corpus_sections("v8") == {("Testville/Old Town", "Eat"), ("handwritten", "Made-up Topic")}
+
+
+def test_missing_local_corpus_means_labels_cannot_be_checked(tmp_path, monkeypatch):
+    """A clone without the private corpus still passes the rest of the dataset check."""
+    monkeypatch.setitem(LOCAL_CORPUS_FILES, "v8", tmp_path / "missing.jsonl")
+
+    assert known_corpus_sections("v8") is None
 
 
 def test_unknown_corpus_version_fails():

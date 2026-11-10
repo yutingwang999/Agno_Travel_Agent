@@ -10,7 +10,9 @@ python scripts/eval_dataset_check.py                                 # dataset f
 python scripts/eval_run.py --config v010-baseline                    # full run (73 entries)
 python scripts/eval_run.py --config v010-baseline --subset smoke     # smoke subset (10 entries)
 python scripts/eval_run.py --config <name> --subset dataset-v1      # the 73 dataset-v1 entries, to compare with the v0.1.0 baseline
+python scripts/eval_run.py --config <name> --retrieval-only          # retrieval alone (Recall, MRR, retrieve latency): nothing generated or judged; for comparing retrieval configurations
 python scripts/eval_run.py --config <name> --subset budget-amount   # the dataset-v2 entries with a budget amount (e074-e079)
+python scripts/eval_rejudge.py <run id>                              # re-judge a stored run with the current judge prompts, nothing regenerated
 python scripts/eval_compare.py <run id> <run id>                     # Markdown comparison table
 python scripts/eval_gate.py                                          # smoke run + thresholds; non-zero exit on failure
 ```
@@ -35,6 +37,9 @@ Needs `EVAL_DATABASE_URL`, `GEMINI_API_KEY` and `OPENAI_API_KEY` in `.env` (see 
 | `eval/runs/<run id>/summary.json`, `eval/runs/<run id>/judge_prompts/`, `eval/runs/<run id>/generation_prompts/` | This repository. Every number in `docs/experiments.md` can be traced to a `summary.json` |
 | `eval/calibration/<run id>.agreement.json` (the agreement figures `score` prints: per-stratum counts and rates, no text) | This repository. The judge–human agreement in `docs/experiments.md` can be traced to it |
 | `eval/runs/<run id>/results.jsonl`, `eval/calibration/<run id>.jsonl` (sample, judge verdicts, human answers), `eval/calibration/<run id>.review.md` | Ignored by git here; copied by hand to a private repository, available on request |
+| `data/knowledge/v1/source_documents.json` (corpus v1, needed to re-run the v0.1.0 baseline) | Ignored by git here; copied by hand to the private repository at the same path. Corpus text is never committed to this repository |
+| `data/knowledge/sources.yaml`, `data/knowledge/SOURCES.md` (the page list with pinned revisions, needed to rebuild the corpus, and its attribution) | Ignored by git here; copied by hand to the private repository at the same paths. `python scripts/build_corpus.py build` rebuilds everything else in `data/knowledge/` from them and corpus v1 |
+| `migration/commit-map` (old-to-new commit hashes from the 2026-11-04 history rewrite; `git_commit` in earlier run summaries uses the old hashes) | Private repository only |
 
 The private files hold model output — every itinerary and knowledge context in full, or claim texts taken from them — and the reviewer's item-by-item answers; nothing in them is secret, but they are large or personal. Only runs with `git_dirty = false` are kept; delete the others.
 
@@ -47,6 +52,10 @@ The private files hold model output — every itinerary and knowledge context in
 **Giving someone access**: add them to the private repository as a read-only collaborator and remove them afterwards, or send the files of the runs they asked for. Do not make the repository public temporarily: once public, it can be cloned and forked, and making it private again does not take that back.
 
 **Runs made before `generation_prompts/` existed** (the v0.1.0 baseline runs and `harden-workflow-guardrails` step (a)) were given the directory afterwards with `python scripts/eval_generation_prompts.py <run id> --correction-version N`, which copies the texts from the evaluation database and leaves `summary.json` unchanged; the correction template version is the one active at the run's commit.
+
+### Re-judging a stored run
+
+`python scripts/eval_rejudge.py <run id>` applies the current judge prompts to a run's stored itineraries and knowledge context. Nothing is regenerated, so before and after can use the same prompts. It needs the run's local `results.jsonl`, and writes a new run directory named `<UTC time>-<source config>-rejudge`. Its summary is the source's with the judge's metrics replaced, `rejudged_from` naming the source, and `metrics.rejudge` holding the count, errors and judge cost; `conditions.git_commit` is the commit that re-judged and `conditions.source_git_commit` the one that generated. `--kinds` limits which judge calls run (default `faithfulness,destination,preference`; add `citation` for citation accuracy), and `--entries` limits the entries, for checking a prompt by hand. Each record gets the entry's `corpus_coverage` from the current dataset, so the re-judged metrics can be split by it.
 
 ## Reading `summary.json`
 
@@ -126,13 +135,25 @@ Observed behaviour is `plan` (a validated itinerary), `refuse` (422 with a guard
 | `destination_rate` | Share whose every named place the judge considers in the destination or within a reasonable day trip (departure and return points are not counted) |
 | `destination_judged` | Itineraries the judge checked |
 
-**`faithfulness`** — The judge extracts specific claims (opening hours, prices, named places, transport routes and durations) and decides whether the knowledge context the generator was given supports each one; a matching name with a different location is unsupported.
+**`faithfulness`** — The judge extracts specific claims (opening hours, prices, named places, transport routes and durations, and from prompt v2 activities at a place and seasons) and decides whether the knowledge context the generator was given supports each one; a matching name with a different location is unsupported. Numbers from different prompt versions are not comparable: `conditions.judge_prompts` says which one a run used.
+
+**`preference`** — From judge prompt `preference_v4` (v1 counted planned meals and etiquette as added requirements, v2 still counted being able to do a planned activity, and v3 failed calibration on celebratory dinners, descriptions of chosen places and plans that follow from a stated need, see `docs/experiments.md`). The judge lists what the traveller's `travel_style` and `notes` ask of the trip and decides whether the itinerary follows each (`followed_share`). It also lists what the itinerary assumes about the traveller that they did not state, such as their access needs, diet, who travels with them or the reason for the trip (`added_requirements`, `itineraries_with_added_requirements`), for example wheelchair access for "seniors, slow pace"; these are counted, not treated as failures, since some defaults are reasonable. Calibration (2026-11-08, see `docs/experiments.md`): `followed_share` passes; `added_requirements` does not (6 of 9 agreed under v4), so it is reported as a count and checked by reading the listed items, not used as a decision criterion on its own. One known cause: the judge does not receive the budget level, so a choice that follows from `luxury` can be listed as an assumption.
+
+**`citation`** — Citation accuracy, from judge prompt `citation_v2` (`rebuild-rag`; v1 passed calibration narrowly but treated a named place the day goes to, or what that place offers, as unsupported, see `docs/experiments.md`). Each day of an itinerary lists the ids of the knowledge chunks it draws on (`sources`); for every (day, cited chunk) pair the judge decides whether the chunk states at least one specific thing the day plans: a named place, venue, tour or event, or a specific fact the day relies on, including a named place the day goes to and what it offers that the day does there (surfing lessons in a beach town for a morning surfing at one of its beaches). One such item is enough; a chunk that only shares the day's theme (seafood across Australia for a seafood dinner in Adelaide), only names the destination itself, or is about another place does not support it. Whether the rest of the day is grounded is faithfulness's job. An itinerary that cites nothing gets no judge call. `by_corpus_coverage` has the same fields per coverage group.
+
+| Field | Meaning |
+| --- | --- |
+| `itineraries` / `itineraries_citing` | Judged itineraries, and those citing at least one chunk |
+| `citations` / `supported_share` | Judged (day, chunk) pairs, and the share the cited chunk supports |
+| `missing_checks` | Pairs the judge did not answer (left out of `supported_share`) |
+| `days_with_context` / `days_citing_share` | Days of itineraries whose generator had knowledge context, and the share citing at least one chunk |
 
 | Field | Meaning |
 | --- | --- |
 | `overall` | `itineraries`, `claims` and `supported_share` over all judged itineraries |
 | `with_context` | The same, for requests that went through retrieval |
 | `without_context` | The same, for requests the generator answered with no knowledge context; every claim is unsupported by definition, so expect 0 |
+| `by_corpus_coverage` | The same per `corpus_coverage` group of the dataset: `city` (pages for the destination), `national_only` (only Australia-wide documents apply), `none` (nothing applies; these entries have no labels and take no part in Recall) |
 | `judge_errors` | Itineraries the judge could not score after its retries |
 
 `supported_share` measures grounding, not truth: a correct fact that the knowledge base does not contain counts as unsupported. Compare `with_context` across runs; it is the number retrieval changes are expected to move.
@@ -188,9 +209,13 @@ The sample is stratified, so that the judge's likely mistakes get reviewed witho
 
 - 20 itineraries drawn at random (fixed seed) from a clean full run;
 - in each: **every** claim the judge called supported (where a judge is most likely to be wrong, e.g. a name matched in the wrong city), up to 5 of the claims it called unsupported, and up to 4 places;
-- plus every other itinerary of the run with a place the judge put **outside** the destination, reviewed for the destination check only, so both of the judge's answers are checked.
+- plus every other itinerary of the run with a place the judge put **outside** the destination, a preference it called not followed, or an added requirement, reviewed for those items only, so the judge's less common answers are checked too.
 
 Agreement is reported per stratum (per judge answer), never as one pooled rate, because the strata are not sampled in proportion.
+
+After a corpus change only faithfulness needs recalibrating, since the destination and preference judges do not read the knowledge context: `sample <run id> --kinds faithfulness [--max-supported N]` draws 20 itineraries with their claims only. On corpus v2 about half of all claims are judged supported, against about a fifth on corpus v1, so every supported claim would make a sheet of over 300 items; `--max-supported` samples at most N of them per itinerary at random (6 in `rebuild-rag`). Agreement is still reported per stratum.
+
+Citation accuracy is calibrated on its own, on a run judged with the citation prompt (a re-judged run with `--kinds citation` will do): `sample <run id> --kinds citation` draws 20 itineraries that cite something and, in each, up to 2 citations the judge called supported and up to 3 it called unsupported, plus up to 2 unsupported citations from every other itinerary.
 
 ### How to review
 
@@ -206,13 +231,19 @@ Replace each `?` with `y` or `n`; `supported` is `-` when the item is not a clai
 
 | Field | Set to `true` when | Set to `false` when |
 | --- | --- | --- |
-| `is_claim` | The text is one of the four kinds: an opening-hours statement about a place; a specific price of a specific thing (including "free entry" to a named place); a specific named venue, attraction, tour, event, business or named transport service; a specific transport route or duration between places | It is a general description ("enjoy the views", "cheap eats", "a free way to spend the morning"), traveller scheduling ("leave at 9am"), or the itinerary's own cost estimate |
+| `is_claim` | The text is one of the judge prompt's kinds (four in v1; v2 adds an activity at a place and a season): an opening-hours statement about a place; a specific price of a specific thing (including "free entry" to a named place); a specific named venue, attraction, tour, event, business or named transport service; a specific transport route or duration between places | It is a general description ("enjoy the views", "cheap eats", "a free way to spend the morning"), traveller scheduling ("leave at 9am"), or the itinerary's own cost estimate |
 | `supported` (only when `is_claim` is `true`) | The knowledge context states it, or something that directly implies it, **consistently with the itinerary** — the same place, in the same location | The context does not contain it, even if it is true in reality; or the context ties it to a different place (a Sydney tour placed in a Darwin itinerary). With no context, always `false` |
 | `in_destination` | The place is in the destination or a reasonable day trip from it for this trip length | It is too far to visit from the destination within this trip. Departure and return points should not appear; if one does, mark it `true` and note it |
 
+**Activities and seasons in judge prompt v2.** An `activity` is a specific thing a place has to offer ("swim with seals at Kangaroo Island"), not something anyone can do anywhere (walking around, having lunch, taking photos). It is supported only when the context offers that activity at that place. A `season` says certain months suit a place or activity; it is supported only when the context gives the same months for the same place or activity, and overlapping months are unsupported. When a place or service operates stays `opening_hours`. The two paragraphs below describe v1 and apply when reviewing a v1 run.
+
+**Preferences and added requirements.** `followed`: `y` when the itinerary visibly does what was asked: a specific request is planned at least once, a single-interest style shapes most of the trip, and each interest of a style with several has a real part of the plan, though not on every day; a passing mention in a tip does not count. Decide fit only, not whether the places are real. `added`: `y` when the itinerary treats something as true of this traveller and plans around it, though they did not state it: access needs, a diet, who they are or travel with, or the reason for the trip. `n` when the traveller's words state or directly imply it (including what the plan does because of it, such as avoiding strenuous hikes for a wheelchair user), or when it is a planned activity or meal (a celebratory dinner included), being physically able to do what the plan includes, advice on how to behave or what to bring, a choice of places or services or what a chosen place offers, or a cost choice. Both are decided from the request and the itinerary, without the knowledge context.
+
+**Citations.** A citation item shows the day's plan and the full text of the chunk it cites, with one line per (day, chunk) pair: `ci1  [supports: ?]   judge: SUPPORTED · day 2 · S3 · item: "..."`. `supports`: `y` when the chunk states at least one specific thing the day plans — a named place, venue, attraction, tour or event, or a specific fact the day relies on (a route, a market day, what a named place offers); one item is enough, and a shortened or reworded name of the same place counts. Under `citation_v2` this explicitly includes a named place the day goes to and what it offers that the day does there (surfing lessons in a beach town, for a morning surfing at one of its beaches), but not the destination's name alone. `n` when the chunk only shares the day's theme or kind of activity (a chunk on seafood across Australia for "a seafood dinner in Adelaide"), names the same kind of attraction in another place, or states nothing the day plans. Decide from the chunk text only, not from what you know, and ignore whether the rest of the day is accurate.
+
 **Activities at a place are not claims in judge prompt v1.** In "spot wild koalas at Kennett River", the named place (Kennett River) is a claim; the activity (spotting koalas there) is not. When the judge extracts such a sentence as a `named_place` claim, decide `supported` on the place alone — is it in the context, in the same location — and ignore the activity. This keeps the review consistent with what faithfulness v1 measures. It also means an invented activity at a real place ("swim with dolphins at Bondi") is not caught; a later judge prompt adds an `activity` kind (see `rebuild-rag`).
 
-Also list after `missed:` any claim of the four kinds that the judge did not extract, as short quotes separated by `;`. Under each itinerary's sampled claims, the sheet lists the judge's other (unsampled) claims for reference: a claim in the itinerary that appears in neither list is a missed one. Missed claims are noted when seen while reading, not found by a line-by-line search, so the count is a lower bound; say so when reporting it.
+Also list after `missed:` any claim of the prompt's kinds that the judge did not extract, as short quotes separated by `;`. Under each itinerary's sampled claims, the sheet lists the judge's other (unsampled) claims for reference: a claim in the itinerary that appears in neither list is a missed one. Missed claims are noted when seen while reading, not found by a line-by-line search, so the count is a lower bound; say so when reporting it.
 
 ### Review questions and the reasoning behind the answers
 
@@ -285,12 +316,14 @@ If the judge extracts the *same* text twice — the route as `transport` and "Ma
 
 `score` prints, per stratum, how many items were compared and the agreement:
 
+- `preference.judge_followed` and `preference.judge_not_followed` — of the preferences the judge called followed or not followed, the share the reviewer agrees with; `preference.judge_added` — of the requirements the judge called added, the share the reviewer agrees really are.
 - `faithfulness.judge_supported` — of the claims the judge called supported, the share the reviewer also calls supported; low values mean faithfulness is **overstated**.
 - `faithfulness.judge_unsupported` — the same for unsupported; low values mean faithfulness is **understated**.
 - `extraction_precision` and `missed_claims` — how well the judge picks out claims.
 - `destination.judge_in` / `destination.judge_out` — the same for the destination check.
+- `citation.judge_supported` / `citation.judge_unsupported` — the same for citation accuracy; a low `judge_supported` means `supported_share` is overstated.
 
-If any stratum is below 0.8, improve the judge prompt (a new version) and recalibrate before relying on that metric. Record the result in the baseline or change entry of `experiments.md`, with the sample sizes.
+If any stratum is below 0.8, improve the judge prompt (a new version) and recalibrate before relying on that metric; if that is not done, say next to the metric that it failed calibration, as for `preference.judge_added`. Record the result in the baseline or change entry of `experiments.md`, with the sample sizes.
 
 ## Time and cost per run
 
@@ -309,7 +342,7 @@ Source: run `20261026T105704Z-v010-baseline-smoke` (10 entries, commit `88e5ad0`
 | Retrieval measurement, per labelled entry (harness side) | 1.36 s | ≈ 0 (embeddings) |
 | One judge call (`gpt-6-luna`, ≈ 1,230 input / 1,680 output tokens) | 19.2 s | 0.00096 |
 
-Each planned itinerary gets two judge calls (faithfulness and destination). v0.1.0 produces an itinerary for every request, including the ones it should refuse; once `harden-workflow-guardrails` rejects them with 422, those entries need neither generation nor judging and a run gets cheaper.
+Each planned itinerary gets three judge calls from `rebuild-rag` on (faithfulness, destination and preference); the measurements above are from a run with two. v0.1.0 produces an itinerary for every request, including the ones it should refuse; once `harden-workflow-guardrails` rejects them with 422, those entries need neither generation nor judging and a run gets cheaper.
 
 ### Formulas
 

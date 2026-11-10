@@ -8,6 +8,7 @@ the values involved, so the correction call knows what to fix:
 - ``Business rule failed: cost ...``         — daily costs do not add up to the total
 - ``Business rule failed: budget ...``       — total above the request's ceiling
 - ``Business rule failed: unsupported ...``  — opening hours or prices not in the knowledge context
+- ``Business rule failed: citation ...``     — a day cites an id the knowledge context does not have (rebuild-rag)
 
 Public API:
     ValidationContext
@@ -39,11 +40,16 @@ class ValidationContext:
                                person, or None when it has none.
         knowledge_context:     ``chunk_text`` of every retrieved chunk joined,
                                or "" when retrieval did not run.
+        citation_ids:          The citation ids the generate step placed in the
+                               prompt (``context_sources``), empty when there
+                               was no knowledge context, or None when unknown
+                               (the citation rule is then skipped).
     """
 
     requested_trip_length: int | None = None
     daily_ceiling: float | None = None
     knowledge_context: str = ""
+    citation_ids: frozenset[str] | None = None
 
 
 def _aud(amount: float) -> str:
@@ -219,11 +225,49 @@ def unsupported_specifics_rule(output: "ItineraryOutput", context: ValidationCon
 
 Rule = Callable[["ItineraryOutput", ValidationContext], str | None]
 
+# ---------------------------------------------------------------------------
+# Citations (rebuild-rag)
+# ---------------------------------------------------------------------------
+
+
+def _id_order(cid: str) -> tuple[int, str]:
+    digits = cid[1:]
+    return (int(digits), cid) if cid[:1] == "S" and digits.isdigit() else (10**9, cid)
+
+
+def citation_rule(output: "ItineraryOutput", context: ValidationContext) -> str | None:
+    """Every id in a day's ``sources`` must be one the knowledge context offered.
+
+    When no knowledge context was given, every ``sources`` list must be empty.
+    Skipped when the offered ids are unknown (``citation_ids`` is None).
+    """
+    if context.citation_ids is None:
+        return None
+    invalid = [
+        f"day {day.day} cites {cid}"
+        for day in output.daily_itinerary
+        for cid in day.sources
+        if cid not in context.citation_ids
+    ]
+    if not invalid:
+        return None
+    if context.citation_ids:
+        offered = ", ".join(sorted(context.citation_ids, key=_id_order))
+        allowed = f"the knowledge context only has {offered}"
+    else:
+        allowed = "no knowledge context was provided, so every sources list must be empty"
+    return (
+        f"Business rule failed: citation — {'; '.join(invalid)}, but {allowed}. "
+        f"Cite only ids that appear in the knowledge context."
+    )
+
+
 RULES: list[Rule] = [
     day_count_rule,
     cost_consistency_rule,
     budget_ceiling_rule,
     unsupported_specifics_rule,
+    citation_rule,
 ]
 
 

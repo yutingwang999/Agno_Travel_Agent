@@ -97,16 +97,27 @@
       }
 
       .field input,
-      .field select {
+      .field select,
+      .field textarea {
         width: 100%;
         padding: 0.45rem 0.6rem;
         border: 1px solid #ccc;
         border-radius: 4px;
         font-size: 0.95rem;
+        font-family: inherit;
+      }
+
+      .field textarea {
+        resize: vertical;
+      }
+
+      .field.full {
+        grid-column: 1 / -1;
       }
 
       .field input:focus,
-      .field select:focus {
+      .field select:focus,
+      .field textarea:focus {
         outline: 2px solid #0f3460;
         border-color: transparent;
       }
@@ -235,6 +246,90 @@
         margin-top: 0.4rem;
       }
 
+      /* ---- Itinerary ---- */
+      .day-card {
+        border: 1px solid #e3e7ee;
+        border-radius: 6px;
+        padding: 0.85rem 1rem;
+        margin-bottom: 0.75rem;
+      }
+
+      .day-card h3 {
+        font-size: 0.95rem;
+        margin-bottom: 0.5rem;
+        color: #16213e;
+      }
+
+      .day-card dl {
+        display: grid;
+        grid-template-columns: 6rem 1fr;
+        gap: 0.3rem 0.75rem;
+        font-size: 0.9rem;
+      }
+
+      .day-card dt {
+        color: #666;
+        font-weight: 500;
+      }
+
+      .day-cost {
+        margin-top: 0.5rem;
+        font-size: 0.82rem;
+        color: #555;
+      }
+
+      .day-sources {
+        margin-top: 0.6rem;
+        padding-top: 0.5rem;
+        border-top: 1px dashed #e3e7ee;
+        font-size: 0.82rem;
+      }
+
+      .day-sources ul {
+        list-style: none;
+        margin-top: 0.2rem;
+      }
+
+      .day-sources li {
+        margin-bottom: 0.15rem;
+      }
+
+      .source-id {
+        display: inline-block;
+        min-width: 2rem;
+        color: #888;
+        font-family: monospace;
+      }
+
+      .day-sources a {
+        color: #0f3460;
+      }
+
+      .no-sources {
+        color: #999;
+      }
+
+      .itinerary-summary {
+        font-size: 0.9rem;
+        margin: 0.5rem 0;
+      }
+
+      .itinerary-summary ul {
+        margin: 0.3rem 0 0 1.2rem;
+      }
+
+      .licence-note {
+        margin-top: 0.75rem;
+        font-size: 0.78rem;
+        color: #666;
+      }
+
+      @media (max-width: 540px) {
+        .day-card dl {
+          grid-template-columns: 1fr;
+        }
+      }
+
       /* ---- Trace table ---- */
       #trace-section {
         display: none;
@@ -300,8 +395,8 @@
           <button class="preset-btn" onclick="fillPreset('budget')">
             Budget trip
           </button>
-          <button class="preset-btn" onclick="fillPreset('lowconf')">
-            Low-confidence
+          <button class="preset-btn" onclick="fillPreset('outside')">
+            Outside the knowledge base
           </button>
         </div>
 
@@ -348,6 +443,18 @@
                 required
               />
             </div>
+            <div class="field optional full">
+              <label for="notes">Notes</label>
+              <textarea
+                id="notes"
+                name="notes"
+                rows="3"
+                maxlength="500"
+                placeholder="e.g. Our kids are 6 and 9, and we'd like one beach day."
+                aria-describedby="notes_hint"
+              ></textarea>
+              <span class="hint" id="notes_hint">Anything else the planner should know, in your own words (up to 500 characters).</span>
+            </div>
             <div class="field optional">
               <label for="max_daily_budget_aud">Daily budget per person (AUD, excl. accommodation)</label>
               <input
@@ -381,6 +488,9 @@
       <!-- Step-by-step SSE panels -->
       <div id="steps-container"></div>
 
+      <!-- The validated itinerary as day cards, with each day's sources -->
+      <div id="itinerary-section" class="card" style="display: none"></div>
+
       <!-- Trace table (shown after stream completes) -->
       <div id="trace-section" class="card">
         <h2>Trace Log</h2>
@@ -403,7 +513,8 @@
 
     <script>
       // ---------------------------------------------------------------------------
-      // Preset values (mirrors test_golden.py inputs)
+      // Preset values (mirrors test_golden.py inputs). "outside" is a destination
+      // with no city documents, so only the Australia-wide documents are retrieved.
       // ---------------------------------------------------------------------------
       const PRESETS = {
         family: {
@@ -418,7 +529,7 @@
           budget: "budget",
           travel_style: "budget",
         },
-        lowconf: {
+        outside: {
           destination: "Alice Springs",
           trip_length: 4,
           budget: "moderate",
@@ -463,6 +574,7 @@
         document.getElementById("trip_length").value = p.trip_length;
         document.getElementById("budget").value = p.budget;
         document.getElementById("travel_style").value = p.travel_style;
+        document.getElementById("notes").value = "";
         budgetAmountInput.value = "";
         checkBudgetAmount();
         checkTripLength();
@@ -507,6 +619,9 @@
         document.getElementById("steps-container").innerHTML = "";
         document.getElementById("trace-section").style.display = "none";
         document.getElementById("trace-tbody").innerHTML = "";
+        const itinerary = document.getElementById("itinerary-section");
+        itinerary.innerHTML = "";
+        itinerary.style.display = "none";
         currentSessionId = null;
       }
 
@@ -532,9 +647,12 @@
           .getElementById("max_daily_budget_aud")
           .value.trim();
 
-        // Build request body; the budget amount is sent only when filled in
+        const notes = document.getElementById("notes").value.trim();
+
+        // Build request body; the budget amount and notes are sent only when filled in
         const body = { destination, trip_length, budget, travel_style };
         if (amount) body.max_daily_budget_aud = parseInt(amount, 10);
+        if (notes) body.notes = notes;
 
         // Build URL (template_version as query param if provided)
         let url = "/generate";
@@ -653,6 +771,154 @@
 
         container.appendChild(panel);
         panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+        if (
+          event.step === "validate_output" &&
+          status === "completed" &&
+          event.data &&
+          event.data.itinerary
+        ) {
+          renderItinerary(event.data.itinerary, event.data.citations || {});
+        }
+      }
+
+      // ---------------------------------------------------------------------------
+      // Render the validated itinerary: one card per day, with the sources it cites
+      // (validate_output's "citations" resolves each id to title, source, section)
+      // ---------------------------------------------------------------------------
+      const WIKIVOYAGE_HOST = "wikivoyage.org";
+      const LICENCE_NAME = "CC BY-SA 4.0";
+      const LICENCE_URL = "https://creativecommons.org/licenses/by-sa/4.0/";
+
+      function el(tag, className, text) {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text != null) node.textContent = text;
+        return node;
+      }
+
+      // Only http(s) URLs become links; "handwritten" and anything else stay text.
+      function sourceUrl(source) {
+        try {
+          const url = new URL(source);
+          return url.protocol === "https:" || url.protocol === "http:" ? url : null;
+        } catch (_) {
+          return null;
+        }
+      }
+
+      function isWikivoyage(url) {
+        return (
+          url !== null &&
+          (url.hostname === WIKIVOYAGE_HOST ||
+            url.hostname.endsWith("." + WIKIVOYAGE_HOST))
+        );
+      }
+
+      function renderSource(id, citation) {
+        const li = el("li");
+        li.appendChild(el("span", "source-id", id));
+        const label = citation.section
+          ? `${citation.title} — ${citation.section}`
+          : citation.title || id;
+        const url = sourceUrl(citation.source);
+        // Wikivoyage anchors are the heading with spaces as underscores ("Get around"
+        // → #Get_around). "Introduction" is the text before the first heading: no anchor.
+        if (url && isWikivoyage(url) && citation.section && citation.section !== "Introduction") {
+          url.hash = citation.section.replace(/ /g, "_");
+        }
+        if (url) {
+          const a = el("a", null, label);
+          a.href = url.href;
+          a.target = "_blank";
+          a.rel = "noopener noreferrer";
+          li.appendChild(a);
+          if (isWikivoyage(url)) li.appendChild(document.createTextNode(" (Wikivoyage)"));
+        } else {
+          li.appendChild(document.createTextNode(label));
+          if (citation.source === "handwritten") {
+            li.appendChild(document.createTextNode(" (curated note)"));
+          }
+        }
+        return { li, wikivoyage: isWikivoyage(url) };
+      }
+
+      function renderItinerary(itinerary, citations) {
+        const section = document.getElementById("itinerary-section");
+        section.innerHTML = "";
+        const days = itinerary.daily_itinerary || [];
+        section.appendChild(
+          el("h2", null, `Your itinerary: ${itinerary.destination}, ${days.length} days`),
+        );
+
+        let citesWikivoyage = false;
+        for (const day of days) {
+          const card = el("div", "day-card");
+          card.appendChild(el("h3", null, `Day ${day.day}`));
+          const dl = el("dl");
+          for (const [label, key] of [
+            ["Morning", "morning"],
+            ["Afternoon", "afternoon"],
+            ["Evening", "evening"],
+          ]) {
+            dl.appendChild(el("dt", null, label));
+            dl.appendChild(el("dd", null, day[key] || "—"));
+          }
+          card.appendChild(dl);
+          card.appendChild(
+            el("div", "day-cost", `Estimated cost: ${day.estimated_cost_aud} AUD per person`),
+          );
+
+          const sources = el("div", "day-sources");
+          sources.appendChild(el("strong", null, "Sources"));
+          const ids = (day.sources || []).filter((id) => citations[id]);
+          if (ids.length === 0) {
+            sources.appendChild(
+              el("div", "no-sources", "No source in the knowledge base for this day."),
+            );
+          } else {
+            const ul = el("ul");
+            for (const id of ids) {
+              const { li, wikivoyage } = renderSource(id, citations[id]);
+              citesWikivoyage = citesWikivoyage || wikivoyage;
+              ul.appendChild(li);
+            }
+            sources.appendChild(ul);
+          }
+          card.appendChild(sources);
+          section.appendChild(card);
+        }
+
+        const summary = el("div", "itinerary-summary");
+        summary.appendChild(
+          el("div", null, `Total estimated cost: ${itinerary.total_estimated_cost_aud} AUD per person`),
+        );
+        const tips = itinerary.key_tips || [];
+        if (tips.length) {
+          summary.appendChild(el("strong", null, "Tips"));
+          const ul = el("ul");
+          for (const tip of tips) ul.appendChild(el("li", null, tip));
+          summary.appendChild(ul);
+        }
+        section.appendChild(summary);
+
+        if (citesWikivoyage) {
+          const note = el("p", "licence-note");
+          note.appendChild(
+            document.createTextNode(
+              "Sources marked Wikivoyage: text by Wikivoyage contributors, licensed under ",
+            ),
+          );
+          const a = el("a", null, LICENCE_NAME);
+          a.href = LICENCE_URL;
+          a.target = "_blank";
+          a.rel = "noopener noreferrer";
+          note.appendChild(a);
+          note.appendChild(document.createTextNode(". The itinerary itself is generated."));
+          section.appendChild(note);
+        }
+
+        section.style.display = "block";
       }
 
       // ---------------------------------------------------------------------------

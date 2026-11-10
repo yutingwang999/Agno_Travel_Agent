@@ -1,0 +1,225 @@
+{
+  "run_id": "20261109T101151Z-rebuild-rag-gen-c-no-exclusives",
+  "subset": "all",
+  "entries": 79,
+  "started_at": "2026-11-09T10:11:51.745394+00:00",
+  "finished_at": "2026-11-09T10:24:46.269489+00:00",
+  "phase_seconds": {
+    "total": 774.52,
+    "requests": 295.87,
+    "retrieval_measurement": 36.71,
+    "other_sequential": 0.14,
+    "judge_wall": 441.14,
+    "judge_calls_sum": 3310.73
+  },
+  "conditions": {
+    "dataset_version": 3,
+    "corpus_version": "v2",
+    "knowledge_table": "travel_docs_v2_c800",
+    "config": {
+      "name": "rebuild-rag-gen-c-no-exclusives",
+      "description": "itinerary_with_context v4 (variant C plus \"do not invent exclusive or private arrangements unless the context offers them or the traveller asks\"); retrieval with notes, no category, vector search, destination filter, corpus v2, chunks 800/80",
+      "generation_model": "gemini-3.1-flash-lite",
+      "embedding_model": "gemini-embedding-001",
+      "judge_model": "gpt-6-luna",
+      "corpus_version": "v2",
+      "knowledge_table": "travel_docs_v2_c800",
+      "embedding_task_types": "retrieval",
+      "destination_filter": true,
+      "query_notes": true,
+      "query_category": "no_category",
+      "retrieval_k": 5,
+      "judge_concurrency": 8,
+      "request_parser": false,
+      "template_version": 4
+    },
+    "generation_model": "gemini-3.1-flash-lite",
+    "embedding_model": "gemini-embedding-001",
+    "judge_model": "gpt-6-luna",
+    "judge_prompts": {
+      "faithfulness": 2,
+      "destination": 2,
+      "preference": 4,
+      "citation": 2
+    },
+    "price_table_date": "2026-10-25",
+    "git_commit": "beda5f8cfbc1eae827a3450ea64a58b256a6d5c1",
+    "git_dirty": false,
+    "generation_templates": [
+      {
+        "key": "itinerary_with_context",
+        "version": 4
+      }
+    ],
+    "correction_template": {
+      "key": "validate_output_correction",
+      "version": 3
+    }
+  },
+  "metrics": {
+    "slot_extraction": {
+      "value": null,
+      "reason": "no request parser"
+    },
+    "retrieval": {
+      "k": 5,
+      "entries": 54,
+      "recall_at_k": 0.6429012345679012,
+      "mrr_at_k": 0.8231481481481481,
+      "errors": 0
+    },
+    "behaviour": {
+      "overall": 0.8987341772151899,
+      "entries": 79,
+      "by_expected_behavior": {
+        "clarify": 0.0,
+        "plan": 1.0,
+        "refuse": 0.9166666666666666
+      },
+      "by_tag": {
+        "budget_amount": 1.0,
+        "chinese_destination": 1.0,
+        "contradictory": 0.0,
+        "mixed_language": 1.0,
+        "out_of_scope": 0.8333333333333334,
+        "prompt_injection": 1.0,
+        "underspecified": 0.0,
+        "untagged": 1.0
+      }
+    },
+    "constraints": {
+      "planned": 65,
+      "trip_length_rate": 1.0,
+      "budget_rate": 1.0,
+      "budget_entries": 46,
+      "budget_not_applicable": 19,
+      "destination_rate": 0.9076923076923077,
+      "destination_judged": 65
+    },
+    "faithfulness": {
+      "overall": {
+        "itineraries": 65,
+        "claims": 1254,
+        "supported_share": 0.569377990430622
+      },
+      "with_context": {
+        "itineraries": 65,
+        "claims": 1254,
+        "supported_share": 0.569377990430622
+      },
+      "without_context": {
+        "itineraries": 0,
+        "claims": 0,
+        "supported_share": null
+      },
+      "by_corpus_coverage": {
+        "city": {
+          "itineraries": 38,
+          "claims": 785,
+          "supported_share": 0.7605095541401274
+        },
+        "national_only": {
+          "itineraries": 16,
+          "claims": 266,
+          "supported_share": 0.21052631578947367
+        },
+        "none": {
+          "itineraries": 6,
+          "claims": 139,
+          "supported_share": 0.02877697841726619
+        }
+      },
+      "judge_errors": 0
+    },
+    "preference": {
+      "itineraries": 65,
+      "preferences": 119,
+      "followed_share": 0.9495798319327731,
+      "added_requirements": 4,
+      "itineraries_with_added_requirements": 3
+    },
+    "citation": {
+      "itineraries": 65,
+      "itineraries_citing": 63,
+      "citations": 422,
+      "supported_share": 0.8791469194312796,
+      "missing_checks": 0,
+      "days_with_context": 272,
+      "days_citing_share": 0.8455882352941176,
+      "by_corpus_coverage": {
+        "city": {
+          "itineraries": 38,
+          "itineraries_citing": 38,
+          "citations": 324,
+          "supported_share": 0.9104938271604939,
+          "missing_checks": 0,
+          "days_with_context": 173,
+          "days_citing_share": 0.9710982658959537
+        },
+        "national_only": {
+          "itineraries": 16,
+          "itineraries_citing": 16,
+          "citations": 68,
+          "supported_share": 0.75,
+          "missing_checks": 0,
+          "days_with_context": 54,
+          "days_citing_share": 0.8518518518518519
+        },
+        "none": {
+          "itineraries": 6,
+          "itineraries_citing": 4,
+          "citations": 7,
+          "supported_share": 0.2857142857142857,
+          "missing_checks": 0,
+          "days_with_context": 35,
+          "days_citing_share": 0.17142857142857143
+        }
+      }
+    },
+    "system": {
+      "requests": 79,
+      "format_pass_rate": 1.0,
+      "retry_rate": 0.0,
+      "error_rate": 0.0,
+      "latency_p50_ms": 4546.026500000153,
+      "latency_p95_ms": 5394.44776000164,
+      "step_latency_ms": {
+        "intake": {
+          "runs": 65,
+          "mean_ms": 0.0
+        },
+        "cag_match": {
+          "runs": 65,
+          "mean_ms": 646.2
+        },
+        "retrieval_decision": {
+          "runs": 65,
+          "mean_ms": 0.0
+        },
+        "rag_retrieve": {
+          "runs": 65,
+          "mean_ms": 684.4
+        },
+        "generate": {
+          "runs": 65,
+          "mean_ms": 3062.8
+        },
+        "validate_output": {
+          "runs": 65,
+          "mean_ms": 1.2
+        }
+      }
+    },
+    "cost": {
+      "currency": "USD",
+      "price_table_date": "2026-10-25",
+      "requests": 79,
+      "mean_generation_usd": 0.0010337025316455696,
+      "mean_embedding_usd": 3.824525316455696e-06,
+      "mean_request_usd": 0.001037527056962025,
+      "requests_missing_usage": 0,
+      "judge_calls": 258,
+      "judge_total_usd": 0.2118611
+    }
+  }
+}

@@ -17,7 +17,7 @@ Agno Workflow
   1. intake              — validate + normalise input fields
   2. cag_match           — embed intent, cosine match against itinerary_categories
   3. retrieval_decision  — confidence >= 0.85 → skip RAG, else retrieve
-  4. rag_retrieve        — pgvector top-5 similarity search on source_documents
+  4. rag_retrieve        — pgvector top-5 similarity search on the knowledge base
   5. generate            — resolve DB prompt template, call LLM
   6. validate_output     — Pydantic schema check, retry once on failure
       │
@@ -374,7 +374,7 @@ rag_retrieve_executor
                     └── knowledge.search(query, max_results=5)  →  List[Document]
 ```
 
-- **Table**: `travel_docs` in the `ai` schema — created and managed automatically by Agno's `PgVector`. Separate from the `source_documents` Alembic-managed table.
+- **Table**: `travel_docs` in the `ai` schema — created and managed automatically by Agno's `PgVector`.
 - **Embedder**: `GeminiEmbedder` — a custom Agno-compatible wrapper around `google-genai` using `gemini-embedding-001` (768 dims, `SEMANTIC_SIMILARITY`), matching the model used for CAG and seed embeddings.
 - **Search type**: vector (cosine distance).
 - **Top-k**: 5 chunks by default.
@@ -657,7 +657,6 @@ Commit before a run you want to cite: a run on uncommitted code is marked `git_d
 │       │   ├── base.py               # SQLAlchemy DeclarativeBase
 │       │   ├── itinerary_category.py # itinerary_categories table + Vector(768)
 │       │   ├── prompt_template.py    # prompt_templates table
-│       │   ├── source_document.py    # source_documents table + Vector(768)
 │       │   └── trace_event.py        # trace_events table
 │       └── workflow/
 │           ├── sse.py                # SSE event builder (build_sse_event, sse_event_to_json)
@@ -701,10 +700,11 @@ Commit before a run you want to cite: a run on uncommitted code is marked `git_d
 │       ├── 0003_create_source_documents.py
 │       ├── 0004_create_trace_events.py
 │       ├── 0005_add_token_usage_to_trace_events.py
-│       └── 0006_single_active_prompt_template.py
+│       ├── 0006_single_active_prompt_template.py
+│       └── 0007_drop_source_documents.py
 ├── scripts/
 │   ├── dev.py               # cross-platform task runner
-│   └── seed.py              # seed itinerary_categories, prompt_templates, source_documents
+│   └── seed.py              # seed itinerary_categories, prompt_templates, knowledge base
 ├── docs/
 │   ├── DESIGN.md            # original v0.1.0 design (OpenSpec specs/changes take precedence)
 │   ├── CLAUDE.md            # AI usage guidelines for this repo
@@ -810,7 +810,7 @@ This branch adds a browser UI and a traces read endpoint on top of the completed
 | Data | Used for | Source and licence | Details |
 | --- | --- | --- | --- |
 | Australian place list (`data/places/australia.tsv`) | The destination guard: which destinations are accepted, and their canonical English names | Place names from [GeoNames](https://www.geonames.org/) (`cities1000`), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), plus hand-kept lists of states, tourist destinations and Chinese names written for this project. Contains data from GeoNames (https://www.geonames.org/), licensed under CC BY 4.0. Modified: only Australian places are used, names are lowercased, and the list is combined with hand-kept lists written for this project. | [data/places/SOURCES.md](data/places/SOURCES.md) |
-| Knowledge base, corpus v1 (13 documents in `scripts/seed.py`) | RAG context for generation | Short handwritten summaries written for v0.1.0. To be replaced in `rebuild-rag` by openly licensed sources (mainly Wikivoyage, CC BY-SA), each listed here with its licence | `scripts/seed.py` (`SOURCE_DOCUMENTS`) |
+| Knowledge base, corpus v1 (13 documents) | RAG context for generation | Not in this repository: a local file, `data/knowledge/v1/source_documents.json`, backed up privately. Without it, `seed` warns and the knowledge base stays empty; the app still runs, generating without retrieved context. Replaced in `rebuild-rag` by a corpus built from Wikivoyage (CC BY-SA), also kept out of this repository | `scripts/seed.py` (`load_source_documents`) |
 
 ---
 

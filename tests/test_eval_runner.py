@@ -8,7 +8,17 @@ import pytest
 from app.workflow.retrieval_service import RetrievedChunk
 from evaluation.cost import Pricing
 from evaluation.dataset import DatasetEntry
-from evaluation.judge import Claim, DestinationVerdict, FaithfulnessVerdict, Judge, PlaceCheck
+from evaluation.judge import (
+    CitationCheck,
+    CitationVerdict,
+    Claim,
+    DestinationVerdict,
+    FaithfulnessVerdict,
+    Judge,
+    PlaceCheck,
+    PreferenceCheck,
+    PreferenceVerdict,
+)
 from evaluation.runner import (
     RunConfig,
     Services,
@@ -18,6 +28,7 @@ from evaluation.runner import (
     result_record,
     retry,
     run,
+    run_retrieval_only,
     select_entries,
     summarise,
     write_prompt_copies,
@@ -43,9 +54,11 @@ def _entry(entry_id, expected="plan", sections=("Guide to Sydney",), days=2, tag
     })
 
 
-def _sse(session_id, days, with_rag):
+def _sse(session_id, days, with_rag, day_one_sources=()):
     itinerary = {"daily_itinerary": [{"day": d, "morning": "m", "afternoon": "a", "evening": "e",
-                                      "estimated_cost_aud": 50} for d in range(1, days + 1)],
+                                      "estimated_cost_aud": 50,
+                                      "sources": list(day_one_sources) if d == 1 else []}
+                                     for d in range(1, days + 1)],
                  "total_estimated_cost_aud": 50 * days, "key_tips": ["t"]}
     events = [{"session_id": session_id, "step": "intake", "status": "completed", "data": {}}]
     if with_rag:
@@ -69,6 +82,12 @@ class FakeJudgeClient:
     def parse(self, model, input, text_format):
         verdict = (FaithfulnessVerdict(claims=[Claim(category="named_place", text="Bondi", supported=True)])
                    if text_format is FaithfulnessVerdict
+                   else CitationVerdict(checks=[CitationCheck(day=1, id="S1", supported=True, item="Bondi",
+                                                              reason="r")])
+                   if text_format is CitationVerdict
+                   else PreferenceVerdict(preferences=[PreferenceCheck(preference="beach", followed=True, reason="r")],
+                                          added_requirements=[])
+                   if text_format is PreferenceVerdict
                    else DestinationVerdict(places=[PlaceCheck(name="Bondi", in_destination=True, reason="r")]))
         return SimpleNamespace(output_parsed=verdict, usage=SimpleNamespace(input_tokens=100, output_tokens=20))
 
@@ -86,7 +105,7 @@ def _services(responses):
     services = Services(
         send=send,
         query_text=lambda form: "family travel in sydney",
-        retrieve=lambda q: [RetrievedChunk(destination="Sydney", title="Guide to Sydney", chunk_text="x")],
+        retrieve=lambda q, form: [RetrievedChunk(destination="Sydney", title="Guide to Sydney", chunk_text="x")],
         trace_rows=lambda sid: [{"step_name": "generate", "status": "completed",
                                  "input_tokens": 1000, "output_tokens": 500}],
         intent_text=lambda form: "family trip to sydney with budget budget",
@@ -153,7 +172,7 @@ def test_step_latencies_average_over_requests_that_ran_the_step():
 
 def test_retrieval_error_is_recorded_not_raised():
     services, _ = _services([(200, _sse("s1", 2, with_rag=False))])
-    services.retrieve = lambda q: (_ for _ in ()).throw(RuntimeError("pgvector down"))
+    services.retrieve = lambda q, form: (_ for _ in ()).throw(RuntimeError("pgvector down"))
     result = run([_entry("e1")], CONFIG, services, PRICING)[0]
     assert result.retrieval is None
     assert "pgvector down" in result.retrieval_error
@@ -175,7 +194,8 @@ def test_summary_has_every_metric_and_template():
     assert metrics["faithfulness"]["with_context"]["itineraries"] == 1
     assert metrics["faithfulness"]["without_context"]["itineraries"] == 1
     assert metrics["system"]["error_rate"] == 0.0
-    assert metrics["cost"]["judge_calls"] == 4
+    assert metrics["cost"]["judge_calls"] == 6
+    assert metrics["preference"]["followed_share"] == 1.0
     assert metrics["cost"]["price_table_date"] == "2026-10-25"
 
 
@@ -184,8 +204,11 @@ def test_result_record_keeps_judge_inputs_not_the_rendered_prompt():
     record = result_record(run([_entry("e1")], CONFIG, services, PRICING)[0])
 
     faith = record["judge"]["faithfulness"]
-    assert (faith["prompt"], faith["version"]) == ("faithfulness", 1)
-    assert "[Guide to Sydney]" in faith["knowledge_context"]
+    assert (faith["prompt"], faith["version"]) == ("faithfulness", 2)
+    fit = record["judge"]["preference"]
+    assert (fit["prompt"], fit["version"]) == ("preference", 4)
+    assert fit["verdict"]["preferences"][0]["followed"] is True
+    assert "[S1] Guide to Sydney" in faith["knowledge_context"]
     assert faith["itinerary_text"].startswith("Day 1")
     assert "Extract every specific claim" not in json.dumps(record)  # template text is not repeated
     assert record["outcome"]["events"][-1]["step"] == "validate_output"
@@ -195,8 +218,10 @@ def test_result_record_keeps_judge_inputs_not_the_rendered_prompt():
 def test_prompt_copies_written_once_per_run(tmp_path):
     judge = Judge(FakeJudgeClient())
     write_prompt_copies(tmp_path, judge)
-    assert sorted(p.name for p in (tmp_path / "judge_prompts").iterdir()) == ["destination_v1.md",
-                                                                              "faithfulness_v1.md"]
+    assert sorted(p.name for p in (tmp_path / "judge_prompts").iterdir()) == ["citation_v2.md",
+                                                                              "destination_v2.md",
+                                                                              "faithfulness_v2.md",
+                                                                              "preference_v4.md"]
 
 
 def test_retry_only_transient_errors():
@@ -252,3 +277,127 @@ def test_budget_amount_is_sent_with_the_request():
 
     assert sent[0]["max_daily_budget_aud"] == 150
     assert "max_daily_budget_aud" not in sent[1]
+
+
+def _coverage_entry(entry_id, sections, coverage):
+    return DatasetEntry.model_validate({
+        "id": entry_id, "tags": [],
+        "form": {"destination": "Sydney", "trip_length": 2, "budget": "budget", "travel_style": "family"},
+        "utterance": "...", "gold_slots": {"destination": "sydney", "trip_length_days": 2},
+        "expected_behavior": "plan",
+        "relevant_sections": [{"source": "handwritten", "section": s} for s in sections],
+        "corpus_coverage": coverage,
+    })
+
+
+def test_retrieval_only_measures_labelled_entries_without_sending_anything():
+    entries = [
+        _coverage_entry("e1", ["Hit"], "national_only"),
+        _coverage_entry("e2", ["Miss"], "national_only"),
+        _coverage_entry("e3", [], "none"),
+    ]
+    chunk = RetrievedChunk(destination="australia", title="Hit", chunk_text="...", metadata={})
+    records = []
+
+    metrics = run_retrieval_only(entries, CONFIG, lambda form: "query", lambda query, form: [chunk], records.append)
+
+    retrieval = metrics["retrieval"]
+    assert set(metrics) == {"retrieval"}
+    assert retrieval["entries"] == 2  # coverage "none" takes no part
+    assert retrieval["recall_at_k"] == pytest.approx(0.5)
+    assert retrieval["by_corpus_coverage"]["national_only"]["entries"] == 2
+    assert "none" not in retrieval["by_corpus_coverage"]
+    assert retrieval["retrieve_latency_p50_ms"] >= 0
+    assert [record["entry_id"] for record in records] == ["e1", "e2"]
+
+
+def test_retrieval_only_records_an_error_instead_of_a_zero_recall():
+    def failing(query, form):
+        raise RuntimeError("database down")
+
+    records = []
+    metrics = run_retrieval_only([_coverage_entry("e1", ["Hit"], "national_only")], CONFIG,
+                                 lambda form: "query", failing, records.append)
+
+    assert metrics["retrieval"]["errors"] == 1
+    assert metrics["retrieval"]["recall_at_k"] is None
+    assert "retrieval_error" in records[0]
+
+
+def test_query_comparison_configs_cover_every_query_construction():
+    """The odd groups of the 12-group comparison; group 1 is step b, which ran before notes reached the query."""
+    configs = [load_config("rebuild-rag-b")]
+    configs += [load_config(f"rebuild-rag-q{number}") for number in (3, 5, 7, 9, 11)]
+
+    groups = {(c.query_notes, c.query_category) for c in configs}
+
+    assert groups == {
+        (notes, category)
+        for notes in (False, True)
+        for category in ("matched", "no_budget", "no_category")
+    }
+    assert {c.knowledge_table for c in configs} == {"travel_docs_v2_c800"}
+    assert all(c.destination_filter and c.retrieval_k == 5 for c in configs)
+
+
+@pytest.mark.parametrize(
+    ("fields", "differs"),
+    [
+        ({}, False),
+        ({"query_notes": False}, True),
+        ({"query_category": "matched"}, True),
+        ({"query_category": "no_budget"}, True),
+    ],
+)
+def test_a_query_the_workflow_does_not_send_is_flagged(fields, differs):
+    assert CONFIG.model_copy(update=fields).query_differs_from_workflow is differs
+
+
+@pytest.mark.parametrize("name", ["rebuild-rag-q11", "rebuild-rag-c500", "rebuild-rag-c1200", "rebuild-rag-c800-semantic"])
+def test_chunking_configs_search_the_table_built_for_them(name):
+    """A table must be searched with the task types it was embedded with."""
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location("dev", Path(__file__).resolve().parents[1] / "scripts" / "dev.py")
+    dev = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(dev)
+
+    config = load_config(name)
+    _, task_types, _ = dev.EVAL_KNOWLEDGE_TABLES[config.knowledge_table]
+    assert config.embedding_task_types == task_types
+    assert not config.query_differs_from_workflow
+
+
+
+def test_template_version_defaults_to_the_active_version():
+    assert CONFIG.template_version is None
+    assert CONFIG.generate_params == {}
+    assert CONFIG.model_copy(update={"template_version": 2}).generate_params == {"template_version": 2}
+
+
+@pytest.mark.parametrize(("letter", "version"), [("a", 1), ("b", 2), ("c", 3)])
+def test_generation_variant_configs_pin_their_template(letter, version):
+    """Task 5.4: the three variants differ only in the template version they pin."""
+    config = load_config(f"rebuild-rag-gen-{letter}")
+    reference = load_config("rebuild-rag-q11")
+
+    assert config.template_version == version
+    assert not config.query_differs_from_workflow
+    ignored = {"name", "description", "template_version"}
+    assert config.model_dump(exclude=ignored) == reference.model_dump(exclude=ignored)
+
+
+
+def test_citation_accuracy_in_the_summary():
+    """An itinerary citing a chunk gets one citation call; one citing nothing gets none."""
+    services, _ = _services([(200, _sse("s1", 2, with_rag=True, day_one_sources=["S1"])),
+                             (200, _sse("s2", 2, with_rag=True))])
+    results = run([_entry("e1"), _entry("e2")], CONFIG, services, PRICING)
+    assert results[0].citation["cited_blocks"] == {"S1": "Guide to Sydney\nBondi"}
+    assert results[1].citation["verdict"] == {"checks": []} and results[1].citation["input_tokens"] == 0
+    metrics = summarise(results, CONFIG, PRICING)["metrics"]
+    assert metrics["citation"]["citations"] == 1 and metrics["citation"]["supported_share"] == 1.0
+    assert metrics["citation"]["days_with_context"] == 4 and metrics["citation"]["days_citing_share"] == 0.25
+    assert metrics["cost"]["judge_calls"] == 3 * 2 + 1
+    assert result_record(results[0])["judge"]["citation"]["prompt"] == "citation"

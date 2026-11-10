@@ -1,0 +1,16 @@
+# rebuild-rag query comparison (task 4.7), group 11. Group 1 is rebuild-rag-b. The even groups used search that has since been removed.
+# Run with --retrieval-only: these groups compare Recall, MRR and retrieval latency.
+name: rebuild-rag-q11
+description: vector search, query with notes and with no category, filtered by destination, corpus v2, chunks of 800 characters with 80 overlap
+generation_model: gemini-3.1-flash-lite
+embedding_model: gemini-embedding-001
+judge_model: gpt-6-luna
+corpus_version: v2
+knowledge_table: travel_docs_v2_c800
+embedding_task_types: retrieval
+destination_filter: true
+query_notes: true
+query_category: no_category
+retrieval_k: 5
+judge_concurrency: 8
+request_parser: false

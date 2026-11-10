@@ -15,7 +15,8 @@ Gemini as a response schema (``STRUCTURED_OUTPUT_CONFIG``):
             "morning": string,
             "afternoon": string,
             "evening": string,
-            "estimated_cost_aud": number
+            "estimated_cost_aud": number,
+            "sources": [string]
         }
     ],
     "total_estimated_cost_aud": number,
@@ -38,6 +39,9 @@ class DailyItineraryItem(BaseModel):
     afternoon: str
     evening: str
     estimated_cost_aud: float
+    # Citation ids ("S1", "S2", ...) of the knowledge blocks the day draws on;
+    # required so Gemini's structured output always includes it, empty when none.
+    sources: List[str]
 
 
 class ItineraryOutput(BaseModel):

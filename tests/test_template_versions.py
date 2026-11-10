@@ -85,7 +85,8 @@ def test_seed_active_templates_state_the_cost_unit(seed_module):
         assert COST_UNIT_PHRASE in d["template_text"], d["template_key"]
 
 
-GENERATION_KEYS = ("high_confidence_minimal_context", "low_confidence_with_retrieval")
+GENERATION_KEYS = ("high_confidence_minimal_context", "low_confidence_with_retrieval", "itinerary_with_context")
+V010_KEYS = ("high_confidence_minimal_context", "low_confidence_with_retrieval", "validate_output_correction")
 
 
 def test_seed_active_generation_templates_state_the_ceiling(seed_module):
@@ -96,10 +97,77 @@ def test_seed_active_generation_templates_state_the_ceiling(seed_module):
 
 
 def test_seed_v1_templates_are_unchanged(seed_module):
-    """Version 1 keeps the v0.1.0 text, so the baseline stays reproducible."""
-    v1 = {d["template_key"]: d["template_text"] for d in seed_module.TEMPLATE_DEFINITIONS if d["version"] == 1}
+    """Version 1 of the v0.1.0 keys keeps the v0.1.0 text, so the baseline stays reproducible."""
+    v1 = {d["template_key"]: d["template_text"] for d in seed_module.TEMPLATE_DEFINITIONS
+          if d["version"] == 1 and d["template_key"] in V010_KEYS}
+    assert set(v1) == set(V010_KEYS)
     for text in v1.values():
         assert COST_UNIT_PHRASE not in text
+
+
+def _itinerary_with_context(seed) -> dict[int, str]:
+    return {d["version"]: d["template_text"] for d in seed.TEMPLATE_DEFINITIONS
+            if d["template_key"] == "itinerary_with_context"}
+
+
+def test_itinerary_with_context_versions_carry_every_required_part(seed_module):
+    """Spec "Single generation template": every variant has the knowledge context and the notes,
+    harden's cost unit and ceiling, citation instructions, and a JSON example with single braces.
+    v5 is the task 5.6 diagnosis without the cost unit and ceiling; it is never active."""
+    versions = _itinerary_with_context(seed_module)
+    assert set(versions) == {1, 2, 3, 4, 5}
+    assert seed_module.ACTIVE_TEMPLATE_VERSIONS["itinerary_with_context"] != 5
+    for version, text in versions.items():
+        parts = ["{retrieved_context}", "{notes}", '"sources"', "[S1]"]
+        if version != 5:
+            parts += ["{daily_budget_ceiling}", COST_UNIT_PHRASE]
+        for part in parts:
+            assert part in text, (version, part)
+        assert "{{" not in text and "}}" not in text, version
+
+
+def test_itinerary_with_context_v5_is_v4_without_the_budget_sentences(seed_module):
+    """Task 5.6: v5 removes exactly harden's cost-unit and ceiling sentences from v4."""
+    versions = _itinerary_with_context(seed_module)
+    v4, v5 = versions[4], versions[5]
+    assert COST_UNIT_PHRASE not in v5 and "{daily_budget_ceiling}" not in v5
+    restored = v5.replace("\n\nUse the following reference information",
+                          f"\n{seed_module.COST_UNIT_SENTENCE}\n{seed_module.BUDGET_CEILING_SENTENCE}"
+                          "\n\nUse the following reference information")
+    assert restored == v4
+
+
+def test_itinerary_with_context_variants_differ_only_in_the_request_description(seed_module):
+    """Design decision 3: A has the preset, B the traveller's own style, C both."""
+    a, b, c = (_itinerary_with_context(seed_module)[v] for v in (1, 2, 3))
+    assert "{matched_category}" in a and "{travel_style}" not in a
+    assert "{travel_style}" in b and "{matched_category}" not in b and "{constraints}" not in b
+    assert "{travel_style}" in c and "{matched_category}" in c and "{constraints}" in c
+    tail = a[a.index("All costs are"):]
+    assert b.endswith(tail) and c.endswith(tail)
+
+
+def test_itinerary_with_context_v4_is_c_plus_one_instruction(seed_module):
+    """Design decision 4 (task 5.5): v4 changes one thing against the 5.4 winner."""
+    versions = _itinerary_with_context(seed_module)
+    sentence = seed_module.NO_INVENTED_EXCLUSIVES_SENTENCE
+    assert sentence not in versions[3]
+    assert versions[4] == versions[3].replace(
+        "Return ONLY a valid JSON object", f"{sentence}\n\nReturn ONLY a valid JSON object")
+
+
+def test_correction_v3_keeps_citations_and_has_single_braces(seed_module):
+    text = next(d["template_text"] for d in seed_module.TEMPLATE_DEFINITIONS
+                if d["template_key"] == "validate_output_correction" and d["version"] == 3)
+    assert seed_module.ACTIVE_TEMPLATE_VERSIONS["validate_output_correction"] == 3
+    assert '"sources": [string]' in text and "citation" in text
+    assert "{validation_errors}" in text and "{raw_llm_output}" in text
+    assert "{{" not in text and "}}" not in text
+
+
+def test_itinerary_with_context_v4_is_active(seed_module):
+    """Variant C won task 5.4; v4 (C without invented exclusives) was adopted in task 5.5."""
+    assert seed_module.ACTIVE_TEMPLATE_VERSIONS["itinerary_with_context"] == 4
 
 
 @pytest.mark.integration

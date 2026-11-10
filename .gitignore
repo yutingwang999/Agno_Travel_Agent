@@ -217,9 +217,10 @@ __marimo__/
 # Claude Code: commit shared commands/skills, ignore personal settings
 .claude/settings.local.json
 
-# Knowledge corpus (rebuild-rag): commit the processed JSONL in data/knowledge/,
-# ignore raw downloads — they are re-fetched by the pinned page revisions
-data/knowledge/raw/
+# Knowledge corpus and its source list: never committed; backed up to the private
+# repository (docs/evaluation.md, "What is published")
+data/knowledge/
+tests/fixtures/knowledge/
 
 # Australian place list (harden-workflow-guardrails): commit data/places/australia.tsv
 # and the hand-kept lists; ignore the GeoNames download it is built from
