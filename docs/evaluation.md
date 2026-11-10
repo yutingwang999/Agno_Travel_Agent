@@ -213,6 +213,8 @@ The sample is stratified, so that the judge's likely mistakes get reviewed witho
 
 Agreement is reported per stratum (per judge answer), never as one pooled rate, because the strata are not sampled in proportion.
 
+After a corpus change only faithfulness needs recalibrating, since the destination and preference judges do not read the knowledge context: `sample <run id> --kinds faithfulness [--max-supported N]` draws 20 itineraries with their claims only. On corpus v2 about half of all claims are judged supported, against about a fifth on corpus v1, so every supported claim would make a sheet of over 300 items; `--max-supported` samples at most N of them per itinerary at random (6 in `rebuild-rag`). Agreement is still reported per stratum.
+
 Citation accuracy is calibrated on its own, on a run judged with the citation prompt (a re-judged run with `--kinds citation` will do): `sample <run id> --kinds citation` draws 20 itineraries that cite something and, in each, up to 2 citations the judge called supported and up to 3 it called unsupported, plus up to 2 unsupported citations from every other itinerary.
 
 ### How to review

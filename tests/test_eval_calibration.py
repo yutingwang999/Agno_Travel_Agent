@@ -234,3 +234,16 @@ def test_citation_review_sheet_round_trip_and_agreement():
     # citation-only records are not counted as faithfulness or destination-only samples
     assert result["citation_itineraries"] == 1
     assert result["sample_size"] == 0 and result["destination_only_itineraries"] == 0
+
+
+def test_faithfulness_template_caps_supported_claims_and_skips_other_judges():
+    from evaluation.calibration import UNSUPPORTED_PER_ITINERARY, faithfulness_template
+
+    verdict = {"claims": [{"text": f"s{i}", "category": "named_place", "supported": True} for i in range(9)]
+               + [{"text": f"u{i}", "category": "activity", "supported": False} for i in range(8)]}
+    score = faithfulness_template("e001", verdict, random.Random(0), supported_cap=6)
+    assert sum(c.judge_supported for c in score.claims) == 6
+    assert sum(not c.judge_supported for c in score.claims) == UNSUPPORTED_PER_ITINERARY
+    assert not score.places and not score.preferences and not score.destination_only
+    uncapped = faithfulness_template("e001", verdict, random.Random(0))
+    assert sum(c.judge_supported for c in uncapped.claims) == 9

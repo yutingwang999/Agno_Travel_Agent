@@ -32,6 +32,7 @@ This file records the effect of every change that affects quality, behaviour or 
 
 | Date | Change | What changed | Key result | Record |
 | --- | --- | --- | --- | --- |
+| 2026-11-10 | `rebuild-rag` | Final: corpus v2, retrieval on every request, one template with citations, against the baseline | Faithfulness with context 20.5% (v0.1.0) / 17.2% (harden) → 56.3%, calibrated on corpus v2; former high-confidence requests 0% → 54.6%; preferences followed 95.0%; citation validity 100%; destination rate 95.8% → 90.6%; gate reset | [Final](#2026-11-10--rebuild-rag-final--corpus-v2-retrieval-on-every-request-one-template-with-citations-the-full-change-against-the-baseline) |
 | 2026-11-09 | `rebuild-rag` | Citation accuracy judge calibrated: v1 strict on named places, v2 adopted | v2 agreement 88.9% (supported) and 87.2% (unsupported); v1 passed narrowly (81.4%) and fails with one later answer. Citations supported 86.7%: `city` 91.7%, `national_only` 66.7% | [Citation judge](#2026-11-09--rebuild-rag--citation-accuracy-judge-v1-strict-on-named-places-v2-calibrated) |
 | 2026-11-09 | `rebuild-rag` | Budget sentences diagnosis (task 5.6) and citations against support | Without the cost-unit and ceiling sentences faithfulness with context 56.3% → 58.2% (below the 2-point criterion) and retry 0% → 18.6%; sentences kept. Places on citing days that appear in a cited chunk: `city` 77.2%, `national_only` 26.7% | [Budget sentences](#2026-11-09--rebuild-rag--the-budget-sentences-cost-no-clear-faithfulness-and-stay-citations-against-support) |
 | 2026-11-09 | `rebuild-rag` | No invented exclusive arrangements: `itinerary_with_context` v4 (task 5.5) | Activity claims supported 27.4% → 39.7%, faithfulness with context 48.1% → 56.3%; preferences followed 97.2% → 93.8%, criterion not met, mostly on contradictory requests; adopted with the user | [No exclusives](#2026-11-09--rebuild-rag--no-invented-exclusive-arrangements-v4-adopted-although-preferences-followed-fell-more-than-the-criterion-allowed) |
@@ -98,6 +99,85 @@ Copy the template below, fill it in, and put it at the **top** of the "Records" 
 ---
 
 ## Records
+
+### 2026-11-10 · rebuild-rag (final) · corpus v2, retrieval on every request, one template with citations: the full change against the baseline
+
+- **What changed** (the whole of `rebuild-rag`, each step recorded above): knowledge base corpus v2 (Wikivoyage city pages and the Australia-wide handwritten documents, chunks 800 / 80, `retrieval` task types); retrieval with a destination filter and a query of notes, style and destination (group 11); every request retrieves (no confidence routing); one generation template, `itinerary_with_context` v4 (variant C plus the instruction against invented exclusive arrangements), with the traveller's notes and numbered chunks; each day cites its chunks, checked by a business rule; the frontend shows the sources.
+- **Runs**: final `20261109T094040Z-rebuild-rag-gen-c-no-exclusives` and `20261109T101151Z-rebuild-rag-gen-c-no-exclusives` (commit `beda5f8`, config `rebuild-rag-gen-c-no-exclusives`: the final configuration with the template pinned to the active v4, all 79 entries). `20261109T095412Z-rebuild-rag-gen-c-no-exclusives` was replaced: the judge's API credit ran out on its last five entries (e075 to e079, the `budget-amount` subset), which were generated but not judged. Smoke runs for the gate: `20261109T102449Z-rebuild-rag-gen-c-no-exclusives-smoke`, `20261109T102634Z-rebuild-rag-gen-c-no-exclusives-smoke`. Compared with the v0.1.0 baseline `20261108T103031Z-v010-baseline-rejudge`, `20261108T103120Z-v010-baseline-rejudge` and the final `harden-workflow-guardrails` runs `20261108T115256Z-harden-workflow-guardrails-rejudge`, `20261108T115919Z-harden-workflow-guardrails-rejudge`, all re-judged with faithfulness v2, destination v2 and preference v4. Every run: no uncommitted changes.
+- **Conditions that differ**: corpus v1 (baseline, harden) against v2; dataset v1 / v2 / v3, whose forms and expected behaviours are the same for the 73 compared entries (later versions add entries and change retrieval labels only); generation `gemini-3.1-flash-lite` and judge `gpt-6-luna` throughout. The comparison below uses the 73 entries of `dataset-v1`, the ones every run has; metrics are recomputed from each run's `results.jsonl` by `eval/scratch/analyse_81.py` (local).
+- **Results, 73 entries** (each cell: run 1 / run 2):
+
+| Metric (73 entries of `dataset-v1`) | v0.1.0 baseline (re-judged) | `harden-workflow-guardrails` final (re-judged) | `rebuild-rag` final |
+| --- | --- | --- | --- |
+| Planned itineraries, of which with knowledge context | 73, 52 in both runs | 60, 43 in both runs | 58, 58 / 59, 59 |
+| Faithfulness with context | 20.3% / 20.7% (mean 20.5%) | 17.4% / 17.1% (mean 17.2%) | 57.3% / 55.4% (mean 56.3%) |
+| Faithfulness, all planned itineraries | 13.6% / 14.0% (mean 13.8%) | 12.0% / 12.3% (mean 12.2%) | 57.3% / 55.4% (mean 56.3%) |
+| Preferences followed | 81.7% / 82.7% (mean 82.2%) | 73.6% / 72.8% (mean 73.2%) | 93.6% / 96.3% (mean 95.0%) |
+| Attractions in destination | 94.5% / 91.8% (mean 93.2%) | 95.0% / 96.7% (mean 95.8%) | 91.4% / 89.8% (mean 90.6%) |
+| Trip length correct | 100.0% / 100.0% (mean 100.0%) | 100.0% / 100.0% (mean 100.0%) | 100.0% / 100.0% (mean 100.0%) |
+| Within budget | 57.7% / 61.5% (mean 59.6%) | 100.0% / 100.0% (mean 100.0%) | 100.0% / 100.0% (mean 100.0%) |
+| Behaviour correctness | 74.0% / 74.0% (mean 74.0%) | 87.7% / 87.7% (mean 87.7%) | 87.7% / 89.0% (mean 88.4%) |
+| Retry rate | 0.0% / 0.0% (mean 0.0%) | 1.7% / 0.0% (mean 0.8%) | 1.7% / 0.0% (mean 0.8%) |
+| Error rate | 0.0% / 0.0% (mean 0.0%) | 0.0% / 0.0% (mean 0.0%) | 1.4% / 0.0% (mean 0.7%) |
+| Latency p50 | 4.56 s / 4.51 s (mean 4.53 s) | 4.22 s / 4.18 s (mean 4.20 s) | 4.44 s / 4.55 s (mean 4.50 s) |
+| Mean cost per request | $0.00118 / $0.00118 (mean $0.00118) | $0.00093 / $0.00091 (mean $0.00092) | $0.00101 / $0.00102 (mean $0.00101) |
+
+- **Former high-confidence requests** (17 entries that planned without knowledge context in the final `harden-workflow-guardrails` runs; the old routing sent them past retrieval):
+
+| Metric (17 former high-confidence entries) | v0.1.0 baseline | `harden-workflow-guardrails` final | `rebuild-rag` final |
+| --- | --- | --- | --- |
+| Planned, of which with context | 17, 0 in both runs | 17, 0 in both runs | 15, 15 / 16, 16 (e016 failed in run 1; e058, a prompt injection in its notes, is refused in both: `notes` reaches the API since task 7.1, with the injection guard; the earlier runs planned it) |
+| Faithfulness, all planned | 0.0% / 0.0% (mean 0.0%) | 0.0% / 0.0% (mean 0.0%) | 55.7% / 53.4% (mean 54.6%) |
+| Preferences followed | 86.7% / 90.0% (mean 88.3%) | 79.3% / 82.8% (mean 81.0%) | 92.3% / 100.0% (mean 96.2%) |
+| Latency p50 | 4.12 s / 4.11 s (mean 4.11 s) | 3.85 s / 3.62 s (mean 3.74 s) | 4.58 s / 4.51 s (mean 4.55 s) |
+| Mean cost per request | $0.00108 / $0.00107 (mean $0.00107) | $0.00101 / $0.00097 (mean $0.00099) | $0.00119 / $0.00124 (mean $0.00121) |
+
+- **Results, all 79 entries** (the final configuration only; Recall and MRR use dataset v3's corpus v2 labels and cannot be compared with corpus v1 numbers):
+
+| Metric (all 79 entries, dataset v3) | Run 1 | Run 2 |
+| --- | --- | --- |
+| Recall@5 | 0.643 | 0.643 |
+| MRR@5 | 0.823 | 0.823 |
+| Behaviour correctness | 88.6% | 89.9% |
+| Faithfulness with context | 57.8% | 56.9% |
+| Faithfulness, `city` | 73.8% | 76.1% |
+| Faithfulness, `national_only` | 23.2% | 21.1% |
+| Faithfulness, `none` | 1.0% | 2.9% |
+| Citations supported (citation v2) | 85.5% | 87.9% |
+| Days citing a source, with context | 87.0% | 84.6% |
+| Within budget | 100.0% | 100.0% |
+| Retry rate | 1.5% | 0.0% |
+| Error rate | 1.3% | 0.0% |
+| Latency p50 / p95 | 4.45 s / 5.65 s | 4.55 s / 5.39 s |
+| Mean cost per request | $0.00103 | $0.00104 |
+| Judge cost | $0.211 | $0.212 |
+| Final itineraries citing an id not in the context / citation-rule errors | 0 of 64 / 0 | 0 of 65 / 0 |
+
+- **Judge calibration on corpus v2**: the faithfulness judge was calibrated on corpus v1 only, and docs/evaluation.md asks for a new calibration with a new corpus. Faithfulness alone was recalibrated, on `20261109T101151Z-rebuild-rag-gen-c-no-exclusives`: 20 itineraries, every claim the judge called unsupported up to 5 and at most 6 of those it called supported per itinerary (over 300 items otherwise). The destination and preference judges do not read the knowledge context and keep their corpus v1 calibration (2026-11-08); citation v2 was calibrated on corpus v2 (record above: 88.9% and 87.2%).
+
+| Stratum | `20261109T101151Z-rebuild-rag-gen-c-no-exclusives` (faithfulness v2, corpus v2) |
+| --- | --- |
+| `faithfulness.judge_supported` | 98.9% (91 / 92) |
+| `faithfulness.judge_unsupported` | 86.8% (66 / 76) |
+| `extraction_precision` (claims reviewed) | 95.5% (176) |
+| `missed_claims` | 18 |
+
+  All but 1 of the 11 disagreements are claims the judge called unsupported and the reviewer supported (8 activity, 2 price), so faithfulness on corpus v2 is, if anything, understated. `missed_claims` is a lower bound, as before.
+- **Success criteria of the proposal**:
+  - Retrieval: Recall@5 and MRR of every step a → b → c → d are in the records above; the final configuration beats vector-only on the same corpus (`city` Recall@5 0.457 → 0.514, MRR@5 0.730 → 0.788 in the query-construction record). Met.
+  - Generation: faithfulness with context 56.3% against 20.5% for the v0.1.0 baseline and 17.2% for `harden-workflow-guardrails`, all judged with faithfulness v2. Met. The former high-confidence requests go from 0% (no context) to 54.6%.
+  - Citation validity: no final itinerary cites an id outside its context, and no request failed on the citation rule. Met (100%).
+  - System: reranking was not adopted, so its latency limit does not apply; the golden tests pass (task 8.2).
+- **Other changes**:
+  - Preferences followed rises to 95.0%, mostly from variant C (task 5.4).
+  - Attractions in destination falls from 95.8% to 90.6%: the generator follows requests that lead outside the city (task 5.4 record); request parsing (roadmap item 3) takes this up.
+  - Every former high-confidence request now retrieves: p50 latency 3.74 s → 4.55 s, cost $0.00099 → $0.00121 per request for those entries.
+  - Run 1 has one error: e016's generation call got a Gemini `ServerError` (a 5xx), which the system reports as designed; run 2 has none.
+  - Coverage drives faithfulness: `city` itineraries are far better grounded than `national_only` and `none` ones (by-coverage records above); more corpus coverage, not the template, is the next lever.
+  - `added_requirements` is not calibrated (2026-11-08) and is not used here.
+- **Gate**: thresholds reset for the final configuration and corpus v2 (threshold change log); both smoke runs pass.
+
+---
 
 ### 2026-11-09 · rebuild-rag · citation accuracy judge: v1 strict on named places, v2 calibrated
 
@@ -906,6 +986,11 @@ Every modification of `eval/thresholds.yaml` must be recorded here.
 | 2026-10-26 | `build-evaluation-harness` | `budget_rate` (min) | — | 0.375 | Initial setting. Both smoke runs 0.5; loosened by one of 8 capped itineraries (0.125) |
 | 2026-10-26 | `build-evaluation-harness` | `recall_at_5` (min) | — | 0.809 | Initial setting. Both smoke runs 0.952; loosened by one of 7 labelled entries (1/7 ≈ 0.143) |
 | 2026-10-26 | `build-evaluation-harness` | `error_rate` (max) | — | 0.1 | Initial setting. Both smoke runs 0.0; loosened by one of 10 requests |
+| 2026-11-10 | `rebuild-rag` | `config` | `v010-baseline` | `rebuild-rag-gen-c-no-exclusives` | The gate ran the v0.1.0 configuration on corpus v1; it now runs the final configuration |
+| 2026-11-10 | `rebuild-rag` | `format_pass_rate` (min) | 0.9 | 0.875 | Both smoke runs 1.0; two smoke entries are now refused, so 8 requests reach validation; loosened by one of 8 |
+| 2026-11-10 | `rebuild-rag` | `trip_length_rate` (min) | 0.9 | 0.875 | Both smoke runs 1.0 on 8 planned itineraries; loosened by one of 8 |
+| 2026-11-10 | `rebuild-rag` | `budget_rate` (min) | 0.375 | 0.833 | Raised: both smoke runs 1.0 on 6 capped itineraries since the budget business rule (`harden-workflow-guardrails`); loosened by one of 6 |
+| 2026-11-10 | `rebuild-rag` | `recall_at_5` (min) | 0.809 | 0.444 | Lowered: both smoke runs 0.611 on 6 labelled entries, measured on corpus v2 with dataset v3's labels, which are not comparable with corpus v1's; retrieval improved step by step on corpus v2 (records above); loosened by one of 6 (1/6 ≈ 0.167) |
 
 ---
 

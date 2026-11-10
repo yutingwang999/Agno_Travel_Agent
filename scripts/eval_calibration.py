@@ -2,7 +2,7 @@
 Judge calibration (task 6.2): sample judged items for manual review, then score agreement.
 
 Usage:
-    python scripts/eval_calibration.py sample <run id> [--n 20] [--seed 0] [--kinds citation]
+    python scripts/eval_calibration.py sample <run id> [--n 20] [--seed 0] [--kinds citation|faithfulness] [--max-supported N]
     python scripts/eval_calibration.py review <run id>
     python scripts/eval_calibration.py score <run id>
 
@@ -13,7 +13,9 @@ Files under eval/calibration/ (see docs/evaluation.md, "Judge calibration"):
                       reviewer's answers, one line per itinerary
 
 `sample` draws the stratified sample and writes both files; with `--kinds citation` it
-samples only citations (citation accuracy, for a run judged with the citation prompt). `review` rebuilds the review
+samples only citations (citation accuracy, for a run judged with the citation prompt); with
+`--kinds faithfulness` only faithfulness claims (recalibrating after a corpus change), where
+`--max-supported` caps the judge-supported claims drawn per itinerary. `review` rebuilds the review
 sheet from the .jsonl, keeping answers already recorded. `score` copies the answers from
 the review sheet into the .jsonl and prints the agreement per stratum.
 """
@@ -36,6 +38,7 @@ from evaluation.calibration import (  # noqa: E402
     ItineraryScore,
     agreement,
     citation_template,
+    faithfulness_template,
     destination_only_template,
     load_scores,
     parse_review,
@@ -90,6 +93,28 @@ def sample_citations(run_id: str, n: int, seed: int) -> int:
     print(f"wrote eval/calibration/{run_id}.review.md and .jsonl: {n} itineraries "
           f"(+{len(scores) - n} for unsupported citations only), {len(items)} citations to review "
           f"({sum(c.judge_supported for c in items)} judged supported)")
+    return 0
+
+
+def sample_faithfulness(run_id: str, n: int, seed: int, supported_cap: int | None) -> int:
+    records = run_records(run_id)
+    if len(records) < n:
+        print(f"ERROR: run {run_id} has only {len(records)} judged itineraries, need {n}")
+        return 1
+    if (CALIBRATION_DIR / f"{run_id}.jsonl").exists():
+        print(f"ERROR: eval/calibration/{run_id}.jsonl already exists; delete it first to resample")
+        return 1
+    rng = random.Random(seed)
+    chosen = sorted(rng.sample(sorted(records.values(), key=lambda r: r["entry_id"]), n),
+                    key=lambda r: r["entry_id"])
+    scores = [faithfulness_template(r["entry_id"], r["judge"]["faithfulness"]["verdict"], rng, supported_cap)
+              for r in chosen]
+    write_scores(run_id, scores)
+    write_review(run_id, scores, records)
+    claims = [c for s in scores for c in s.claims]
+    print(f"wrote eval/calibration/{run_id}.review.md and .jsonl: {n} itineraries, {len(claims)} claims to review "
+          f"({sum(c.judge_supported for c in claims)} judged supported"
+          + (f", at most {supported_cap} per itinerary" if supported_cap is not None else "") + ")")
     return 0
 
 
@@ -171,14 +196,18 @@ def main() -> int:
     p_sample.add_argument("run_id")
     p_sample.add_argument("--n", type=int, default=MIN_SAMPLE)
     p_sample.add_argument("--seed", type=int, default=0)
-    p_sample.add_argument("--kinds", choices=("all", "citation"), default="all",
-                          help="citation: sample only citations, for citation accuracy")
+    p_sample.add_argument("--kinds", choices=("all", "citation", "faithfulness"), default="all",
+                          help="citation: only citations (citation accuracy); faithfulness: only faithfulness claims")
+    p_sample.add_argument("--max-supported", type=int, default=None,
+                          help="with --kinds faithfulness: at most this many judge-supported claims per itinerary")
     for name in ("review", "score"):
         sub.add_parser(name).add_argument("run_id")
     args = parser.parse_args()
     if args.command == "sample":
         if args.kinds == "citation":
             return sample_citations(args.run_id, args.n, args.seed)
+        if args.kinds == "faithfulness":
+            return sample_faithfulness(args.run_id, args.n, args.seed, args.max_supported)
         return sample(args.run_id, args.n, args.seed)
     return review(args.run_id) if args.command == "review" else score(args.run_id)
 

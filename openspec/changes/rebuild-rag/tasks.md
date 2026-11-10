@@ -58,5 +58,5 @@ Order (decided with the user 2026-11-08): 5.1 and 5.2, then 6.1 to 6.3, then 5.3
 
 ## 8. Evaluation and regression
 
-- [ ] 8.1 Run a full evaluation of the final configuration with the evaluation harness (including citation accuracy), compare against the v0.1.0 baseline and the final `harden-workflow-guardrails` runs (re-judged with faithfulness v2), list the changes in faithfulness, latency and cost separately for the former high-confidence requests, and write it into `docs/experiments.md`; update gate thresholds as needed and record the reason; Verify: the success criteria in the proposal are met
-- [ ] 8.2 `dev.py test-all` passes completely; the gate passes; `openspec validate rebuild-rag --strict` passes
+- [x] 8.1 Run a full evaluation of the final configuration with the evaluation harness (including citation accuracy), compare against the v0.1.0 baseline and the final `harden-workflow-guardrails` runs (re-judged with faithfulness v2), list the changes in faithfulness, latency and cost separately for the former high-confidence requests, and write it into `docs/experiments.md`; update gate thresholds as needed and record the reason; Verify: the success criteria in the proposal are met
+- [x] 8.2 `dev.py test-all` passes completely; the gate passes; `openspec validate rebuild-rag --strict` passes

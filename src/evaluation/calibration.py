@@ -147,6 +147,28 @@ def stratified_template(entry_id: str, faithfulness_verdict: dict, destination_v
     )
 
 
+def faithfulness_template(entry_id: str, faithfulness_verdict: dict, rng: random.Random,
+                          supported_cap: int | None = None) -> ItineraryScore:
+    """A faithfulness-only record: the judge's supported claims (at most *supported_cap*, drawn at
+    random, when given) and up to ``UNSUPPORTED_PER_ITINERARY`` unsupported ones, in the judge's order.
+
+    For recalibrating faithfulness alone, e.g. after a corpus change: the destination and
+    preference judges do not read the knowledge context.
+    """
+    claims = faithfulness_verdict.get("claims", [])
+    supported = [c for c in claims if c["supported"]]
+    unsupported = [c for c in claims if not c["supported"]]
+    if supported_cap is not None:
+        supported = rng.sample(supported, min(supported_cap, len(supported)))
+    chosen_unsupported = rng.sample(unsupported, min(UNSUPPORTED_PER_ITINERARY, len(unsupported)))
+    keep = {id(c) for c in supported + chosen_unsupported}
+    return ItineraryScore(
+        entry_id=entry_id,
+        claims=[ClaimScore(text=c["text"], category=c["category"], judge_supported=c["supported"])
+                for c in claims if id(c) in keep],
+    )
+
+
 def destination_only_template(entry_id: str, destination_verdict: dict,
                               preference_verdict: dict | None = None) -> ItineraryScore:
     """A record reviewing every place outside the destination, preference not followed and added requirement."""
@@ -319,7 +341,7 @@ def render_review(run_id: str, scores: list[ItineraryScore], records: dict[str, 
                           "a claim in neither list is a missed claim):*", ""]
                 lines += [f"- {c['category']} · {c['text']}" for c in others]
             lines += ["", "missed: " + "; ".join(score.missed_claims), ""]
-        lines += ["**Places**", ""] if score.places or not score.destination_only else []
+        lines += ["**Places**", ""] if score.places else []
         for i, p in enumerate(score.places, 1):
             verdict = "in" if p.judge_in_destination else "OUTSIDE"
             lines.append(f"p{i}  [in: {_mark(p.in_destination)}]   judge: {verdict} · {p.name} — "
