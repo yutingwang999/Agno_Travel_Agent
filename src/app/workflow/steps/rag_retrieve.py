@@ -1,7 +1,9 @@
-"""Step 4: rag_retrieve — retrieves top-k relevant source document chunks.
+"""Step 4: rag_retrieve — retrieves the top-k relevant knowledge-base chunks.
 
-Executed only when ``retrieval_decision`` routes to the retrieval path
-(confidence_score < 0.85).
+Runs for every request (``retrieval_decision`` always routes to retrieval since
+``rebuild-rag``).  The query is built from the request's notes, travel style
+and destination, and the search keeps chunks tagged with the destination or as
+Australia-wide.
 
 Embeds the user's travel query using the same Gemini model as the seed
 script and searches the knowledge base that Agno ``Knowledge`` + ``PgVector``

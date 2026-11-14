@@ -1,33 +1,33 @@
 # Roadmap
 
-The improvement plan after v0.1.0. **Near-term** work has already been written up as OpenSpec changes in `openspec/changes/`; **later** work is recorded here first, and a change is created when work is about to start, written against the main specs at that time.
+The improvement plan after v0.1.0. Work that is about to start is written up as an OpenSpec change in `openspec/changes/`, against the main specs at that time; **later** work is recorded here first.
 
 Every improvement must be measured with the evaluation harness (`build-evaluation-harness`), with a before/after comparison reported in `docs/experiments.md`.
 
-## Near term: changes already created
+**Gate thresholds**: an intentional behaviour change may lower some metrics (as `harden-workflow-guardrails` did by refusing out-of-scope requests, and `rebuild-rag` by making every request retrieve). In that case, update `eval/thresholds.yaml` in the same change and state the reason in the "Threshold change log" of `docs/experiments.md`.
 
-Listed in order of completion (archiving). The order cannot be changed freely: the deltas of later changes are written against the main specs as they will be after the earlier changes are archived.
+## Done: the first five changes
 
-| Order | Change | Content | Must be archived after |
+Completed and archived in this order (`openspec/changes/archive/`); each later change's deltas were written against the main specs as they were after the earlier ones were archived. What each one shipped is in `CHANGELOG.md`, and its measured results in `docs/experiments.md`.
+
+| Order | Change | Content | Archived |
 | --- | --- | --- | --- |
-| 1 | `isolate-test-database` | Tests use a separate test database and no longer wipe the development database | — |
-| 2 | `build-evaluation-harness` | Evaluation dataset (50–100 entries), evaluation database, metrics for four stages, comparison reports, regression gate; run the v0.1.0 baseline | 1 |
-| 3 | `harden-workflow-guardrails` | Error handling, native structured output, business rule checks (per-person costs), input guardrails (including Chinese place names), template version management | 2 |
-| 4 | `true-sse-streaming` | Push each step as it completes, don't block the event loop, remove stdout capture | No dependency on 2 or 3, but must come before 5 |
-| 5 | `rebuild-rag` | Realistic-scale open-data knowledge base, step-by-step retrieval improvements a→d, source citations, interim routing (always retrieve) | 2, 3, 4 |
-
-**Gate thresholds**: intentional behaviour changes (e.g. 3 starting to refuse out-of-scope requests, 5 making every request retrieve) may lower some metrics. In that case, update `eval/thresholds.yaml` in the same change and state the reason in the "Threshold change log" of `docs/experiments.md`.
+| 1 | `isolate-test-database` | Tests use a separate test database and no longer wipe the development database | 2026-10-24 |
+| 2 | `build-evaluation-harness` | Evaluation dataset, evaluation database, metrics for four stages, comparison reports, regression gate; the v0.1.0 baseline | 2026-10-28 |
+| 3 | `harden-workflow-guardrails` | Error handling, native structured output, business rule checks (per-person costs), input guardrails (including Chinese place names), template version management | 2026-10-31 |
+| 4 | `true-sse-streaming` | Push each step as it completes, don't block the event loop, remove stdout capture | 2026-11-01 |
+| 5 | `rebuild-rag` | Wikivoyage knowledge base, retrieval comparisons (vector + destination filter adopted; hybrid and reranking not), source citations, interim routing (always retrieve) | 2026-11-10 |
 
 ## Later: changes not yet created
 
 ### 3. Drop "CAG" in favour of real routing
 
 - **Problem**: the name is inaccurate (the project's "CAG" is really embedding-based intent classification, not Cache-Augmented Generation); the 0.85 threshold has no justification; using "intent classification confidence" to decide "whether to retrieve" makes no logical sense. The high-confidence template does not even have a knowledge placeholder, so the clearer the intent, the less destination knowledge it gets.
-- **Current state**: `rebuild-rag` makes an interim solution — always retrieve, confidence is reported but takes no part in routing, and the generation templates are merged into one. The `retrieval_decision` step is kept as the plug-in point for the new routing.
+- **Current state**: `rebuild-rag` made an interim solution — always retrieve, confidence is reported but takes no part in routing, and the generation templates are merged into one. The `retrieval_decision` step is kept as the plug-in point for the new routing.
 - **Direction**: use LLM structured output to parse what the user says into a request object (destination, trip length, budget, preferences, whether specific place information is needed), and let the parse result plus rules decide which path to take; ask the user back when key information is missing.
 - **Comparison**: keep the embedding classification as a baseline, compare the two on the evaluation dataset for slot accuracy, latency and cost, choose one and state why. The evaluation dataset already includes `utterance` and `gold_slots`.
 - **⚠️ To be decided**: whether to also build **true CAG** (choosing between "put the whole destination knowledge into the context" and RAG by token budget). The draft is in [`drafts/add-cag-mode/`](roadmap/drafts/add-cag-mode/). The two can be combined: LLM parsing decides "whether knowledge is needed", and the token budget decides "CAG or RAG". The draft was written against the old plan (it references the cancelled `knowledge-evaluation`) and must be rewritten when the change is formally created.
-- **Category presets**: each of the 50 categories carries a preset tone and constraints that v0.1.0 puts into the prompt in place of the user's own words. `rebuild-rag` compares "preset only / user's words only / both" with a preference-adherence metric (its design decision 3); whether the presets are kept once requests are parsed is decided here, starting from that result.
+- **Category presets**: each of the 50 categories carries a preset tone and constraints that v0.1.0 puts into the prompt in place of the user's own words. `rebuild-rag` compared "preset only / user's words only / both" with a preference-adherence metric (its design decision 3) and adopted "both", the traveller's words first and the preset only where they say nothing (variant C, see `docs/experiments.md`); whether the presets are kept once requests are parsed is decided here, starting from that result.
 - **Side note**: asking the user back requires sessions, so design it together with item 5.
 
 ### 4. Tool calling (real agent capability)

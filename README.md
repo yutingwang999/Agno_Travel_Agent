@@ -1,6 +1,8 @@
 # Travel Itinerary Planner
 
-An AI-powered travel itinerary planning service for Australian destinations. The system uses a structured Agno workflow that combines **CAG** (Cache-Augmented Generation for intent classification) and **RAG** (Retrieval-Augmented Generation for factual enrichment), with database-driven prompt templates and full SSE streaming.
+An AI-powered itinerary planner for Australian destinations. A request (destination, trip length, budget, travel style, optional notes) goes through a fixed six-step Agno workflow: intent classification, retrieval from a knowledge base built mainly from Wikivoyage, generation with a versioned prompt from the database, and validation against a schema and business rules. Each step is streamed to the client as a Server-Sent Event as soon as it finishes, and each day of the itinerary cites the knowledge chunks it draws on.
+
+Behaviour is changed through OpenSpec changes, and every change that claims a quality improvement is measured with the evaluation harness (see [Project history](#project-history)).
 
 ---
 
@@ -8,29 +10,28 @@ An AI-powered travel itinerary planning service for Australian destinations. The
 
 ```
 POST /generate
+      │  field validation (422), input guards: prompt injection, Australian destination (422 + reason)
+      ▼
+Agno workflow (six plain Steps, run in a worker thread)
+  1. intake              — normalise the request, resolve the destination's canonical name
+  2. cag_match           — embed the request, cosine match against 50 itinerary categories
+  3. retrieval_decision  — always retrieve (kept as the plug-in point for future routing)
+  4. rag_retrieve        — top 5 chunks for notes + travel style + destination,
+                           filtered to the destination and Australia-wide chunks
+  5. generate            — prompt template itinerary_with_context from the database,
+                           chunks numbered S1, S2, ...; Gemini structured output
+  6. validate_output     — Pydantic schema + business rules; one correction call on failure
       │
       ▼
-FastAPI Service
-      │  creates session_id, validates request
-      ▼
-Agno Workflow
-  1. intake              — validate + normalise input fields
-  2. cag_match           — embed intent, cosine match against itinerary_categories
-  3. retrieval_decision  — confidence >= 0.85 → skip RAG, else retrieve
-  4. rag_retrieve        — pgvector top-5 similarity search on the knowledge base
-  5. generate            — resolve DB prompt template, call LLM
-  6. validate_output     — Pydantic schema check, retry once on failure
-      │
-      ▼
-SSE stream (one structured event per step)
+SSE stream: one event per step, each sent as soon as the step finishes
 ```
 
-Each SSE event has the form:
+Every event has the same envelope:
 
 ```json
 {
   "session_id": "...",
-  "step": "cag_match",
+  "step": "rag_retrieve",
   "status": "completed",
   "timestamp": "...",
   "data": {},
@@ -38,770 +39,277 @@ Each SSE event has the form:
 }
 ```
 
----
-
-## Tech Stack
-
-| Layer            | Technology                                          |
-| ---------------- | --------------------------------------------------- |
-| API              | FastAPI + sse-starlette                             |
-| Workflow         | Agno (`Step`, `Condition`)                          |
-| Knowledge base   | Agno `Knowledge` + `PgVector` (`travel_docs` table) |
-| Database         | PostgreSQL 16 + pgvector                            |
-| ORM / migrations | SQLAlchemy 2 + Alembic                              |
-| LLM              | Gemini 2.0 Flash (`google-genai`)                   |
-| Embeddings       | `gemini-embedding-001` (Google, 768 dims)           |
-| Validation       | Pydantic v2                                         |
+"CAG" in this project is embedding-based intent classification, not cache-augmented generation. The matched category's preset tone and constraints are passed to the prompt; its confidence no longer decides anything. A diagram of the flow: [docs/main-logic-diagram.png](docs/main-logic-diagram.png).
 
 ---
 
-## Prerequisites
+## Tech stack
 
-- Python 3.11+
-- Docker Desktop
+| Layer | Technology |
+| --- | --- |
+| API | FastAPI + sse-starlette |
+| Workflow | Agno 2.x (`Workflow`, `Step`) |
+| Knowledge base | Agno `Knowledge` + `PgVector` (table `ai.travel_docs`) |
+| Database | PostgreSQL 16 + pgvector |
+| ORM / migrations | SQLAlchemy 2 + Alembic |
+| LLM | Gemini (`LLM_MODEL`, e.g. `gemini-3.1-flash-lite`) via `google-genai` |
+| Embeddings | `gemini-embedding-001`, 768 dimensions |
+| Validation | Pydantic v2 |
+| Evaluation judge | OpenAI model (evaluation only; the app never calls it) |
+
+Exact versions are pinned in [pyproject.toml](pyproject.toml).
 
 ---
 
 ## Setup
 
-**1. Clone and copy env file**
+Prerequisites: Python 3.11+ and Docker Desktop.
 
 ```bash
 git clone <repo-url>
 cd Agno_Travel_Agent
-cp .env.example .env
-# fill in GEMINI_API_KEY in .env
+cp .env.example .env              # then fill in GEMINI_API_KEY and POSTGRES_PASSWORD
+
+python scripts/dev.py install     # pip install -e ".[dev]"
+python scripts/dev.py up          # start PostgreSQL (docker compose)
+python scripts/dev.py migrate     # alembic upgrade head
+python scripts/dev.py seed        # categories, prompt templates, knowledge base
 ```
 
-**2. Install dependencies**
+Start the app and open http://localhost:8000:
 
 ```bash
-python scripts/dev.py install
+PYTHONPATH=src uvicorn app.main:app --reload                    # macOS / Linux
+$env:PYTHONPATH="src"; python -m uvicorn app.main:app --reload  # Windows PowerShell
 ```
 
-**3. Start PostgreSQL**
+**The knowledge-base corpus is not in this repository** (see [Data sources and licences](#data-sources-and-licences)). Without it, `seed` warns and leaves the knowledge base empty; the app still runs, and generates without retrieved context or citations. With the private files in `data/knowledge/`, `python scripts/build_corpus.py build` writes the corpus JSONL that `seed` loads.
 
-```bash
-python scripts/dev.py up
-```
-
-**4. Apply migrations**
-
-```bash
-python scripts/dev.py migrate
-```
-
-**5. Seed the database**
-
-```bash
-python scripts/dev.py seed
-```
-
-**6. Start the app**
-
-```bash
-PYTHONPATH=src uvicorn app.main:app --reload   # macOS / Linux
-$env:PYTHONPATH="src"; uvicorn app.main:app --reload  # Windows PowerShell
-```
+Seeding is idempotent: rows that already exist are skipped before any embedding call, and document embeddings are cached in `.cache/embeddings/`.
 
 ---
 
-## Environment Variables
+## Environment variables
 
 All variables are documented in [.env.example](.env.example).
 
-| Variable            | Purpose                                                                           |
-| ------------------- | --------------------------------------------------------------------------------- |
-| `POSTGRES_USER`     | PostgreSQL username                                                               |
-| `POSTGRES_PASSWORD` | PostgreSQL password                                                               |
-| `POSTGRES_DB`       | Database name                                                                     |
-| `POSTGRES_PORT`     | Host port to expose (default `5432`)                                              |
-| `DATABASE_URL`      | Full SQLAlchemy / Alembic DSN                                                     |
-| `TEST_DATABASE_URL` | Test database for integration / destructive tests; name must end with `_test_db`  |
-| `EVAL_DATABASE_URL` | Evaluation database; name must end with `_eval_db` (see "How to run the evaluation") |
-| `GEMINI_API_KEY`    | Google Gemini API key                                                             |
-| `OPENAI_API_KEY`    | Judge model for the evaluation only; the app does not use it                      |
-| `LLM_MODEL`         | Gemini model for generation (e.g. `gemini-3.1-flash-lite`)                          |
-| `EMBEDDING_MODEL`   | Embedding model — must match seed and cag_match (default: `gemini-embedding-001`) |
-| `APP_HOST`          | Uvicorn bind host                                                                 |
-| `APP_PORT`          | Uvicorn bind port                                                                 |
+| Variable | Purpose |
+| --- | --- |
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT` | PostgreSQL container settings |
+| `DATABASE_URL` | Development database DSN, used by the app, Alembic and seed |
+| `TEST_DATABASE_URL` | Test database; the name must end with `_test_db` |
+| `EVAL_DATABASE_URL` | Evaluation database; the name must end with `_eval_db` |
+| `GEMINI_API_KEY` | Generation and embeddings |
+| `OPENAI_API_KEY` | Evaluation judge only |
+| `LLM_MODEL` | Gemini model for generation and the correction call |
+| `EMBEDDING_MODEL` | Embedding model; must be the same for seed and runtime (default `gemini-embedding-001`) |
+| `KNOWLEDGE_TABLE_NAME` | Knowledge-base table in the `ai` schema (default `travel_docs`) |
+| `KNOWLEDGE_CORPUS` | Corpus JSONL file that seed loads (default `data/knowledge/corpus_c800_o80.jsonl`), or `v1` |
+| `KNOWLEDGE_TASK_TYPES` | Embedding task types of the table: `retrieval` (default) or `semantic` (the v1 tables) |
+| `APP_HOST`, `APP_PORT` | Uvicorn bind host and port |
+
+Changing `EMBEDDING_MODEL`, `KNOWLEDGE_CORPUS` or `KNOWLEDGE_TASK_TYPES` invalidates stored vectors. Seed drops and rebuilds a knowledge-base table that holds anything other than the current corpus file.
 
 ---
 
-## Dev Commands
+## Dev commands
 
-All commands work on Windows and Unix via the Python task runner:
+`scripts/dev.py` is a cross-platform task runner; on macOS / Linux `make <target>` wraps it.
 
 ```bash
-python scripts/dev.py up             # start PostgreSQL
-python scripts/dev.py down           # stop PostgreSQL
-python scripts/dev.py install        # pip install -e ".[dev]"
-python scripts/dev.py migrate        # alembic upgrade head
-python scripts/dev.py seed           # seed categories, prompt templates, source docs
-python scripts/dev.py count-rows     # print row counts + embedding coverage for seeded tables
-python scripts/dev.py check-health   # GET /health → 200
-python scripts/dev.py test              # unit tests only (plain pytest)
-python scripts/dev.py test-db-setup     # create + migrate + seed the test database
-python scripts/dev.py test-integration  # integration + golden tests on the test database
-python scripts/dev.py test-destructive  # migration tests, then re-seed the test database
-python scripts/dev.py test-all          # unit → integration → destructive + re-seed
-python scripts/dev.py verify            # up → migrate → uvicorn → health + unit tests
-python scripts/dev.py verify-schema     # db-schema tests on the test database, then re-seed
-python scripts/dev.py eval-db-setup     # create + migrate + seed the evaluation database
+python scripts/dev.py up | down        # start / stop PostgreSQL
+python scripts/dev.py install          # pip install -e ".[dev]"
+python scripts/dev.py migrate          # alembic upgrade head
+python scripts/dev.py seed             # categories, prompt templates, knowledge base (idempotent)
+python scripts/dev.py count-rows       # row counts + embedding coverage
+python scripts/dev.py check-health     # GET /health -> 200
+python scripts/dev.py test             # unit tests
+python scripts/dev.py test-db-setup    # create + migrate + seed the test database
+python scripts/dev.py test-integration # integration + golden tests on the test database
+python scripts/dev.py test-destructive # migration tests, then re-seed the test database
+python scripts/dev.py test-all         # unit -> integration -> destructive
+python scripts/dev.py verify           # up -> migrate -> uvicorn -> health + unit tests
+python scripts/dev.py verify-schema    # db-schema tests on the test database, then re-seed
+python scripts/dev.py eval-db-setup    # create + migrate + seed the evaluation database
 ```
 
-On macOS/Linux you can also use `make <target>` as a shorthand.
+---
+
+## API
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /health` | Liveness probe |
+| `POST /generate` | Run the workflow and stream one SSE event per step |
+| `GET /traces/{session_id}` | The trace rows of one request |
+| `GET /` | The browser UI |
+
+```bash
+curl -N -X POST http://localhost:8000/generate \
+  -H "Content-Type: application/json" \
+  -d '{"destination": "Sydney", "trip_length": 3, "budget": "moderate", "travel_style": "cultural", "notes": "We love museums"}'
+```
+
+| Field | Required | Values |
+| --- | --- | --- |
+| `destination` | yes | One Australian place, in English or Chinese (`"悉尼"`); replaced by its canonical English name |
+| `trip_length` | yes | 1–14 days |
+| `budget` | yes | `"budget"`, `"moderate"` or `"luxury"` |
+| `travel_style` | yes | Free text |
+| `max_daily_budget_aud` | no | Whole AUD per person per day, excluding accommodation |
+| `notes` | no | Free text for details the other fields cannot express, at most 500 characters |
+
+Query parameter `template_version=N` pins a version of the generation template instead of the active one.
+
+- **Budget.** Costs are AUD per person, excluding accommodation. The daily ceiling is `max_daily_budget_aud` when given, otherwise the level's default: `budget` 70, `moderate` 200, `luxury` none.
+- **Input guards.** A free-text field that looks like a prompt injection is refused with `input_rejected`; a destination that is not one place in the Australian place list (`data/places/australia.tsv`) is refused with `destination_out_of_scope`. Both are 422 with a `reason` code, and no workflow step runs.
+- **Streaming.** Events arrive in workflow order, each as soon as its step finishes; other requests are answered while a workflow runs. If the client disconnects, the running step finishes and no later step starts.
+
+The full reference — every step's `data`, the itinerary and citation shapes, error bodies and what each failure looks like in the stream — is [docs/api.md](docs/api.md).
+
+---
+
+## How it works
+
+### Retrieval
+
+The knowledge base is corpus v2: Wikivoyage city pages at pinned revisions, plus the Australia-wide handwritten documents of v0.1.0, split into 800-character chunks with 80 characters of overlap and embedded with the `retrieval` task types. `rag_retrieve` searches it through Agno `Knowledge` + `PgVector` with the query "notes + travel style + destination", keeps chunks tagged with the destination or as Australia-wide, and returns the top 5. Any error in embedding or search is logged and the step completes with no chunks.
+
+BM25 + RRF, Agno hybrid search and Cross-Encoder reranking were measured and not adopted; [docs/experiments.md](docs/experiments.md) records the comparisons.
+
+### Generation and prompts
+
+`generate` uses one template, `itinerary_with_context`, read from the `prompt_templates` table (the active version, or the one pinned with `?template_version=N`). Each retrieved chunk is written into the prompt as `[S1] <title>`, `[S2] ...`, and the model lists for each day the ids it draws on. The call asks Gemini for JSON with `ItineraryOutput` as the response schema.
+
+Prompts are never edited in place: a change is a new entry in `TEMPLATE_DEFINITIONS` in `scripts/seed.py`, and `ACTIVE_TEMPLATE_VERSIONS` there decides which version of each key is active. A partial unique index allows one active version per key. The template version used is in the `generate` event and the trace.
+
+### Validation
+
+`validate_output` validates the output against `ItineraryOutput` (destination, trip length, budget level, travel style, daily items with morning / afternoon / evening, cost and `sources`, total cost, tips), then checks the business rules in `workflow/business_rules.py`:
+
+- the day count matches the request;
+- daily costs add up to the total (± max(1 AUD, 1%));
+- the total is within the daily ceiling × days;
+- opening hours and prices in the text appear in the retrieved context;
+- every cited id is one of the chunks placed in the prompt.
+
+On failure it makes one correction call with the `validate_output_correction` template and marks the result `degraded_mode`. If the correction also fails, the event has `status: "error"`; the workflow never raises.
+
+### Tracing
+
+Every exit path of every step writes one row to `trace_events`: step, status, latency, template key and version, input and output tokens, `degraded_mode` and `error_type`. Trace writes swallow database errors. `GET /traces/{session_id}` returns the rows of one request, and the UI shows them after each run.
 
 ---
 
 ## Browser UI
 
-The app serves a single-page frontend at `GET /` from `src/app/static/index.html` — plain HTML + vanilla JS, no build step required.
+`GET /` serves `src/app/static/index.html` (plain HTML and JavaScript, no build step):
 
-### Starting the app
+- a form with the request fields, notes, and an optional template version;
+- three presets (Sydney family trip, Melbourne budget trip, and Alice Springs with an unusual style);
+- one panel per workflow step, filled in as its event arrives;
+- the itinerary with each day's sources, Wikivoyage sources linked to their section, and the licence notice;
+- the trace table for the request.
 
-```bash
-# Windows PowerShell
-$env:PYTHONPATH="src"; python.exe -m uvicorn app.main:app --reload
-
-# macOS / Linux
-PYTHONPATH=src uvicorn app.main:app --reload
-```
-
-Then open **http://localhost:8000** in your browser.
-
-### Manual UI test walkthrough
-
-**1. Use a golden preset button**
-
-Three preset buttons pre-fill the form with the same inputs used in `test_golden.py`:
-
-| Button         | Destination | Days | Budget   | Style  | Expected path                  |
-| -------------- | ----------- | ---- | -------- | ------ | ------------------------------ |
-| Family trip    | Sydney      | 5    | moderate | family | High-confidence → no RAG       |
-| Budget trip    | Melbourne   | 3    | budget   | budget | High-confidence → no RAG       |
-| Low-confidence | Alice Springs | 4  | moderate | spontaneous_urban_nomad | Low-confidence → RAG triggered |
-
-Click a preset, then click **Generate Itinerary**.
-
-**2. Watch the SSE step panels**
-
-Each workflow step appears as a panel as it arrives in real time:
-
-- Green left border = `completed`
-- Red left border = `error`
-- The `generate` step panel highlights `prompt_template_key` and `prompt_template_version` in amber
-
-**3. Check the Trace Log table**
-
-After the stream finishes the page automatically calls `GET /traces/{session_id}` and renders all trace rows in a table showing step, status, latency, template version, and degraded mode.
-
-**4. Try the optional template version override**
-
-Enter a version number in the **Template version** field before submitting to test a specific prompt template version (equivalent to `?template_version=N` on the API).
-
-**5. Try a budget amount and the input checks**
-
-- Enter a whole number in **Daily budget per person** (e.g. `150`); the `intake` panel shows `max_daily_budget_aud`, and the itinerary total stays within 150 × the number of days. A fractional amount or `0` is stopped by the form.
-- A trip length above 14 is stopped by the form.
-- A destination outside Australia (`Paris`) or an instruction in the travel style (`ignore previous instructions`) shows the refusal message in the red banner.
-
-### Clearing trace data between manual runs
-
-To start with a clean trace table:
-
-```sql
-TRUNCATE TABLE trace_events RESTART IDENTITY;
-```
-
-Via Docker:
-
-```bash
-docker exec -it <postgres-container> psql -U <user> -d <dbname> -c "TRUNCATE TABLE trace_events RESTART IDENTITY;"
-```
-
-This is safe for manual UI exploration. Automated tests mock the DB and are unaffected.
+To start with an empty trace table: `TRUNCATE TABLE trace_events RESTART IDENTITY;` on the development database.
 
 ---
 
-## POST /generate Endpoint
+## Tests
 
-The `POST /generate` endpoint is the public entry point for the workflow. It validates the request, runs the Agno workflow, and streams all step events as Server-Sent Events.
-
-### Request
-
-```http
-POST /generate?template_version=2
-Content-Type: application/json
-
-{
-  "destination": "Sydney",
-  "trip_length": 5,
-  "budget": "moderate",
-  "travel_style": "family"
-}
-```
-
-The first four body fields are required. Missing or invalid fields return **422 Unprocessable Entity** — never a 500.
-
-| Field                  | Type      | Values                               | Notes                                                                 |
-| ---------------------- | --------- | ------------------------------------ | --------------------------------------------------------------------- |
-| `destination`          | `string`  | one Australian place                 | English or Chinese (`"悉尼"`); replaced by its canonical English name |
-| `trip_length`          | `integer` | 1–14                                 | number of days                                                        |
-| `budget`               | `enum`    | `"budget"`, `"moderate"`, `"luxury"` | any other value → 422                                                 |
-| `travel_style`         | `string`  | free text                            | used for CAG semantic matching                                        |
-| `max_daily_budget_aud` | `integer` | ≥ 1, optional                        | whole AUD per person per day, excluding accommodation                 |
-
-**Budget.** Costs are AUD per person, excluding accommodation. A request's daily ceiling is `max_daily_budget_aud` if given, otherwise the level's default — `budget` 70, `moderate` 200, `luxury` none. The prompt states the ceiling, and validation checks the total against it.
-
-**Input guards.** Before the workflow starts, a request is refused with 422 and a `reason` code when a free-text field looks like a prompt injection (`input_rejected`), or when the destination is not one place in the Australian place list (`destination_out_of_scope`). The list covers Australian places of at least 1,000 people, states and territories, major tourist destinations, and one Chinese name per major place; it may wrongly refuse a small place, and it refuses vague destinations ("Australia", "the east coast") and two destinations at once. Field errors keep FastAPI's body without a `reason`. Details and the exact bodies: [docs/api.md](docs/api.md) ("Input guards", "Error responses").
-
-**Optional query parameter:**
-
-| Parameter          | Type      | Default | Effect                                                             |
-| ------------------ | --------- | ------- | ------------------------------------------------------------------ |
-| `template_version` | `integer` | none    | fetch a specific prompt template version instead of the active one |
-
-When `template_version` is omitted the active template (`is_active=true`) is used. Pass an explicit version to reproduce a past run or test a specific template version.
-
-### Response
-
-```http
-HTTP/1.1 200 OK
-Content-Type: text/event-stream
-
-data: {"session_id": "...", "step": "intake", "status": "completed", ...}
-
-data: {"session_id": "...", "step": "cag_match", "status": "completed", ...}
-
-data: {"session_id": "...", "step": "retrieval_decision", "status": "completed", ...}
-
-data: {"session_id": "...", "step": "generate", "status": "completed", ...}
-
-data: {"session_id": "...", "step": "validate_output", "status": "completed", ...}
-```
-
-- Each `data` line is a JSON-serialised SSE event matching DESIGN.md section 9.
-- `session_id` is generated per request (`uuid4`) and is identical across all events.
-- The `rag_retrieve` event is present only when `confidence_score < 0.85`.
-- Events arrive in workflow order, each as soon as its step finishes: `intake → cag_match → retrieval_decision → (rag_retrieve) → generate → validate_output`. Other requests (e.g. `GET /health`) are answered while a workflow runs.
-- If the client disconnects, the step that is running finishes and no further step starts.
-
-### How it works
-
-```
-POST /generate
-  ├── FastAPI validates TravelRequest body  →  422 on bad input
-  ├── input guards (prompt injection, Australian destination)  →  422 with a reason code
-  ├── generate session_id = uuid4()
-  └── EventSourceResponse(event_generator())
-        └── iterate _run_workflow(session_id, request) in a worker thread
-              ├── travel_workflow.run(additional_data={session_id, destination, ...},
-              │                       stream=True, stream_events=True)
-              │     intake → cag_match → retrieval_decision (Step)
-              │       → retrieval_branch (Condition: rag_retrieve if chosen)
-              │       → generate → validate_output
-              ├── each StepCompletedEvent carries that step's SSE event JSON
-              └── yields {"data": json.dumps(event)} as soon as the step finishes
-```
-
-### Try it
-
-```bash
-# Active template (default)
-curl -N -X POST http://localhost:8000/generate \
-  -H "Content-Type: application/json" \
-  -d '{"destination": "Sydney", "trip_length": 5, "budget": "moderate", "travel_style": "family"}'
-
-# Specific template version
-curl -N -X POST "http://localhost:8000/generate?template_version=2" \
-  -H "Content-Type: application/json" \
-  -d '{"destination": "Sydney", "trip_length": 5, "budget": "moderate", "travel_style": "family"}'
-```
-
-### GET /traces/{session_id}
-
-Returns all `trace_events` rows for a session as a JSON array ordered by `created_at`.
-
-```http
-GET /traces/abc-123-def
-```
-
-**200 response:**
-
-```json
-[
-  {
-    "session_id": "abc-123-def",
-    "step_name": "intake",
-    "status": "completed",
-    "latency_ms": 4.2,
-    "prompt_template_key": null,
-    "prompt_template_version": null,
-    "degraded_mode": null,
-    "error_type": null,
-    "created_at": "..."
-  },
-  {
-    "session_id": "abc-123-def",
-    "step_name": "generate",
-    "status": "completed",
-    "latency_ms": 2341.8,
-    "prompt_template_key": "high_confidence_minimal_context",
-    "prompt_template_version": 1,
-    "degraded_mode": null,
-    "error_type": null,
-    "created_at": "..."
-  }
-]
-```
-
-**404** when no rows exist for that `session_id`.
-
----
-
-## RAG Knowledge Base
-
-Step 4 (`rag_retrieve`) uses **Agno's built-in `Knowledge` + `PgVector`** rather than raw SQL, keeping retrieval logic within the Agno framework.
-
-### How it works
-
-```
-rag_retrieve_executor
-  └── retrieval_service.retrieve_documents(query_text, db_url, api_key)
-        └── knowledge_base.build_knowledge(db_url, api_key)
-              └── Knowledge(vector_db=PgVector(table_name="travel_docs", embedder=GeminiEmbedder))
-                    └── knowledge.search(query, max_results=5)  →  List[Document]
-```
-
-- **Table**: `travel_docs` in the `ai` schema — created and managed automatically by Agno's `PgVector`.
-- **Embedder**: `GeminiEmbedder` — a custom Agno-compatible wrapper around `google-genai` using `gemini-embedding-001` (768 dims, `SEMANTIC_SIMILARITY`), matching the model used for CAG and seed embeddings.
-- **Search type**: vector (cosine distance).
-- **Top-k**: 5 chunks by default.
-- **Graceful degradation**: any exception in embedding or search is caught and logged; the step always completes and emits an SSE event, returning an empty `retrieved_context` list on failure.
-
-### Seeding the knowledge base
-
-`scripts/seed.py` inserts itinerary categories, every version of the 3 prompt templates (including the correction template for validate_output; version 2 states that all costs are AUD per person, excluding accommodation, and version 3 of the two generation templates adds the daily budget ceiling), and 13 Australian travel documents into the knowledge base using `knowledge.insert()`:
-
-```bash
-python scripts/dev.py seed
-```
-
-Documents store `destination` and category tags in `meta_data` so they are accessible after retrieval.
-
----
-
-## Generate Step
-
-Step 5 (`generate`) resolves the active prompt template from the database and calls the Gemini LLM.
-
-### How it works
-
-```
-generate_executor
-  ├── reads upstream state:
-  │     intake       → destination, trip_length, budget, travel_style
-  │     cag_match    → matched_category, confidence_score, tone, constraints
-  │     rag_retrieve → retrieved_context (empty string if step was skipped)
-  ├── selects template key:
-  │     confidence_score >= 0.85  →  high_confidence_minimal_context
-  │     confidence_score <  0.85  →  low_confidence_with_retrieval
-  ├── template_resolver.resolve_template(template_key, db_url, version=None)
-  │     ├── version=None  → WHERE template_key=? AND is_active=true
-  │     └── version=N     → WHERE template_key=? AND version=N
-  ├── _format_template(template_text, variables)
-  │     └── regex substitution — safely handles literal { } in the JSON schema example
-  └── _call_llm(prompt, api_key, model)  →  raw_llm_output
-```
-
-### Template selection
-
-Three prompt templates are seeded in `prompt_templates`:
-
-| `template_key`                    | Used by                              | Purpose                        |
-| --------------------------------- | ------------------------------------ | ------------------------------ |
-| `high_confidence_minimal_context` | `generate` (confidence ≥ 0.85)       | Minimal prompt, no RAG context |
-| `low_confidence_with_retrieval`   | `generate` (confidence < 0.85)       | RAG-augmented prompt           |
-| `validate_output_correction`      | `validate_output` (on first failure) | Corrective retry prompt        |
-
-All templates are versioned (`version`, `is_active`) and fetched from the database at runtime — never hardcoded. The resolved `prompt_template_version` is written to the SSE event `data` field for traceability.
-
-Changing a template: add a new entry to `TEMPLATE_DEFINITIONS` in `scripts/seed.py` (existing versions are never edited), set its number in `ACTIVE_TEMPLATE_VERSIONS`, and run `python scripts/dev.py seed`. Seed makes exactly the declared version of each key active; rolling back is changing the number back and re-running seed. The database allows only one active version per key (migration `0006`), and seed stops before writing if a declared version is not defined.
-
-### SSE output
-
-```json
-{
-  "session_id": "...",
-  "step": "generate",
-  "status": "completed",
-  "data": {
-    "raw_llm_output": "{ ... }",
-    "prompt_template_key": "high_confidence_minimal_context",
-    "prompt_template_version": 1
-  }
-}
-```
-
----
-
-## Validate Output Step
-
-Step 6 (`validate_output`) parses `raw_llm_output` from the generate step against a Pydantic schema and retries once on failure.
-
-### How it works
-
-````
-validate_output_executor
-  ├── _extract_raw_llm_output(step_input)
-  │     └── reads raw_llm_output from generate SSE event
-  ├── _build_validation_context(step_input)
-  │     └── requested trip_length + daily budget ceiling (intake event),
-  │         knowledge context = chunk_text of every rag_retrieve chunk
-  ├── parse_llm_output(raw_text, context)               [attempt 1]
-  │     ├── strip markdown fences (```json … ```)       (fallback; Gemini returns plain JSON)
-  │     ├── json.loads(cleaned_text)
-  │     ├── ItineraryOutput.model_validate(data)
-  │     └── business rules (business_rules.py), every failure reported:
-  │           ├── day count: internally consistent and equal to the requested trip_length
-  │           ├── cost: daily costs add up to the total (± max(1 AUD, 1%))
-  │           ├── budget: total ≤ daily ceiling × days (per person, excl. accommodation)
-  │           └── unsupported: opening hours and prices in the text must be in the knowledge context
-  │
-  ├── [success] → emit SSE with itinerary + degraded_mode=False
-  │
-  └── [failure] → retry once:
-        ├── resolve_template("validate_output_correction", db_url)
-        ├── _build_correction_prompt(template, raw_output, errors)
-        ├── _call_llm(correction_prompt, ...)
-        ├── parse_llm_output(retry_output, context)     [attempt 2]
-        ├── [success] → emit SSE with itinerary + degraded_mode=True
-        └── [failure] → emit SSE status="error" + degraded_mode=True
-                        (no unhandled exception)
-````
-
-### Output schema (`ItineraryOutput`)
-
-```python
-class DailyItineraryItem(BaseModel):
-    day: int
-    morning: str
-    afternoon: str
-    evening: str
-    estimated_cost_aud: float
-
-class ItineraryOutput(BaseModel):
-    destination: str
-    trip_length_days: int
-    budget_level: str
-    travel_style: str
-    daily_itinerary: List[DailyItineraryItem]
-    total_estimated_cost_aud: float
-    key_tips: List[str]
-```
-
-### SSE output
-
-```json
-{
-  "session_id": "...",
-  "step": "validate_output",
-  "status": "completed",
-  "data": {
-    "itinerary": {
-      "destination": "Sydney",
-      "trip_length_days": 5,
-      "...": "..."
-    },
-    "degraded_mode": false
-  }
-}
-```
-
-On unrecoverable failure: `"status": "error"`, `"degraded_mode": true`, `"error": "Validation failed after retry: ..."`.
-
----
-
-## Observability
-
-Every workflow step writes one row to the `trace_events` table after it completes. This gives a full per-request audit trail without coupling the steps to any streaming or logging infrastructure.
-
-### How it works
-
-```
-write_trace(db_url, session_id, step_name, status, latency_ms, **step_fields)
-  └── creates SQLAlchemy engine → inserts TraceEvent row → commits
-      any DB error is caught and logged — never propagates to the caller
-```
-
-`trace_logger.write_trace` is imported by each step executor and called on every exit path — success, error, and degraded-mode retry.
-
-### trace_events schema
-
-| Column                    | Type           | Steps                                                      |
-| ------------------------- | -------------- | ---------------------------------------------------------- |
-| `session_id`              | `String(100)`  | all                                                        |
-| `step_name`               | `String(100)`  | all                                                        |
-| `status`                  | `String(50)`   | all — `"completed"` or `"error"`                           |
-| `latency_ms`              | `Float`        | all — wall-clock duration of the step                      |
-| `prompt_template_key`     | `String(100)`  | `generate` only                                            |
-| `prompt_template_version` | `Integer`      | `generate` only                                            |
-| `degraded_mode`           | `Boolean`      | `validate_output` only — `True` when a retry was attempted |
-| `error_type`              | `String(200)`  | `validate_output` only — short description on failure      |
-| `created_at`              | `DateTime(tz)` | all — server default                                       |
-
-### Example rows after a full low-confidence run
-
-```
-session_id             step_name            status     latency_ms  prompt_template_key              degraded_mode
-─────────────────────  ───────────────────  ─────────  ──────────  ───────────────────────────────  ─────────────
-abc123…                intake               completed  4.2         null                             null
-abc123…                cag_match            completed  312.0       null                             null
-abc123…                retrieval_decision   completed  0.1         null                             null
-abc123…                rag_retrieve         completed  890.5       null                             null
-abc123…                generate             completed  2341.8      low_confidence_with_retrieval    null
-abc123…                validate_output      completed  12.3        null                             false
-```
-
-### Querying traces
-
-```sql
--- All steps for a session, in order
-SELECT step_name, status, latency_ms, degraded_mode
-FROM trace_events
-WHERE session_id = 'abc123...'
-ORDER BY created_at;
-
--- Degraded validate_output runs in the last hour
-SELECT session_id, error_type, latency_ms, created_at
-FROM trace_events
-WHERE step_name = 'validate_output'
-  AND degraded_mode = true
-  AND created_at > now() - interval '1 hour';
-```
-
----
-
-## Running Tests
-
-Tests never touch the development database. Integration and migration tests run against a separate test database, `travel_agent_test_db`, in the same Postgres container: `tests/conftest.py` replaces `DATABASE_URL` with `TEST_DATABASE_URL` before any application code is imported.
-
-Tests are split into three tiers:
+Tests never touch the development database: `tests/conftest.py` replaces `DATABASE_URL` with `TEST_DATABASE_URL` (`travel_agent_test_db`, same container) before the app is imported.
 
 | Tier | Marker | Needs | Command |
 | --- | --- | --- | --- |
-| Unit | none | nothing (DB and LLM are mocked) | `python -m pytest` or `python scripts/dev.py test` |
-| Integration | `integration` | seeded test database + `GEMINI_API_KEY`; costs API calls | `python -m pytest -m integration` or `python scripts/dev.py test-integration` |
-| Destructive | `destructive` | test database; **wipes it** (`alembic downgrade base`) | `python scripts/dev.py test-destructive` |
+| Unit | none | nothing; database and LLM are faked | `python -m pytest` or `python scripts/dev.py test` |
+| Integration | `integration` | seeded test database + `GEMINI_API_KEY`; costs API calls | `python scripts/dev.py test-integration` |
+| Destructive | `destructive` | test database; **wipes it**, then re-seeds | `python scripts/dev.py test-destructive` |
 
-Plain `pytest` runs unit tests only (`addopts` in `pyproject.toml`); a `-m` on the command line overrides that. Run a single test with `python -m pytest tests/test_generate.py::test_name -v`.
+One-time setup for the integration and destructive tiers: set `TEST_DATABASE_URL` in `.env`, then `python scripts/dev.py up` and `python scripts/dev.py test-db-setup`. The test database is seeded with a small generated corpus (`tests/fixtures/knowledge/`, also not in git); without it `test-db-setup` stops with a message.
 
-**One-time setup for integration and destructive tests**
+- Day to day: `python scripts/dev.py test`.
+- After changing workflow behaviour: `test-integration` (golden tests and an end-to-end `POST /generate`).
+- After changing a migration: `test-destructive`.
+- Before merging: `test-all`.
 
-1. Copy `TEST_DATABASE_URL` from `.env.example` into `.env` (the database name must end with `_test_db`).
-2. Start Postgres and prepare the test database:
-
-```bash
-python scripts/dev.py up
-python scripts/dev.py test-db-setup   # create (if missing) -> migrate -> seed; safe to re-run
-```
-
-Seeding is idempotent: rows that already exist are skipped before any embedding call, so re-running `test-db-setup` costs nothing.
-
-**When to run what**
-
-- Day to day: `python scripts/dev.py test`
-- After changing workflow behaviour: `python scripts/dev.py test-integration` (includes the golden tests and the end-to-end `POST /generate` test)
-- After changing a migration: `python scripts/dev.py test-destructive` — it runs `alembic downgrade base` / `upgrade head` on the test database, then re-runs `test-db-setup` automatically to restore the seed data, whether the tests passed or failed
-- Before merging: `python scripts/dev.py test-all` (unit → integration → destructive + restore)
-
-Don't use `pytest -m ""` to run everything at once: files run in alphabetical order, so the migration tests would empty the test database before the golden tests.
-
-If `TEST_DATABASE_URL` is not set, integration and destructive tests are skipped with a reason, and unit tests point `DATABASE_URL` at an unreachable placeholder rather than the development database. The migration tests also refuse to run against any database whose name does not end with `_test_db`.
-
-`tests/conftest.py` loads `.env` automatically, so environment variables do not need to be exported manually before running pytest.
+Don't run `pytest -m ""`: the migration tests would empty the test database before the golden tests run. If `TEST_DATABASE_URL` is not set, the integration and destructive tests are skipped.
 
 ---
 
-## How to run the evaluation
+## Evaluation
 
-Tests check that the code works; the evaluation measures how good the itineraries are — retrieval recall, behaviour correctness, budget and day constraints, faithfulness to the knowledge context — on a fixed dataset of 73 requests (`eval/dataset.jsonl`). Full instructions are in [docs/evaluation.md](docs/evaluation.md); measured results are in [docs/experiments.md](docs/experiments.md).
-
-**Its own database.** The evaluation runs against `travel_agent_eval_db` (`EVAL_DATABASE_URL`, name must end with `_eval_db`), never the test database: tests reseed and wipe `travel_agent_test_db`, and its small fixture corpus is not the corpus being measured. Evaluation numbers come only from the evaluation database; each knowledge-base version gets its own table there (`travel_docs_v1`), so earlier results can be re-run.
-
-**Keys.** Generation and embeddings use `GEMINI_API_KEY`. Faithfulness and "attractions in the destination" are decided by a judge model from another provider, which needs `OPENAI_API_KEY`. A full run costs about $0.22 (about two thirds of it the judge) and takes about 12 minutes; the 10-entry smoke subset about $0.03 and 2 minutes.
+Tests check that the code works; the evaluation measures how good the itineraries are, on a fixed dataset (`eval/dataset.jsonl`): retrieval recall and MRR, whether each request is planned, refused or should be clarified, the day and budget constraints, faithfulness to the retrieved context, citation accuracy, whether the places are in the destination, and whether the traveller's preferences are followed. The last four are decided by a judge model from another provider, calibrated against hand review.
 
 ```bash
-python scripts/dev.py eval-db-setup                               # once: create + migrate + seed the evaluation database
-python scripts/eval_run.py --config v010-baseline                 # full run -> eval/runs/<run id>/
-python scripts/eval_run.py --config v010-baseline --subset smoke  # 10 entries
-python scripts/eval_compare.py <run id> <run id>                  # comparison table
-python scripts/eval_gate.py                                       # smoke run against eval/thresholds.yaml; non-zero exit on failure
+python scripts/dev.py eval-db-setup                                    # once: create + migrate + seed travel_agent_eval_db
+python scripts/eval_run.py --config <name>                             # full run -> eval/runs/<run id>/
+python scripts/eval_run.py --config <name> --subset smoke              # 10 entries
+python scripts/eval_compare.py <run id> <run id>                       # comparison table
+python scripts/eval_gate.py                                            # smoke run against eval/thresholds.yaml
 ```
 
-Commit before a run you want to cite: a run on uncommitted code is marked `git_dirty` and is for reference only. Each run's `summary.json` is committed; per-entry results are kept in a private repository (see [docs/evaluation.md](docs/evaluation.md), "What is published").
+The evaluation has its own database (`EVAL_DATABASE_URL`), with one knowledge-base table per corpus and chunking configuration, and needs `GEMINI_API_KEY` and `OPENAI_API_KEY`. Commit before a run you want to cite: a run on uncommitted code is marked `git_dirty`.
+
+- How to run it, read `summary.json`, calibrate the judge, and what a run costs: [docs/evaluation.md](docs/evaluation.md).
+- Measured results, comparisons and threshold changes: [docs/experiments.md](docs/experiments.md).
 
 ---
 
-## Project Layout
+## Project layout
 
 ```
 .
 ├── src/
-│   └── app/
-│       ├── main.py          # FastAPI entrypoint — GET /health, POST /generate, GET /traces/{id}
-│       ├── static/
-│       │   └── index.html           # Single-page browser UI (plain HTML + vanilla JS)
-│       ├── models/
-│       │   ├── base.py               # SQLAlchemy DeclarativeBase
-│       │   ├── itinerary_category.py # itinerary_categories table + Vector(768)
-│       │   ├── prompt_template.py    # prompt_templates table
-│       │   └── trace_event.py        # trace_events table
-│       └── workflow/
-│           ├── sse.py                # SSE event builder (build_sse_event, sse_event_to_json)
-│           ├── intake_model.py       # TravelRequest Pydantic model (Step 1 data contract)
-│           ├── travel_workflow.py    # Agno Workflow — 6 steps registered in order
-│           ├── trace_logger.py       # write_trace() — inserts one TraceEvent row per step
-│           ├── cag_matcher.py        # CAG logic: embed intent → in-memory cosine match → MatchResult
-│           ├── gemini_embedder.py    # Agno-compatible Gemini embedder (wraps google-genai)
-│           ├── knowledge_base.py     # Factory: Knowledge + PgVector(travel_docs) + GeminiEmbedder
-│           ├── retrieval_service.py  # RAG logic: knowledge.search() → list[RetrievedChunk]
-│           ├── template_resolver.py  # DB lookup: resolve_template(key) → (text, version)
-│           ├── template_versions.py  # seed helper: insert versions, activate the declared one per key
-│           ├── output_validator.py   # ItineraryOutput Pydantic schema + parse_llm_output()
-│           └── steps/
-│               ├── intake.py              # Step 1 — validates + normalises input (TravelRequest)
-│               ├── cag_match.py           # Step 2 — Gemini embed + cosine match → matched_category
-│               ├── retrieval_decision.py  # Step 3 — confidence >= 0.85 → skip RAG, else retrieve
-│               ├── rag_retrieve.py        # Step 4 — Agno Knowledge top-5 retrieval → retrieved_context
-│               ├── generate.py            # Step 5 — DB prompt template + LLM call → raw_llm_output
-│               └── validate_output.py     # Step 6 — Pydantic validation, retry once, structured error
-├── tests/
-│   ├── conftest.py              # loads .env; redirects Agno logger to stderr
-│   ├── test_db_schema.py        # db-schema merge checklist (migrations, models, live DB)
-│   ├── test_workflow_skeleton.py # workflow-skeleton checklist (SSE structure, 6-step run)
-│   ├── test_intake.py           # intake checklist + BudgetLevel enum tests
-│   ├── test_cag_match.py        # cag-match checklist (unit + integration)
-│   ├── test_retrieval_decision.py # retrieval-decision checklist (threshold logic, SSE)
-│   ├── test_rag_retrieve.py     # rag-retrieve checklist (top-k, graceful degradation)
-│   ├── test_generate.py         # generate checklist + template version override tests
-│   ├── test_validate_output.py  # validate-output checklist + content guardrail tests
-│   ├── test_observability.py    # observability checklist (unit + integration)
-│   ├── test_fastapi_service.py  # fastapi-service checklist (HTTP layer, 422s, SSE shape)
-│   ├── test_golden.py           # 3 golden tests + 1 end-to-end POST /generate test
-│   └── test_ui_api.py           # unit tests for GET /traces/{session_id} (DB mocked)
-├── alembic/
-│   ├── env.py               # loads .env, imports models, runs migrations
-│   ├── script.py.mako       # migration file template
-│   └── versions/
-│       ├── 0001_enable_pgvector_create_itinerary_categories.py
-│       ├── 0002_create_prompt_templates.py
-│       ├── 0003_create_source_documents.py
-│       ├── 0004_create_trace_events.py
-│       ├── 0005_add_token_usage_to_trace_events.py
-│       ├── 0006_single_active_prompt_template.py
-│       └── 0007_drop_source_documents.py
+│   ├── app/
+│   │   ├── main.py                 # FastAPI: /health, /generate, /traces/{id}, static UI
+│   │   ├── static/index.html       # browser UI
+│   │   ├── models/                 # SQLAlchemy models: categories, prompt templates, traces
+│   │   └── workflow/
+│   │       ├── travel_workflow.py  # the six-step Agno workflow
+│   │       ├── steps/              # one executor per step
+│   │       ├── sse.py              # SSE event builder
+│   │       ├── intake_model.py     # TravelRequest
+│   │       ├── input_guard.py      # prompt-injection and destination guards
+│   │       ├── places.py           # Australian place list lookup
+│   │       ├── cag_matcher.py      # intent classification
+│   │       ├── gemini_embedder.py  # embedder shared by seed, CAG and RAG
+│   │       ├── knowledge_base.py   # Knowledge + PgVector factory, task types
+│   │       ├── retrieval_service.py
+│   │       ├── template_resolver.py, template_versions.py
+│   │       ├── output_validator.py # ItineraryOutput + parsing
+│   │       ├── business_rules.py, budget.py
+│   │       ├── llm_usage.py        # token usage
+│   │       └── trace_logger.py
+│   └── evaluation/                 # harness: dataset, runner, judge, metrics, behaviour, cost, gate, compare, calibration
 ├── scripts/
-│   ├── dev.py               # cross-platform task runner
-│   └── seed.py              # seed itinerary_categories, prompt_templates, knowledge base
-├── docs/
-│   ├── DESIGN.md            # original v0.1.0 design (OpenSpec specs/changes take precedence)
-│   ├── CLAUDE.md            # AI usage guidelines for this repo
-│   └── git-workflow.md      # feature branch order and merge checklist
-├── alembic.ini              # Alembic config (DB URL injected from env)
-├── docker-compose.yml       # PostgreSQL + pgvector
-├── pyproject.toml           # dependencies and project metadata
-├── Makefile                 # thin wrappers around scripts/dev.py
-└── .env.example             # required environment variables with comments
+│   ├── dev.py                      # task runner
+│   ├── seed.py                     # categories, templates, knowledge base
+│   ├── build_corpus.py             # knowledge-base corpus from pinned Wikivoyage revisions
+│   ├── build_places.py             # Australian place list
+│   └── eval_*.py                   # run, compare, gate, re-judge, calibration, dataset check, prompt comparison
+├── eval/                           # dataset, configs, subsets, judge prompts, thresholds, prices, run summaries
+├── data/places/                    # Australian place list and its sources
+├── alembic/versions/               # migrations 0001-0007
+├── tests/
+├── openspec/                       # specs (current behaviour) and changes (planned and archived)
+└── docs/
 ```
 
 ---
 
-## Current Status
+## Project history
 
-**Branch: `feat/ui`** — browser UI with SSE step panels, trace viewer, and golden preset buttons. Also adds `GET /traces/{session_id}` endpoint.
+| Version / change | What it did |
+| --- | --- |
+| v0.1.0 | The original MVP: CAG-gated RAG (retrieval only below 0.85 confidence), two generation templates, corpus of 13 hand-written documents |
+| `isolate-test-database` | Tests use their own database |
+| `build-evaluation-harness` | Evaluation dataset, database, judge, metrics, comparison and gate; the v0.1.0 baseline |
+| `harden-workflow-guardrails` (v0.2.0) | Input guards, structured output, business rules, per-person costs and the daily budget amount, template version management |
+| `true-sse-streaming` | Each event sent as its step finishes, off the event loop |
+| `rebuild-rag` (v0.3.0) | Wikivoyage corpus, retrieval on every request, one generation template, per-day citations |
+| `parse-requests` (proposed) | Free-text requests parsed into the form |
 
-| Branch                    | Scope                                                       | Status |
-| ------------------------- | ----------------------------------------------------------- | ------ |
-| `feat/project-scaffold`   | Dependencies, Docker, directory layout, health endpoint     | Done   |
-| `feat/db-schema`          | Alembic migrations, SQLAlchemy models                       | Done   |
-| `feat/db-seed`            | Category embeddings, prompt templates, source documents     | Done   |
-| `feat/workflow-skeleton`  | Agno workflow with 6 stub steps, SSE emitter                | Done   |
-| `feat/intake`             | Input validation and normalisation (Step 1)                 | Done   |
-| `feat/cag-match`          | Embedding-based intent classification (Step 2)              | Done   |
-| `feat/retrieval-decision` | Confidence threshold routing (Step 3)                       | Done   |
-| `feat/rag-retrieve`       | Agno Knowledge + PgVector top-5 retrieval (Step 4)          | Done   |
-| `feat/generate`           | DB-template prompt construction + LLM call (Step 5)         | Done   |
-| `feat/validate-output`    | Pydantic validation + retry logic (Step 6)                  | Done   |
-| `feat/fastapi-service`    | `POST /generate` SSE endpoint                               | Done   |
-| `feat/observability`      | `trace_events` writes across all steps                      | Done   |
-| `feat/testing`            | Unit, integration, end-to-end, and golden tests             | Done   |
-| `feat/ui`                 | Browser UI, `GET /traces/{session_id}`, static file serving | Done   |
-
----
-
-## feat/testing — Branch Changes
-
-This branch completes the full test suite and adds three functional improvements to the workflow.
-
-### Test coverage added
-
-| File                      | Type        | What it covers                                                                  |
-| ------------------------- | ----------- | ------------------------------------------------------------------------------- |
-| `test_golden.py`          | integration | 3 golden tests (family, budget, low-confidence) + 1 end-to-end `POST /generate` |
-| `test_fastapi_service.py` | unit        | `template_version` query param forwarded correctly                              |
-| `test_generate.py`        | unit        | `resolve_template` version override, `None` default                             |
-| `test_validate_output.py` | unit        | content guardrail pass and fail cases                                           |
-
-**Golden tests** assert structure and branch correctness — not exact LLM output strings:
-
-1. **Family trip** — high-confidence path, no `rag_retrieve` event, structured itinerary returned
-2. **Budget trip** — same branch, different destination and style
-3. **Low-confidence** — `rag_retrieve` event present, `retrieved_context` non-empty, itinerary returned
-
-**End-to-end test** makes a real HTTP call to `POST /generate` via `TestClient` (no mocking of `_run_workflow`) and asserts all 6 step names appear in the SSE stream with correct structure.
-
-### Functional changes
-
-**`budget` field changed to enum** (`BudgetLevel`):  
-Values `"budget"`, `"moderate"`, `"luxury"` are now enforced at the Pydantic layer. Any other string returns 422. `travel_style` remains free text so the CAG step can perform semantic matching on it.
-
-**Prompt template version override** (`?template_version=N`):  
-`POST /generate` accepts an optional `template_version` query parameter. When set, `resolve_template` fetches that specific version instead of the active one — enabling reproducibility and A/B testing without changing the database. The version is propagated through `additional_data` to `generate_executor`.
-
-**Content-level output guardrail**:  
-`parse_llm_output` now checks that `len(daily_itinerary) == trip_length_days` after Pydantic schema validation. A mismatch triggers the existing retry mechanism in `validate_output_executor` — no extra code path needed. (`harden-workflow-guardrails` extends this into a list of business rules; see "How it works" under validate_output.)
-
-**Seed script robustness fix**:  
-`scripts/seed.py` detects when `travel_docs` exists but is missing the `embedding` column (caused by a partial or legacy seed run) and drops + recreates the table before inserting documents.
-
----
-
-## feat/ui — Branch Changes
-
-This branch adds a browser UI and a traces read endpoint on top of the completed API.
-
-### New files
-
-| File                        | Purpose                                                             |
-| --------------------------- | ------------------------------------------------------------------- |
-| `src/app/static/index.html` | Single-page UI — form, SSE step panels, trace table, preset buttons |
-| `tests/test_ui_api.py`      | 13 unit tests for `GET /traces/{session_id}` (DB mocked)            |
-
-### Changes to existing files
-
-**`src/app/main.py`**
-
-- Added `GET /traces/{session_id}` — queries `trace_events` for all rows matching `session_id`, returns JSON array ordered by `created_at`, 404 when none found
-- Added `StaticFiles` mount at `/` serving `src/app/static/` (mounted after all API routes so API routes take precedence)
-
-### UI features
-
-- **Form** — destination, trip_length (1–14), budget (enum select), travel_style, optional daily budget per person, optional template_version; error banner shows field validation messages and guard refusals
-- **3 golden preset buttons** — pre-fill the form with the same inputs as `test_golden.py`
-- **SSE step panels** — render in real time as each workflow step completes; `generate` panel highlights template key and version
-- **Trace table** — auto-fetched from `GET /traces/{session_id}` after stream completes; shows step, status, latency, template version, degraded mode
+Details: [CHANGELOG.md](CHANGELOG.md), [docs/roadmap.md](docs/roadmap.md), and the archived changes in `openspec/changes/archive/`.
 
 ---
 
@@ -810,13 +318,17 @@ This branch adds a browser UI and a traces read endpoint on top of the completed
 | Data | Used for | Source and licence | Details |
 | --- | --- | --- | --- |
 | Australian place list (`data/places/australia.tsv`) | The destination guard: which destinations are accepted, and their canonical English names | Place names from [GeoNames](https://www.geonames.org/) (`cities1000`), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), plus hand-kept lists of states, tourist destinations and Chinese names written for this project. Contains data from GeoNames (https://www.geonames.org/), licensed under CC BY 4.0. Modified: only Australian places are used, names are lowercased, and the list is combined with hand-kept lists written for this project. | [data/places/SOURCES.md](data/places/SOURCES.md) |
-| Knowledge base, corpus v1 (13 documents) | RAG context for generation | Not in this repository: a local file, `data/knowledge/v1/source_documents.json`, backed up privately. Without it, `seed` warns and the knowledge base stays empty; the app still runs, generating without retrieved context. Replaced in `rebuild-rag` by a corpus built from Wikivoyage (CC BY-SA), also kept out of this repository | `scripts/seed.py` (`load_source_documents`) |
+| Knowledge base, corpus v2 | RAG context and citations | City pages from [Wikivoyage](https://en.wikivoyage.org/), licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/), at pinned revisions, plus the Australia-wide handwritten documents of corpus v1. Not in this repository: the page list, the downloaded pages and the built corpus are local files backed up privately. The UI links each cited Wikivoyage source to its page and shows the licence | [docs/evaluation.md](docs/evaluation.md), "What is published" |
+| Knowledge base, corpus v1 (13 documents) | The v0.1.0 baseline in the evaluation; its Australia-wide documents are also part of corpus v2 | Handwritten for v0.1.0; not in this repository (`data/knowledge/v1/source_documents.json`, backed up privately) | [docs/evaluation.md](docs/evaluation.md) |
 
 ---
 
-## Design Docs
+## Documentation
 
-- [DESIGN.md](docs/DESIGN.md) — data model, workflow steps, SSE contract, prompt strategy
-- [api.md](docs/api.md) — full API reference: request/response formats, SSE event shapes per step, and how each failure inside the workflow is reported ("Failure behaviour")
-- [git-workflow.md](docs/git-workflow.md) — branch order, scope, and merge checklist
-- [CLAUDE.md](docs/CLAUDE.md) — AI tool usage rules and architecture constraints
+- [docs/api.md](docs/api.md) — API reference: requests, every step's event, errors and failure behaviour
+- [docs/evaluation.md](docs/evaluation.md) — running the evaluation and calibrating the judge
+- [docs/experiments.md](docs/experiments.md) — measured results
+- [docs/roadmap.md](docs/roadmap.md) — planned work
+- [docs/git-workflow.md](docs/git-workflow.md) — branches and "main must stay runnable"
+- [openspec/specs/](openspec/specs/) — the current behaviour contract
+- [docs/DESIGN.md](docs/DESIGN.md), [docs/CLAUDE.md](docs/CLAUDE.md) — the original v0.1.0 design and AI usage rules (OpenSpec takes precedence)
