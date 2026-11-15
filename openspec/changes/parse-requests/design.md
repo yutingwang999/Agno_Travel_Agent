@@ -119,7 +119,7 @@ Means of two runs on the same entries, free-text path against form path:
 
 ### 9. Category matching unchanged
 
-`cag_match` keeps matching on the form's fields, so both ways in get the same preset. Whether the presets are dropped (template B: higher faithfulness and destination rate in `rebuild-rag` task 5.4, lower preferences followed, and `cag_match` costs about 1.4 s) is a separate experiment.
+`cag_match` keeps matching on the form's fields, so both ways in get the same preset. Whether the presets are dropped (template B: higher faithfulness and destination rate in `rebuild-rag` task 5.4, lower preferences followed, and `cag_match` costs about 0.65 s per request, its mean step latency in most evaluation runs, up to 1.42 s in the slowest run, `20261108T130747Z`) is a separate experiment.
 
 ## Risks / Trade-offs
 

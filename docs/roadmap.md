@@ -18,6 +18,15 @@ Completed and archived in this order (`openspec/changes/archive/`); each later c
 | 4 | `true-sse-streaming` | Push each step as it completes, don't block the event loop, remove stdout capture | 2026-11-01 |
 | 5 | `rebuild-rag` | Wikivoyage knowledge base, retrieval comparisons (vector + destination filter adopted; hybrid and reranking not), source citations, interim routing (always retrieve) | 2026-11-10 |
 
+## Next: item 3 in two changes
+
+To be archived in this order; the deltas of 7 are written against the main specs as they will be after 6 is archived.
+
+| Order | Change | Content | Status |
+| --- | --- | --- | --- |
+| 6 | `parse-requests` | `POST /parse` turns one free-text sentence into the form's fields, with defaults and `assumptions`; the guards and `not_a_travel_request` at parse time; a "Describe your trip" way in that fills the form; the free-text path in the evaluation (slot accuracy, field agreement, parser latency and cost) | Created |
+| 7 | `clarify-requests` | Clarifying questions for contradictory or unfeasible requests (see item 3) | Not created yet; planned after 6 is archived |
+
 ## Later: changes not yet created
 
 ### 3. Drop "CAG" in favour of real routing
@@ -25,9 +34,12 @@ Completed and archived in this order (`openspec/changes/archive/`); each later c
 - **Problem**: the name is inaccurate (the project's "CAG" is really embedding-based intent classification, not Cache-Augmented Generation); the 0.85 threshold has no justification; using "intent classification confidence" to decide "whether to retrieve" makes no logical sense. The high-confidence template does not even have a knowledge placeholder, so the clearer the intent, the less destination knowledge it gets.
 - **Current state**: `rebuild-rag` made an interim solution — always retrieve, confidence is reported but takes no part in routing, and the generation templates are merged into one. The `retrieval_decision` step is kept as the plug-in point for the new routing.
 - **Direction**: use LLM structured output to parse what the user says into a request object (destination, trip length, budget, preferences, whether specific place information is needed), and let the parse result plus rules decide which path to take; ask the user back when key information is missing.
-- **Comparison**: keep the embedding classification as a baseline, compare the two on the evaluation dataset for slot accuracy, latency and cost, choose one and state why. The evaluation dataset already includes `utterance` and `gold_slots`.
+- **Split into two changes** (order 6 and 7 above):
+  - **`parse-requests`** (created): the parser and a free-text way in. Free text fills the form, the user reviews it, and `/generate` stays unchanged. A missing destination or trip length is left empty for the user to fill in; that is the only asking back this change does. Routing and `cag_match` are unchanged.
+  - **`clarify-requests`** (not created yet): clarifying questions for requests that parse completely but are contradictory or unfeasible (e.g. "drive the whole coast from Perth to Darwin" in two days, e050; a daily amount below what the destination plausibly costs, see item 4). Decisions so far: **one round** of questions, each offered **with choices** for the user to pick from, and a **fallback rule** for what happens when the request is still not plannable after that round (the rule itself is decided when the change is created). The evaluation observes these questions as `clarify`, so the contradictory `clarify` entries, which still fail after `parse-requests`, can count as correct.
+- **Comparison**: keep the embedding classification as a baseline, compare the two on the evaluation dataset for slot accuracy, latency and cost, choose one and state why. The evaluation dataset already includes `utterance` and `gold_slots`. `parse-requests` measures slot accuracy; routing by the parse result is not part of either change yet.
 - **⚠️ To be decided**: whether to also build **true CAG** (choosing between "put the whole destination knowledge into the context" and RAG by token budget). The draft is in [`drafts/add-cag-mode/`](roadmap/drafts/add-cag-mode/). The two can be combined: LLM parsing decides "whether knowledge is needed", and the token budget decides "CAG or RAG". The draft was written against the old plan (it references the cancelled `knowledge-evaluation`) and must be rewritten when the change is formally created.
-- **Category presets**: each of the 50 categories carries a preset tone and constraints that v0.1.0 puts into the prompt in place of the user's own words. `rebuild-rag` compared "preset only / user's words only / both" with a preference-adherence metric (its design decision 3) and adopted "both", the traveller's words first and the preset only where they say nothing (variant C, see `docs/experiments.md`); whether the presets are kept once requests are parsed is decided here, starting from that result.
+- **Category presets**: each of the 50 categories carries a preset tone and constraints that v0.1.0 puts into the prompt in place of the user's own words. `rebuild-rag` compared "preset only / user's words only / both" with a preference-adherence metric (its design decision 3) and adopted "both", the traveller's words first and the preset only where they say nothing (variant C, see `docs/experiments.md`). Neither `parse-requests` nor `clarify-requests` changes this. **Later experiment: drop the presets.** Variant B (the traveller's words only, no preset) had higher faithfulness with context (52.4% against 48.0%) and destination rate (93.2% against 89.0%), but lower preferences followed (92.4% against 97.7%). Dropping the presets would also take `cag_match` off the request path (mean step latency about 0.65 s in most evaluation runs, 1.42 s in the slowest, `20261108T130747Z`). Once requests are parsed, compare a template without the preset against the active one, with criteria set before the runs.
 - **Side note**: asking the user back requires sessions, so design it together with item 5.
 
 ### 4. Tool calling (real agent capability)
