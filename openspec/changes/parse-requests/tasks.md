@@ -8,7 +8,7 @@
 ## 2. Parser
 
 - [x] 2.1 Request object and parser schema (Pydantic): the form's fields, `preferences`, `is_travel_request` for the model's output, and the `/parse` response (`parse_id`, `request`, `preferences`, `assumptions`, `missing`); Verify: unit tests for the schemas
-- [ ] 2.2 Seed the `request_parser` template v1 in `scripts/seed.py` (`TEMPLATE_DEFINITIONS`, `ACTIVE_TEMPLATE_VERSIONS`): read the sentence into the fields, leave unstated fields empty, take only a per-person daily amount, keep only leftover details in `notes`, say whether it is a travel request; Verify: `test_template_versions.py` covers the new key and its placeholders
+- [x] 2.2 Seed the `request_parser` template v1 in `scripts/seed.py` (`TEMPLATE_DEFINITIONS`, `ACTIVE_TEMPLATE_VERSIONS`): read the sentence into the fields, leave unstated fields empty, take only a per-person daily amount, keep only leftover details in `notes`, say whether it is a travel request; Verify: `test_template_versions.py` covers the new key and its placeholders
 - [ ] 2.3 Parser module: one structured-output call to `gemini-3.1-flash-lite` with the active template; code applies the defaults (`budget` → `moderate`, `travel_style` → the general default) and writes `assumptions`, leaves `destination` / `trip_length` empty and lists them in `missing` when unstated or outside 1–14; Verify: unit tests with a fake LLM for a complete sentence, no destination, unstated budget, stated budget, daily amount, trip too long, notes kept apart
 
 ## 3. Parse endpoint

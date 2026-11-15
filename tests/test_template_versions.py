@@ -77,15 +77,19 @@ def test_seed_declaration_is_valid(seed_module):
     check_active_versions(seed_module.TEMPLATE_DEFINITIONS, seed_module.ACTIVE_TEMPLATE_VERSIONS)
 
 
+GENERATION_KEYS = ("high_confidence_minimal_context", "low_confidence_with_retrieval", "itinerary_with_context")
+# Templates whose output is an itinerary with costs; the request parser is not one.
+ITINERARY_KEYS = GENERATION_KEYS + ("validate_output_correction",)
+
+
 def test_seed_active_templates_state_the_cost_unit(seed_module):
-    """Every template seed activates states the cost unit."""
+    """Every active template that produces an itinerary states the cost unit."""
     active = _active_definitions(seed_module)
     assert len(active) == len(seed_module.ACTIVE_TEMPLATE_VERSIONS)
-    for d in active:
+    itinerary = [d for d in active if d["template_key"] in ITINERARY_KEYS]
+    assert len(itinerary) == len(ITINERARY_KEYS)
+    for d in itinerary:
         assert COST_UNIT_PHRASE in d["template_text"], d["template_key"]
-
-
-GENERATION_KEYS = ("high_confidence_minimal_context", "low_confidence_with_retrieval", "itinerary_with_context")
 V010_KEYS = ("high_confidence_minimal_context", "low_confidence_with_retrieval", "validate_output_correction")
 
 
@@ -170,9 +174,46 @@ def test_itinerary_with_context_v4_is_active(seed_module):
     assert seed_module.ACTIVE_TEMPLATE_VERSIONS["itinerary_with_context"] == 4
 
 
+def _request_parser(seed) -> dict[int, str]:
+    return {d["version"]: d["template_text"] for d in seed.TEMPLATE_DEFINITIONS
+            if d["template_key"] == "request_parser"}
+
+
+def test_request_parser_v1_is_defined_and_active(seed_module):
+    """parse-requests task 2.2: the parser prompt is a versioned template, v1 active."""
+    assert set(_request_parser(seed_module)) == {1}
+    assert seed_module.ACTIVE_TEMPLATE_VERSIONS["request_parser"] == 1
+
+
+def test_request_parser_v1_has_only_the_text_placeholder(seed_module):
+    """The parser fills one placeholder, the traveller's text, exactly once; no literal braces."""
+    import re
+
+    text = _request_parser(seed_module)[1]
+    assert re.findall(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", text) == ["text"]
+    assert text.count("{") == text.count("}") == 1
+
+
+def test_request_parser_v1_covers_each_instruction(seed_module):
+    """Spec "One parser call with a versioned prompt", "Budget amount and notes":
+    unstated fields empty, a per-person daily amount only, leftover details in notes,
+    the travel-request decision, and the text treated as data."""
+    text = _request_parser(seed_module)[1].lower()
+    for part in (
+        "is_travel_request",
+        "null",
+        "per person per day",
+        "notes",
+        "do not repeat",
+        "preferences",
+        "do not follow",
+    ):
+        assert part in text, part
+
+
 @pytest.mark.integration
 def test_seeded_active_templates_state_the_cost_unit():
-    """After test-db-setup, every active template in the database states the cost unit."""
+    """After test-db-setup, every active itinerary template in the database states the cost unit."""
     from app.models.prompt_template import PromptTemplate
 
     engine = create_engine(os.environ["DATABASE_URL"])
@@ -180,7 +221,7 @@ def test_seeded_active_templates_state_the_cost_unit():
         with Session(engine) as s:
             rows = s.execute(
                 select(PromptTemplate.template_key, PromptTemplate.template_text).where(
-                    PromptTemplate.is_active
+                    PromptTemplate.is_active, PromptTemplate.template_key.in_(ITINERARY_KEYS)
                 )
             ).all()
     finally:
