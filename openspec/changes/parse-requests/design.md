@@ -108,12 +108,12 @@ The judges keep receiving the dataset `form`'s `travel_style`, `notes` and `dest
 
 A parse-only mode (`--parse-only`, like `--retrieval-only`) sends only `/parse` and reports slot accuracy, field agreement, parse behaviour, latency and cost, for cheap iteration on the parser prompt.
 
-### 8. Success criteria (proposed; to be confirmed with the user before the comparison runs)
+### 8. Success criteria (confirmed with the user, 2026-11-15)
 
 Means of two runs on the same entries, free-text path against form path:
 
 - Slot extraction accuracy: destination and trip length at least 95%, budget level at least 90%.
-- Faithfulness with context and preferences followed within 2 points of the form path.
+- Faithfulness with context and preferences followed within 2 points of the form path, both computed only on the entries that produced an itinerary on both paths. A `plan` entry that the parser leaves incomplete produces no itinerary on the free-text path; leaving it out of one side only would drop the harder requests and could make the free-text path look better. Those entries are covered by slot extraction accuracy instead.
 - `refuse` behaviour on the free-text path not lower than on the form path.
 - `/parse` p50 latency at most 2 s.
 

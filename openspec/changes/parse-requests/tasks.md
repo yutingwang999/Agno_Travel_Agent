@@ -3,7 +3,7 @@
 ## 1. Planning
 
 - [x] 1.1 Update `docs/roadmap.md`: split item 3 into `parse-requests` and `clarify-requests` (the decisions on clarifying questions recorded with the second), add both to the near-term order table, and record dropping the category presets (template B, `cag_match` latency) as a later experiment; Verify: the roadmap names both changes in order and the experiment
-- [ ] 1.2 Confirm the success criteria of design decision 8 with the user before any comparison run, and record the confirmed values in design.md; Verify: design decision 8 says "confirmed" with the date
+- [x] 1.2 Confirm the success criteria of design decision 8 with the user before any comparison run, and record the confirmed values in design.md; Verify: design decision 8 says "confirmed" with the date
 
 ## 2. Parser
 
