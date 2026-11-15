@@ -1,5 +1,7 @@
 # Git Workflow
 
+> **Sections 2–4 are the v0.1.0 build plan**, kept as history: the 14 branches that built the MVP, and their checklists describe v0.1.0 behaviour (confidence routing, `source_documents`, two generation templates). Since v0.1.0, each unit of work is an OpenSpec change on its own feature branch, merged to `main` by PR, and `python scripts/dev.py test-all` passes before merging; the order of changes is in `docs/roadmap.md`. Section 1 still applies.
+
 ## Purpose
 
 This document defines the feature branch strategy for this project. Its goals:

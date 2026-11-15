@@ -29,7 +29,7 @@ Write everything in the repository in English: code, comments, docs, OpenSpec ar
 
 - If `.vscode/settings.json` exists (it is gitignored, so only on machines that have set it up), use the interpreter in its `python.defaultInterpreterPath`; otherwise use a Python 3.11+ environment with the dependencies from `pyproject.toml` installed. The `python` on PATH in a plain shell may be a different environment without `agno`; if imports fail, call the intended interpreter explicitly.
 - **Never install, upgrade, downgrade or uninstall packages in a Python environment on your own** (`pip`, `conda`, `dev.py install`, etc.). When a task needs a package change, stop and tell the user which package, which version, why, and which environment; run it only after they confirm.
-- The code targets the Agno 2.x workflow API (`from agno.workflow import Step, Condition, Workflow`). Dependencies are pinned in `pyproject.toml` (source of truth; `dev.py install` = `pip install -e ".[dev]"`); `requirements.txt` mirrors the runtime list and must be kept in sync.
+- The code targets the Agno 2.x workflow API (`from agno.workflow import Step, Workflow`). Dependencies are pinned in `pyproject.toml` (source of truth; `dev.py install` = `pip install -e ".[dev]"`); `requirements.txt` mirrors the runtime list and must be kept in sync.
 - `.env` is loaded by the app, Alembic `env.py`, `scripts/seed.py` and `tests/conftest.py`. Everything reads `DATABASE_URL`; `EMBEDDING_MODEL` must be the same for seed and runtime.
 
 ## Commands

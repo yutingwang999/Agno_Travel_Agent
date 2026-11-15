@@ -7,7 +7,7 @@ How to run the evaluation harness (`build-evaluation-harness`), what a run write
 ```powershell
 python scripts/dev.py eval-db-setup                                  # once, and after a migration: create + migrate + seed travel_agent_eval_db
 python scripts/eval_dataset_check.py                                 # dataset format and coverage, no API calls
-python scripts/eval_run.py --config v010-baseline                    # full run (73 entries)
+python scripts/eval_run.py --config v010-baseline                    # full run (79 entries, dataset v3)
 python scripts/eval_run.py --config v010-baseline --subset smoke     # smoke subset (10 entries)
 python scripts/eval_run.py --config <name> --subset dataset-v1      # the 73 dataset-v1 entries, to compare with the v0.1.0 baseline
 python scripts/eval_run.py --config <name> --retrieval-only          # retrieval alone (Recall, MRR, retrieve latency): nothing generated or judged; for comparing retrieval configurations
@@ -112,7 +112,7 @@ Two runs are comparable only when these agree, apart from the one thing the expe
 | `mrr_at_k` | Mean of 1 / rank of the first relevant chunk (0 when none is in the top k) |
 | `errors` | Entries whose retrieval failed; recorded per entry instead of counting as Recall = 0 |
 
-On the 13-document corpus v1, top 5 covers a large share of the corpus, so Recall and MRR are high; they are expected to drop on a larger corpus.
+Relevance labels belong to one corpus version, so Recall and MRR compare only runs on the same corpus. On the 13-document corpus v1, top 5 covers a large share of the corpus and both are high; on corpus v2 they are lower (Recall@5 0.643, MRR@5 0.823 for the final `rebuild-rag` configuration, see `docs/experiments.md`) and are not comparable with the v1 numbers.
 
 **`behaviour`** — Whether each request was handled the way the dataset expects (`plan`, `refuse`, `clarify`).
 
@@ -182,7 +182,7 @@ Observed behaviour is `plan` (a validated itinerary), `refuse` (422 with a guard
 
 ## Judge calibration
 
-Faithfulness and the destination check are decided by an LLM judge, so their numbers are only as good as the judge. Calibration measures that: a person reviews a sample of the judge's verdicts and the agreement is reported next to every faithfulness number.
+Faithfulness, the destination check, preference adherence and citation accuracy are decided by an LLM judge, so their numbers are only as good as the judge. Calibration measures that: a person reviews a sample of the judge's verdicts and the agreement is reported next to the numbers it qualifies.
 
 ### When to calibrate again
 
@@ -294,7 +294,7 @@ If the judge extracts the *same* text twice — the route as `transport` and "Ma
 | "Hire a private chauffeur for the day" | n | No specific movement |
 | "Nautilus Aviation helicopter" | y, as `named_place` | A named operator is a business, not a route |
 
-**Are seasons claims?** Not in judge prompt v1, unless they say when a place or service operates — that is `opening_hours`. "November to February offers the best weather for beaches" is climate advice and not a claim; "whale-watching tours run June to November" and "the museum closes on Mondays" are `opening_hours`. Seasonal advice can be checked against the context (corpus v1 states seasons), so it is a gap of v1 like activities; v1 is also inconsistent about it (in the baseline the judge filed "barramundi fishing season is prime March-November" under `opening_hours`). `rebuild-rag` adds a `season` kind to faithfulness v2. Until then, review such a claim as the judge filed it.
+**Are seasons claims?** Not in judge prompt v1, unless they say when a place or service operates — that is `opening_hours`. "November to February offers the best weather for beaches" is climate advice and not a claim; "whale-watching tours run June to November" and "the museum closes on Mondays" are `opening_hours`. Seasonal advice can be checked against the context (corpus v1 states seasons), so it is a gap of v1 like activities; v1 is also inconsistent about it (in the baseline the judge filed "barramundi fishing season is prime March-November" under `opening_hours`). Faithfulness v2 (`rebuild-rag`) adds a `season` kind for such advice. When reviewing a run judged with v1, review such a claim as the judge filed it; with v2, follow the v2 definitions.
 
 **Is a named room, suite or outlet inside a venue a separate claim?** Yes when it has a proper name: "the Chairman's Suite at the Langham" is two `named_place` claims, as "HOTA" and "HOTA café", or "Q1 Skypoint" and "Skypoint Bistro", are. A descriptive name is not a claim: in "a premium Harbour View Suite at the Langham" only the hotel is.
 
@@ -306,7 +306,7 @@ If the judge extracts the *same* text twice — the route as `transport` and "Ma
 | "join the Brisbane City Council walking tours" | 1 `named_place` (a named tour) | Listed: the destination prompt includes tours |
 | "the free Brisbane City Council walking tours" | 2: the tour (`named_place`) and "free" (`price`) | Listed |
 
-**Are activities claims?** Not in judge prompt v1 (see above): judge the place, ignore the activity. The gap is recorded in the baseline and closed by the `activity` kind planned for `rebuild-rag`.
+**Are activities claims?** Not in judge prompt v1 (see above): judge the place, ignore the activity. The gap is recorded in the baseline and closed by the `activity` kind of faithfulness v2 (`rebuild-rag`): with v2, an activity at a named place is its own claim, supported only when the context offers that activity at that place.
 
 **Why stratify instead of reviewing everything?** The first sample had 610 items (2–3 hours). Calibration has to be repeated whenever the judge or the corpus changes, so it must stay affordable; and the review is tied to particular itineraries and contexts, so it cannot be reused later anyway. Every judge-supported claim is reviewed because that is where judge mistakes inflate faithfulness.
 
@@ -327,42 +327,43 @@ If any stratum is below 0.8, improve the judge prompt (a new version) and recali
 
 ## Time and cost per run
 
-These are **estimates**, computed from per-unit measurements of one smoke run. They are planning figures, not results: do not cite them in `experiments.md`. Recompute them with the formulas below when the models, the prices or the system change, and replace the measurements with those from the latest full run once one exists.
+These are **estimates**, computed from per-unit measurements of one full run. They are planning figures, not results: do not cite them in `experiments.md`. Recompute them with the formulas below when the models, the prices or the system change, using the latest full run.
 
 ### Per-unit measurements
 
-Source: run `20261026T105704Z-v010-baseline-smoke` (10 entries, commit `88e5ad0`, judge concurrency 4), price table of 2026-10-25.
+Source: run `20261109T101151Z-rebuild-rag-gen-c-no-exclusives` (the final `rebuild-rag` configuration; 79 entries, 65 planned, 14 refused by the input guards, 54 with relevance labels; commit `beda5f8`, judge concurrency 8), price table of 2026-10-25.
 
 | Unit | Time | Cost (USD) |
 | --- | --- | --- |
-| One request to the system, end to end | 4.47 s | 0.00113 |
-| ↳ `generate` (Gemini generation call) | 3.13 s | (included above) |
+| One planned request, end to end | 4.55 s | 0.00126 |
+| ↳ `generate` (Gemini generation call) | 3.06 s | (included above) |
 | ↳ `cag_match` (one embedding call) | 0.65 s | |
-| ↳ `rag_retrieve` (one embedding call + vector search; retrieval path only) | 0.64 s | |
-| Retrieval measurement, per labelled entry (harness side) | 1.36 s | ≈ 0 (embeddings) |
-| One judge call (`gpt-6-luna`, ≈ 1,230 input / 1,680 output tokens) | 19.2 s | 0.00096 |
+| ↳ `rag_retrieve` (one embedding call + vector search) | 0.68 s | |
+| One refused request (422 from the input guards, no workflow step) | ≈ 0 | ≈ 0 |
+| Retrieval measurement, per labelled entry (harness side) | 0.68 s | ≈ 0 (embeddings) |
+| One judge call (`gpt-6-luna`, mean of 258 calls) | 12.8 s | 0.00082 |
 
-Each planned itinerary gets three judge calls from `rebuild-rag` on (faithfulness, destination and preference); the measurements above are from a run with two. v0.1.0 produces an itinerary for every request, including the ones it should refuse; once `harden-workflow-guardrails` rejects them with 422, those entries need neither generation nor judging and a run gets cheaper.
+Each planned itinerary gets four judge calls: faithfulness, destination, preference, and citation (only when the itinerary cites something; 258 calls for 65 itineraries in the source run).
 
 ### Formulas
 
-With `N` entries, `L` of them with relevance labels, `P` planned itineraries and judge concurrency `C`:
+With `L` entries with relevance labels, `P` planned itineraries and judge concurrency `C`:
 
 ```
-time ≈ N × 4.47 s  +  L × 1.36 s  +  (2P × 19.2 s) / C
-cost ≈ N × $0.00113  +  2P × $0.00096
+time ≈ P × 4.55 s  +  L × 0.68 s  +  (4P × 12.8 s) / C
+cost ≈ P × $0.00126  +  4P × $0.00082
 ```
 
-Requests run one at a time (design decision 28); only the judge phase is divided by `C`, and only as long as the OpenAI rate limit allows it.
+Requests run one at a time (design decision 28); only the judge phase is divided by `C`, and only as long as the OpenAI rate limit allows it. For the source run the formulas give 12.5 min and $0.30, against 12.9 min and $0.29 measured.
 
 ### Estimates
 
-| Run | N / L / P | Judge concurrency | Time | Cost (USD) |
+| Run | P / L | Judge concurrency | Time | Cost (USD) |
 | --- | --- | --- | --- | --- |
-| Smoke subset | 10 / 7 / 10 | 4 | 2.6 min (measured: 158 s) | 0.03 |
-| Smoke subset | 10 / 7 / 10 | 8 | ≈ 1.7 min | 0.03 |
-| Full dataset v1 | 73 / 54 / 73 | 4 | ≈ 18 min | ≈ 0.22 |
-| Full dataset v1 | 73 / 54 / 73 | 8 | ≈ 12 min | ≈ 0.22 |
-| v0.1.0 baseline (2 full runs + 2 smoke runs for the gate) | | 8 | ≈ 28 min | ≈ 0.50 |
+| Smoke subset (10 entries) | 8 / 6 | 8 | ≈ 1.5 min (measured: 101 s) | ≈ 0.04 (measured: 0.03) |
+| Full dataset v3 (79 entries) | 65 / 54 | 8 | ≈ 12.5 min (measured: 12.9 min) | ≈ 0.30 (measured: 0.29) |
+| Full dataset v3 (79 entries) | 65 / 54 | 4 | ≈ 19.5 min | ≈ 0.30 |
+| Retrieval only (`--retrieval-only`) | 0 / 54 | — | ≈ 0.6 min | ≈ 0 |
+| A change's final measurement (2 full runs + 2 smoke runs for the gate) | | 8 | ≈ 29 min | ≈ 0.66 |
 
-The current configuration (`eval/configs/v010-baseline.yaml`) uses judge concurrency 8. Concurrency changes only how long the judge phase takes, not any verdict or metric. Per-step latencies and the phase breakdown of every run are in its `summary.json` (`metrics.system.step_latency_ms`, `phase_seconds`).
+Every configuration in `eval/configs/` uses judge concurrency 8. Concurrency changes only how long the judge phase takes, not any verdict or metric. Per-step latencies and the phase breakdown of every run are in its `summary.json` (`metrics.system.step_latency_ms`, `phase_seconds`).
