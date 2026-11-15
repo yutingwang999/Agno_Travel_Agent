@@ -235,6 +235,23 @@ def test_no_active_template_is_a_parser_failure(monkeypatch):
     assert llm.calls == []
 
 
+def test_database_error_reading_the_template_is_a_parser_failure(monkeypatch):
+    def broken(template_key, db_url, version=None):
+        raise ConnectionError("could not connect to server")
+
+    monkeypatch.setattr(parser, "resolve_template", broken)
+    with pytest.raises(ParserFailure) as exc:
+        _parse(FakeLLM({"is_travel_request": True}))
+    assert exc.value.error_type == "template_error"
+
+
+def test_default_model_call_is_looked_up_at_call_time(active_template, monkeypatch):
+    llm = FakeLLM({"is_travel_request": True})
+    monkeypatch.setattr(parser, "_call_llm", llm)
+    parse_text("Three days in Hobart.", db_url="postgresql://unused", api_key="unused")
+    assert len(llm.calls) == 1
+
+
 def test_model_exception_is_a_parser_failure(active_template):
     with pytest.raises(ParserFailure) as exc:
         _parse(FakeLLM(RuntimeError("503 UNAVAILABLE")))

@@ -7,6 +7,10 @@ Two checks, in this order, on a request that passed field validation:
 2. destination      — must be in the Australian place list; a match is replaced
    by its canonical English name → ``destination_out_of_scope``
 
+``POST /parse`` reuses the injection check and the place list, and adds a third
+code, ``not_a_travel_request``, when the parser model reports that the text is not
+a travel request (parse-requests).
+
 A rejection raises :class:`GuardRejection`; ``main.py`` turns it into a 422 with
 ``{"reason": <code>, "detail": <fixed message>}``.  The message is fixed per code
 and never echoes the input or names the pattern or field that matched: telling a
@@ -27,10 +31,12 @@ from app.workflow.places import canonical_destination
 
 DESTINATION_OUT_OF_SCOPE = "destination_out_of_scope"
 INPUT_REJECTED = "input_rejected"
+NOT_A_TRAVEL_REQUEST = "not_a_travel_request"
 
 REJECTION_MESSAGES: dict[str, str] = {
     DESTINATION_OUT_OF_SCOPE: "Please enter one specific destination in Australia, such as Sydney, Cairns or Tasmania.",
     INPUT_REJECTED: "Your request could not be processed. Please rephrase it and try again.",
+    NOT_A_TRAVEL_REQUEST: "This planner only plans trips in Australia. Please describe the trip you want to take.",
 }
 
 # The request fields users type freely; the others are enums and integers.

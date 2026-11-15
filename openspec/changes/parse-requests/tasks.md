@@ -13,8 +13,8 @@
 
 ## 3. Parse endpoint
 
-- [ ] 3.1 `POST /parse` in `src/app/main.py`: body validation (`text` non-blank, at most 1000 characters), injection check on the text before the LLM call (`input_rejected`), `not_a_travel_request`, place-list lookup of the parsed destination (canonical name or `destination_out_of_scope`), 503 with a fixed message when the call fails or no template is active; Verify: unit tests for each scenario of the `request-parsing` spec, with the LLM faked
-- [ ] 3.2 Add `not_a_travel_request` and its fixed message to the guard rejection body; Verify: unit tests for the body and message (`travel-workflow` scenarios)
+- [x] 3.1 `POST /parse` in `src/app/main.py`: body validation (`text` non-blank, at most 1000 characters), injection check on the text before the LLM call (`input_rejected`), `not_a_travel_request`, place-list lookup of the parsed destination (canonical name or `destination_out_of_scope`), 503 with a fixed message when the call fails or no template is active; Verify: unit tests for each scenario of the `request-parsing` spec, with the LLM faked
+- [x] 3.2 Add `not_a_travel_request` and its fixed message to the guard rejection body; Verify: unit tests for the body and message (`travel-workflow` scenarios)
 - [ ] 3.3 Trace row `parse_request` under the returned `parse_id`, with latency, template key and version, token usage and `error_type`; never raises; Verify: unit test that the row is written, and that a trace failure does not fail the request
 - [ ] 3.4 Integration test against the test database and Gemini: a complete sentence, a sentence without a destination, and a non-travel sentence through `/parse`; Verify: `python scripts/dev.py test-integration` passes
 - [ ] 3.5 Document `/parse`, its response, rejections and failure in `docs/api.md`, and the parse endpoint in `CLAUDE.md`'s architecture section; Verify: code review

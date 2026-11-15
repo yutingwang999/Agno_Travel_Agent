@@ -53,7 +53,8 @@ PARSER_OUTPUT_CONFIG = types.GenerateContentConfig(
 class ParserFailure(Exception):
     """The parser could not produce a result; ``POST /parse`` answers 503.
 
-    ``error_type`` is ``template_not_found``, ``llm_error`` or
+    ``error_type`` is ``template_not_found``, ``template_error`` (the template
+    could not be read, e.g. the database is down), ``llm_error`` or
     ``invalid_output``; the template version and token usage are kept for the
     trace when known.
     """
@@ -169,18 +170,23 @@ def parse_text(
     *,
     db_url: str,
     api_key: str,
-    call_llm: Callable[[str, str, str], LLMResult] = _call_llm,
+    call_llm: Callable[[str, str, str], LLMResult] | None = None,
 ) -> ParseResult:
     """Parse *text* with the active ``request_parser`` template.
 
+    *call_llm* defaults to the Gemini call, looked up when called.
+
     Raises:
-        ParserFailure: no active template, the model call raised, or its
-            output is not a valid ``ParserOutput``.
+        ParserFailure: no active template or it could not be read, the model
+            call raised, or its output is not a valid ``ParserOutput``.
     """
+    call_llm = call_llm or _call_llm
     try:
         template, version = resolve_template(PARSER_TEMPLATE_KEY, db_url)
     except TemplateNotFoundError as exc:
         raise ParserFailure("template_not_found", str(exc)) from exc
+    except Exception as exc:  # database unreachable or similar: the endpoint answers 503
+        raise ParserFailure("template_error", str(exc)) from exc
 
     # A plain replace of the one placeholder: braces in the traveller's text
     # stay as written and are never substituted.

@@ -25,7 +25,17 @@ from sse_starlette.sse import EventSourceResponse
 from starlette.concurrency import iterate_in_threadpool
 
 from app.models.trace_event import TraceEvent
-from app.workflow.input_guard import GuardRejection, guard_request
+from app.parsing.models import ParseInput, ParseResponse
+from app.parsing.parser import ParserFailure, parse_text
+from app.workflow.input_guard import (
+    DESTINATION_OUT_OF_SCOPE,
+    INPUT_REJECTED,
+    NOT_A_TRAVEL_REQUEST,
+    GuardRejection,
+    guard_request,
+    looks_like_injection,
+)
+from app.workflow.places import canonical_destination
 from app.workflow.intake_model import TravelRequest
 from app.workflow.travel_workflow import travel_workflow
 
@@ -182,6 +192,58 @@ def get_traces(session_id: str):
         }
         for row in rows
     ]
+
+
+# Fixed 503 body of POST /parse; never carries exception text.
+PARSER_UNAVAILABLE_MESSAGE = (
+    "Your description could not be read right now. Please fill in the form instead."
+)
+
+
+@app.post("/parse", response_model=ParseResponse)
+def parse(body: ParseInput):
+    """Read one free-text request into the form's fields (parse-requests).
+
+    A plain ``def``: FastAPI runs it in a worker thread, so the database and
+    model calls do not block the event loop.
+
+    Order (design decision 4): field validation (422 without ``reason``) →
+    injection check on the text, before any LLM call (``input_rejected``) →
+    one parser call (503 with a fixed message on failure) → not a travel
+    request (``not_a_travel_request``) → place-list lookup of a parsed
+    destination (canonical name, or ``destination_out_of_scope``). An empty
+    destination is not a rejection: it is listed in ``missing``.
+    """
+    if looks_like_injection(body.text):
+        raise GuardRejection(INPUT_REJECTED)
+
+    parse_id = str(uuid.uuid4())
+    try:
+        result = parse_text(
+            body.text,
+            db_url=os.environ.get("DATABASE_URL", ""),
+            api_key=os.environ.get("GEMINI_API_KEY", ""),
+        )
+    except ParserFailure:
+        return JSONResponse(status_code=503, content={"detail": PARSER_UNAVAILABLE_MESSAGE})
+
+    if not result.is_travel_request:
+        raise GuardRejection(NOT_A_TRAVEL_REQUEST)
+
+    request = result.request
+    if request.destination is not None:
+        canonical = canonical_destination(request.destination)
+        if canonical is None:
+            raise GuardRejection(DESTINATION_OUT_OF_SCOPE)
+        request = request.model_copy(update={"destination": canonical})
+
+    return ParseResponse(
+        parse_id=parse_id,
+        request=request,
+        preferences=result.preferences,
+        assumptions=result.assumptions,
+        missing=result.missing,
+    )
 
 
 @app.post("/generate")

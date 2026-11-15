@@ -16,6 +16,7 @@ VALID_BODY = {"destination": "Sydney", "trip_length": 3, "budget": "moderate", "
 
 DESTINATION_MESSAGE = "Please enter one specific destination in Australia, such as Sydney, Cairns or Tasmania."
 INPUT_MESSAGE = "Your request could not be processed. Please rephrase it and try again."
+NOT_TRAVEL_MESSAGE = "This planner only plans trips in Australia. Please describe the trip you want to take."
 
 
 @pytest.fixture(autouse=True)
@@ -180,7 +181,16 @@ def test_messages_match_the_spec():
     assert REJECTION_MESSAGES == {
         "destination_out_of_scope": DESTINATION_MESSAGE,
         "input_rejected": INPUT_MESSAGE,
+        "not_a_travel_request": NOT_TRAVEL_MESSAGE,
     }
+
+
+def test_not_a_travel_request_rejection_carries_its_fixed_message():
+    """parse-requests task 3.2: the new reason code and its message."""
+    from app.workflow.input_guard import NOT_A_TRAVEL_REQUEST, GuardRejection
+
+    rejection = GuardRejection(NOT_A_TRAVEL_REQUEST)
+    assert (rejection.reason, rejection.detail) == ("not_a_travel_request", NOT_TRAVEL_MESSAGE)
 
 
 def test_dataset_injection_entries_in_request_fields_are_detected():
