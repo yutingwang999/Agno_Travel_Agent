@@ -6,6 +6,8 @@
 # Gemini bill of a public deployment. Longer requests are rejected with 422.
 MAX_TRIP_LENGTH_DAYS: int = 14
 MAX_NOTES_LENGTH: int = 500
+# Longest free-text request POST /parse accepts, in characters (parse-requests).
+MAX_PARSE_TEXT_LENGTH: int = 1000
 
 # Upper bound on itinerary cost per budget level, in AUD per person per day,
 # EXCLUDING accommodation (itineraries contain no stay). The trip cap is this value
